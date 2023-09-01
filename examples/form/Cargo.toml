@@ -1,0 +1,13 @@
+[package]
+name = "form"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+anyhow = "1.0.72"
+heapless = "0.7.16"
+picoserve = { path = "../..", features = ["tokio"] }
+serde = { version = "1.0.183", features = ["derive"] }
+tokio = { version = "1.31.0", features = ["rt", "io-util", "net", "time", "macros"] }

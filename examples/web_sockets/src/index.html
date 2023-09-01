@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Server-Sent Events</title>
+    <style>
+        body {
+            display: flex;
+            flex-flow: column nowrap;
+            align-items: center;
+        }
+
+        body>* {
+            margin: 1em;
+        }
+    </style>
+</head>
+
+<body>
+    <div>
+        Messages sent will be send to all connections
+    </div>
+    <input type="text">
+    <button type="button">Send</button>
+    <output></output>
+
+    <script>
+        let input = document.getElementsByTagName("input")[0];
+        let output = document.getElementsByTagName("output")[0];
+        let button = document.getElementsByTagName("button")[0];
+
+        input.addEventListener("input", function () {
+            button.disabled = !input.value;
+        });
+
+        let ws = new WebSocket("ws://localhost:8000/ws", ["messages", "ignored_protocol"]);
+
+        ws.addEventListener("error", function (ev) {
+            events.close();
+            output.innerText = "Events Closed";
+        });
+
+        ws.addEventListener("message", function (ev) {
+            output.innerText = ev.data;
+        });
+
+        button.addEventListener("click", function () {
+            ws.send(input.value);
+
+            input.value = "";
+        });
+    </script>
+</body>
+
+</html>
