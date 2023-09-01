@@ -14,3 +14,7 @@
 
 
 ## Embassy on Pico W
+
+| Example                                                              | Description                                      |
+| -------------------------------------------------------------------- | ------------------------------------------------ |
+| [`hello_world_embassy`](../examples/hello_world_embassy/src/main.rs) | A minimal example showing how to set up a Router |
