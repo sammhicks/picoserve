@@ -81,9 +81,9 @@ impl picoserve::extract::FromRef<AppState> for SharedControl {
 
 type AppRouter = impl picoserve::routing::PathRouter<AppState>;
 
-const WEB_TASK_POOL_SIZE: usize = 8; // MUST match pool_size of web_task below
+const WEB_TASK_POOL_SIZE: usize = 8;
 
-#[embassy_executor::task(pool_size = 8)]
+#[embassy_executor::task(pool_size = WEB_TASK_POOL_SIZE)]
 async fn web_task(
     id: usize,
     stack: &'static embassy_net::Stack<cyw43::NetDriver<'static>>,
