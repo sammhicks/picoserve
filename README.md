@@ -14,7 +14,7 @@ Features:
 
 Shortcomings:
 + While in version `0.*.*`, there may be breaking API changes
-+ Requires the nightly toolchain, which is currently broken, thus is compiled against `nightly-2023-06-01`
++ Requires the nightly toolchain, currently compiled against `nightly-2023-10-02`
 + Only the GET, POST, and HEAD methods are supported.
 + URL-Encoded strings, for example in Query and Form parsing, have a maximum length of 1024.
 + This has relatively little stress-testing so I advise not to expose it directly to the internet, but place it behind a proxy such as nginx, which will act as a security layer.
