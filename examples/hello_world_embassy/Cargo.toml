@@ -7,16 +7,16 @@ edition = "2021"
 
 [dependencies]
 cortex-m-rt = "0.7.3"
-cyw43 = { git = "https://github.com/embassy-rs/embassy", rev="03576b9" }
-cyw43-pio = { git = "https://github.com/embassy-rs/embassy", rev = "03576b9" }
-embassy-executor = { git = "https://github.com/embassy-rs/embassy", rev = "03576b9", features = ["arch-cortex-m","executor-thread","nightly","integrated-timers"] }
-embassy-futures = { git = "https://github.com/embassy-rs/embassy", rev = "03576b9" }
-embassy-net = { git = "https://github.com/embassy-rs/embassy", rev = "03576b9", features = ["nightly","tcp","proto-ipv4","medium-ethernet"] }
-embassy-rp = { git = "https://github.com/embassy-rs/embassy", rev = "03576b9", features = ["critical-section-impl","time-driver","nightly","unstable-traits"] }
-embassy-sync = { git = "https://github.com/embassy-rs/embassy", rev = "03576b9" }
-embassy-time = { git = "https://github.com/embassy-rs/embassy", rev = "03576b9" }
-embassy-usb-logger = { git = "https://github.com/embassy-rs/embassy", rev = "03576b9" }
-embedded-io = "0.5.0"
+cyw43 = { git = "https://github.com/embassy-rs/embassy", rev="b6fc682" }
+cyw43-pio = { git = "https://github.com/embassy-rs/embassy", rev = "b6fc682" }
+embassy-executor = { git = "https://github.com/embassy-rs/embassy", rev = "b6fc682", features = ["arch-cortex-m","executor-thread","nightly","integrated-timers"] }
+embassy-futures = { git = "https://github.com/embassy-rs/embassy", rev = "b6fc682" }
+embassy-net = { git = "https://github.com/embassy-rs/embassy", rev = "b6fc682", features = ["nightly","tcp","proto-ipv4","medium-ethernet"] }
+embassy-rp = { git = "https://github.com/embassy-rs/embassy", rev = "b6fc682", features = ["critical-section-impl","time-driver","nightly","unstable-traits"] }
+embassy-sync = { git = "https://github.com/embassy-rs/embassy", rev = "b6fc682" }
+embassy-time = { git = "https://github.com/embassy-rs/embassy", rev = "b6fc682" }
+embassy-usb-logger = { git = "https://github.com/embassy-rs/embassy", rev = "b6fc682" }
+embedded-io-async = "0.6.0"
 log = { version = "0.4.20", default-features = false }
 picoserve = { path = "../.." }
 panic-halt = "0.2.0"

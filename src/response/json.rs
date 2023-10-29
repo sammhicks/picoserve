@@ -432,10 +432,7 @@ impl<T: serde::Serialize> JsonStream<T> {
 }
 
 impl<T: serde::Serialize> JsonStream<T> {
-    async fn write_json_value<W: Write>(
-        self,
-        writer: &mut W,
-    ) -> Result<(), crate::io::WriteAllError<W::Error>> {
+    async fn write_json_value<W: Write>(self, writer: &mut W) -> Result<(), W::Error> {
         match self {
             JsonStream::Short { buffer } => writer.write_all(&buffer.data).await,
             JsonStream::Long { mut buffer, value } => {
@@ -489,7 +486,7 @@ impl<T: serde::Serialize> crate::response::Content for JsonBody<T> {
         self,
         _connection: crate::response::Connection<R>,
         mut writer: W,
-    ) -> Result<(), crate::io::WriteAllError<W::Error>> {
+    ) -> Result<(), W::Error> {
         self.0.write_json_value(&mut writer).await
     }
 }
@@ -498,10 +495,7 @@ impl<T: serde::Serialize> crate::response::Content for JsonBody<T> {
 pub struct Json<T>(pub T);
 
 impl<T: serde::Serialize> Json<T> {
-    pub(crate) async fn do_write_to<W: Write>(
-        &self,
-        writer: &mut W,
-    ) -> Result<(), crate::io::WriteAllError<W::Error>> {
+    pub(crate) async fn do_write_to<W: Write>(&self, writer: &mut W) -> Result<(), W::Error> {
         JsonStream::new(&self.0).write_json_value(writer).await
     }
 }

@@ -45,7 +45,7 @@ impl picoserve::response::ws::WebSocketCallback for WebsocketHandler {
         mut self,
         mut rx: picoserve::response::ws::SocketRx<R>,
         mut tx: picoserve::response::ws::SocketTx<W>,
-    ) -> Result<(), picoserve::io::WriteAllError<W::Error>> {
+    ) -> Result<(), W::Error> {
         use picoserve::response::ws::Message;
 
         let mut message_buffer = [0; 128];
@@ -61,7 +61,7 @@ impl picoserve::response::ws::WebSocketCallback for WebsocketHandler {
                     Ok(Message::Binary(message)) => println!("Ignoring binary message: {message:?}"),
                     Ok(Message::Ping(ping)) => tx.send_pong(ping).await?,
                     Ok(Message::Pong(_)) => (),
-                    Err(picoserve::response::ws::ReadMessageError::Io(err)) => return Err(picoserve::io::WriteAllError::Other(err)),
+                    Err(picoserve::response::ws::ReadMessageError::Io(err)) => return Err(err),
                     Ok(Message::Close(_)) | Err(_) => break,
                 }
             }

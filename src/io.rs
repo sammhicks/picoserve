@@ -1,6 +1,6 @@
 use core::fmt;
 
-pub use embedded_io_async::{self, Error, ErrorKind, ErrorType, Read, Write, WriteAllError};
+pub use embedded_io_async::{self, Error, ErrorKind, ErrorType, Read, Write};
 
 pub(crate) enum FormatBufferWriteError<T> {
     FormatError,
@@ -61,10 +61,7 @@ impl FormatBuffer {
 
 /// An extension trait for [Write] which allows writing of [core::fmt::Arguments].
 pub trait WriteExt: Write {
-    async fn write_fmt(
-        &mut self,
-        args: fmt::Arguments<'_>,
-    ) -> Result<(), WriteAllError<Self::Error>> {
+    async fn write_fmt(&mut self, args: fmt::Arguments<'_>) -> Result<(), Self::Error> {
         let mut ignore_count = 0;
 
         loop {

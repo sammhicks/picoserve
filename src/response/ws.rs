@@ -423,17 +423,11 @@ pub struct SocketTx<W: Write> {
 }
 
 impl<W: Write> SocketTx<W> {
-    async fn flush(&mut self) -> Result<(), crate::io::WriteAllError<W::Error>> {
-        self.writer
-            .flush()
-            .await
-            .map_err(crate::io::WriteAllError::Other)
+    async fn flush(&mut self) -> Result<(), W::Error> {
+        self.writer.flush().await
     }
 
-    async fn write_length(
-        &mut self,
-        length: usize,
-    ) -> Result<(), crate::io::WriteAllError<W::Error>> {
+    async fn write_length(&mut self, length: usize) -> Result<(), W::Error> {
         if let Some(length_byte) = u8::try_from(length).ok().filter(|length| *length <= 125) {
             self.writer.write_all(&[length_byte]).await
         } else if let Ok(length) = u16::try_from(length) {
@@ -450,7 +444,7 @@ impl<W: Write> SocketTx<W> {
         is_final: bool,
         opcode: u8,
         data: &[u8],
-    ) -> Result<(), crate::io::WriteAllError<W::Error>> {
+    ) -> Result<(), W::Error> {
         self.writer
             .write_all(&[if is_final { 0b10000000 } else { 0 } | opcode])
             .await?;
@@ -461,19 +455,13 @@ impl<W: Write> SocketTx<W> {
     }
 
     /// Send a text message.
-    pub async fn send_text(
-        &mut self,
-        data: &str,
-    ) -> Result<(), crate::io::WriteAllError<W::Error>> {
+    pub async fn send_text(&mut self, data: &str) -> Result<(), W::Error> {
         self.write_frame(true, 1, data.as_bytes()).await?;
         self.flush().await
     }
 
     /// Send a binary message.
-    pub async fn send_binary(
-        &mut self,
-        data: &[u8],
-    ) -> Result<(), crate::io::WriteAllError<W::Error>> {
+    pub async fn send_binary(&mut self, data: &[u8]) -> Result<(), W::Error> {
         self.write_frame(true, 2, data).await?;
         self.flush().await
     }
@@ -481,10 +469,7 @@ impl<W: Write> SocketTx<W> {
     /// Send the given value as a JSON encoded text message.
     /// If the message is long, the message will be sent as several frames, and the value will be repeatedly serialized,
     /// so it must serialize to the same value each time.
-    pub async fn send_json(
-        &mut self,
-        value: impl serde::Serialize,
-    ) -> Result<(), crate::io::WriteAllError<W::Error>> {
+    pub async fn send_json(&mut self, value: impl serde::Serialize) -> Result<(), W::Error> {
         super::json::Json(value)
             .do_write_to(&mut JsonWriter {
                 is_first: true,
@@ -496,10 +481,7 @@ impl<W: Write> SocketTx<W> {
     }
 
     /// Close the connection with the given reason.
-    pub async fn close(
-        mut self,
-        reason: impl Into<Option<(u16, &str)>>,
-    ) -> Result<(), crate::io::WriteAllError<W::Error>> {
+    pub async fn close(mut self, reason: impl Into<Option<(u16, &str)>>) -> Result<(), W::Error> {
         self.writer.write_all(&[0b10000000 | 8]).await?; // Final Close frame
 
         match reason.into() {
@@ -516,18 +498,12 @@ impl<W: Write> SocketTx<W> {
     }
 
     /// Send a ping message with the given data.
-    pub async fn send_ping(
-        &mut self,
-        data: &[u8],
-    ) -> Result<(), crate::io::WriteAllError<W::Error>> {
+    pub async fn send_ping(&mut self, data: &[u8]) -> Result<(), W::Error> {
         self.write_frame(true, 9, data).await
     }
 
     /// Send a pong message with the given data.
-    pub async fn send_pong(
-        &mut self,
-        data: &[u8],
-    ) -> Result<(), crate::io::WriteAllError<W::Error>> {
+    pub async fn send_pong(&mut self, data: &[u8]) -> Result<(), W::Error> {
         self.write_frame(true, 10, data).await
     }
 }
@@ -543,8 +519,7 @@ impl<'w, W: Write> embedded_io_async::ErrorType for JsonWriter<'w, W> {
 
 impl<'w, W: Write> Write for JsonWriter<'w, W> {
     async fn write(&mut self, data: &[u8]) -> Result<usize, W::Error> {
-        match self
-            .tx
+        self.tx
             .write_frame(
                 false,
                 if self.is_first {
@@ -556,11 +531,7 @@ impl<'w, W: Write> Write for JsonWriter<'w, W> {
                 data,
             )
             .await
-        {
-            Ok(()) => Ok(data.len()),
-            Err(crate::io::WriteAllError::WriteZero) => Ok(0),
-            Err(crate::io::WriteAllError::Other(err)) => Err(err),
-        }
+            .map(|_| data.len())
     }
 }
 
@@ -570,7 +541,7 @@ pub trait WebSocketCallback {
         self,
         rx: SocketRx<R>,
         tx: SocketTx<W>,
-    ) -> Result<(), crate::io::WriteAllError<W::Error>>;
+    ) -> Result<(), W::Error>;
 }
 
 /// The HTTP response sent to the client, notifying it that the connection can been upgraded to a web socket connection.
@@ -625,7 +596,7 @@ impl<C: WebSocketCallback> super::Body for UpgradedWebSocketBody<C> {
         self,
         super::Connection(reader): super::Connection<R>,
         mut writer: W,
-    ) -> Result<(), crate::io::WriteAllError<W::Error>> {
+    ) -> Result<(), W::Error> {
         writer.flush().await?;
         self.0.run(SocketRx { reader }, SocketTx { writer }).await
     }

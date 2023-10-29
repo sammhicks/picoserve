@@ -218,7 +218,7 @@ mod head_method_util {
             self,
             _connection: Connection<R>,
             _writer: W,
-        ) -> Result<(), crate::io::WriteAllError<W::Error>> {
+        ) -> Result<(), W::Error> {
             Ok(())
         }
     }
@@ -615,7 +615,7 @@ impl<CurrentPathParameters: PushPathSegmentParameter<P>, P: FromStr>
         f: F,
     ) -> Result<T, CurrentPathParameters> {
         let Some((segment, path)) = path.split_first_segment() else {
-            return Err(current_path_parameters)
+            return Err(current_path_parameters);
         };
 
         match segment

@@ -175,17 +175,21 @@ async fn main(spawner: embassy_executor::Spawner) {
 
     control.start_ap_wpa2(WIFI_SSID, WIFI_PASSWORD, 8).await;
 
-    let app = make_static!(picoserve::Router::new()
-        .route("/", get(|| async move { "Hello World" }))
-        .route(
-            ("/set", parse_path_segment()),
-            get(
-                |led_is_on, State(SharedControl(control)): State::<SharedControl>| async move {
-                    control.lock().await.gpio_set(0, led_is_on).await;
-                    DebugValue(led_is_on)
-                }
+    fn make_app() -> picoserve::Router<AppRouter, AppState> {
+        picoserve::Router::new()
+            .route("/", get(|| async move { "Hello World" }))
+            .route(
+                ("/set", parse_path_segment()),
+                get(
+                    |led_is_on, State(SharedControl(control)): State<SharedControl>| async move {
+                        control.lock().await.gpio_set(0, led_is_on).await;
+                        DebugValue(led_is_on)
+                    },
+                ),
             )
-        ));
+    }
+
+    let app = make_static!(make_app());
 
     let config = make_static!(picoserve::Config {
         start_read_request_timeout: Some(Duration::from_secs(5)),

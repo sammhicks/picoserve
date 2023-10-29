@@ -8,26 +8,17 @@ use super::status;
 
 /// Types which can be used as the data of an event.
 pub trait EventData {
-    async fn write_to<W: Write>(
-        self,
-        writer: &mut W,
-    ) -> Result<(), crate::io::WriteAllError<W::Error>>;
+    async fn write_to<W: Write>(self, writer: &mut W) -> Result<(), W::Error>;
 }
 
 impl<'a> EventData for &'a str {
-    async fn write_to<W: Write>(
-        self,
-        writer: &mut W,
-    ) -> Result<(), crate::io::WriteAllError<W::Error>> {
+    async fn write_to<W: Write>(self, writer: &mut W) -> Result<(), W::Error> {
         writer.write_all(self.as_bytes()).await
     }
 }
 
 impl<T: serde::Serialize> EventData for super::json::Json<T> {
-    async fn write_to<W: Write>(
-        self,
-        writer: &mut W,
-    ) -> Result<(), crate::io::WriteAllError<W::Error>> {
+    async fn write_to<W: Write>(self, writer: &mut W) -> Result<(), W::Error> {
         self.do_write_to(writer).await
     }
 }
@@ -39,13 +30,10 @@ pub struct EventWriter<W: Write> {
 
 impl<W: Write> EventWriter<W> {
     /// Send an event with an empty name, keeping the connection alive.
-    pub async fn write_keepalive(&mut self) -> Result<(), crate::io::WriteAllError<W::Error>> {
+    pub async fn write_keepalive(&mut self) -> Result<(), W::Error> {
         self.writer.write_all(b":\n\n").await?;
 
-        self.writer
-            .flush()
-            .await
-            .map_err(crate::io::WriteAllError::Other)
+        self.writer.flush().await
     }
 
     /// Send an event with a given name and data.
@@ -53,7 +41,7 @@ impl<W: Write> EventWriter<W> {
         &mut self,
         event: &str,
         data: T,
-    ) -> Result<(), crate::io::WriteAllError<W::Error>> {
+    ) -> Result<(), W::Error> {
         self.writer.write_all(b"event:").await?;
         self.writer.write_all(event.as_bytes()).await?;
         self.writer.write_all(b"\n").await?;
@@ -64,19 +52,13 @@ impl<W: Write> EventWriter<W> {
 
         self.writer.write_all(b"\n").await?;
 
-        self.writer
-            .flush()
-            .await
-            .map_err(crate::io::WriteAllError::Other)
+        self.writer.flush().await
     }
 }
 
 /// Implement this trait to generate events to send to the client.
 pub trait EventSource {
-    async fn write_events<W: Write>(
-        self,
-        writer: EventWriter<W>,
-    ) -> Result<(), crate::io::WriteAllError<W::Error>>;
+    async fn write_events<W: Write>(self, writer: EventWriter<W>) -> Result<(), W::Error>;
 }
 
 /// A stream of Events sent by the server. Return an instance of this from the handler function.
@@ -87,16 +69,14 @@ impl<S: EventSource> super::Body for EventStream<S> {
         self,
         connection: super::Connection<R>,
         mut writer: W,
-    ) -> Result<(), crate::io::WriteAllError<W::Error>> {
+    ) -> Result<(), W::Error> {
         writer.flush().await?;
 
         let mut disconnection = core::pin::pin!(connection.wait_for_disconnection());
         let mut write_events = core::pin::pin!(self.0.write_events(EventWriter { writer }));
 
         core::future::poll_fn(|cx| match disconnection.as_mut().poll(cx) {
-            core::task::Poll::Ready(result) => {
-                core::task::Poll::Ready(result.map_err(crate::io::WriteAllError::Other))
-            }
+            core::task::Poll::Ready(result) => core::task::Poll::Ready(result),
             core::task::Poll::Pending => write_events.as_mut().poll(cx),
         })
         .await

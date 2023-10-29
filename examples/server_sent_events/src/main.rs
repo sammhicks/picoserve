@@ -45,7 +45,7 @@ impl response::sse::EventSource for Events {
     async fn write_events<W: picoserve::io::Write>(
         mut self,
         mut writer: response::sse::EventWriter<W>,
-    ) -> Result<(), picoserve::io::WriteAllError<W::Error>> {
+    ) -> Result<(), W::Error> {
         loop {
             match tokio::time::timeout(std::time::Duration::from_secs(15), self.0.changed()).await {
                 Ok(Ok(())) => {

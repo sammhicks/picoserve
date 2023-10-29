@@ -49,7 +49,7 @@ pub trait ForEachHeader {
         &mut self,
         name: &str,
         value: Value,
-    ) -> Result<(), crate::io::WriteAllError<Self::Error>>;
+    ) -> Result<(), Self::Error>;
 }
 
 struct BorrowedForEachHeader<'a, F: ForEachHeader>(&'a mut F);
@@ -61,34 +61,25 @@ impl<'a, F: ForEachHeader> ForEachHeader for BorrowedForEachHeader<'a, F> {
         &mut self,
         name: &str,
         value: Value,
-    ) -> Result<(), crate::io::WriteAllError<F::Error>> {
+    ) -> Result<(), F::Error> {
         self.0.call(name, value).await
     }
 }
 
 /// The HTTP response headers.
 pub trait HeadersIter {
-    async fn for_each_header<F: ForEachHeader>(
-        self,
-        f: F,
-    ) -> Result<(), crate::io::WriteAllError<F::Error>>;
+    async fn for_each_header<F: ForEachHeader>(self, f: F) -> Result<(), F::Error>;
 }
 
 impl<'a, V: fmt::Display> HeadersIter for (&'a str, V) {
-    async fn for_each_header<F: ForEachHeader>(
-        self,
-        mut f: F,
-    ) -> Result<(), crate::io::WriteAllError<F::Error>> {
+    async fn for_each_header<F: ForEachHeader>(self, mut f: F) -> Result<(), F::Error> {
         let (name, value) = self;
         f.call(name, value).await
     }
 }
 
 impl<'a, V: fmt::Display, const N: usize> HeadersIter for [(&'a str, V); N] {
-    async fn for_each_header<F: ForEachHeader>(
-        self,
-        mut f: F,
-    ) -> Result<(), crate::io::WriteAllError<F::Error>> {
+    async fn for_each_header<F: ForEachHeader>(self, mut f: F) -> Result<(), F::Error> {
         for (name, value) in self {
             f.call(name, value).await?;
         }
@@ -98,10 +89,7 @@ impl<'a, V: fmt::Display, const N: usize> HeadersIter for [(&'a str, V); N] {
 }
 
 impl<T: HeadersIter> HeadersIter for Option<T> {
-    async fn for_each_header<F: ForEachHeader>(
-        self,
-        f: F,
-    ) -> Result<(), crate::io::WriteAllError<F::Error>> {
+    async fn for_each_header<F: ForEachHeader>(self, f: F) -> Result<(), F::Error> {
         if let Some(value) = self {
             value.for_each_header(f).await
         } else {
@@ -113,10 +101,7 @@ impl<T: HeadersIter> HeadersIter for Option<T> {
 struct NoHeaders;
 
 impl HeadersIter for NoHeaders {
-    async fn for_each_header<F: ForEachHeader>(
-        self,
-        _f: F,
-    ) -> Result<(), crate::io::WriteAllError<F::Error>> {
+    async fn for_each_header<F: ForEachHeader>(self, _f: F) -> Result<(), F::Error> {
         Ok(())
     }
 }
@@ -124,10 +109,7 @@ impl HeadersIter for NoHeaders {
 struct HeadersChain<A: HeadersIter, B: HeadersIter>(A, B);
 
 impl<A: HeadersIter, B: HeadersIter> HeadersIter for HeadersChain<A, B> {
-    async fn for_each_header<F: ForEachHeader>(
-        self,
-        mut f: F,
-    ) -> Result<(), crate::io::WriteAllError<F::Error>> {
+    async fn for_each_header<F: ForEachHeader>(self, mut f: F) -> Result<(), F::Error> {
         let Self(a, b) = self;
         a.for_each_header(BorrowedForEachHeader(&mut f)).await?;
         b.for_each_header(BorrowedForEachHeader(&mut f)).await?;
@@ -141,7 +123,7 @@ pub trait Body {
         self,
         connection: Connection<R>,
         writer: W,
-    ) -> Result<(), crate::io::WriteAllError<W::Error>>;
+    ) -> Result<(), W::Error>;
 }
 
 struct NoBody;
@@ -151,7 +133,7 @@ impl Body for NoBody {
         self,
         _connection: Connection<R>,
         _writer: W,
-    ) -> Result<(), crate::io::WriteAllError<W::Error>> {
+    ) -> Result<(), W::Error> {
         Ok(())
     }
 }
@@ -169,7 +151,7 @@ pub trait Content {
         self,
         connection: Connection<R>,
         writer: W,
-    ) -> Result<(), crate::io::WriteAllError<W::Error>>;
+    ) -> Result<(), W::Error>;
 }
 
 #[doc(hidden)]
@@ -180,7 +162,7 @@ impl<C: Content> Body for ContentBody<C> {
         self,
         connection: Connection<R>,
         writer: W,
-    ) -> Result<(), crate::io::WriteAllError<W::Error>> {
+    ) -> Result<(), W::Error> {
         self.0.write_content(connection, writer).await
     }
 }
@@ -198,7 +180,7 @@ impl<'a> Content for &'a [u8] {
         self,
         _connection: Connection<R>,
         mut writer: W,
-    ) -> Result<(), crate::io::WriteAllError<W::Error>> {
+    ) -> Result<(), W::Error> {
         writer.write_all(self).await
     }
 }
@@ -216,7 +198,7 @@ impl<'a> Content for &'a str {
         self,
         connection: Connection<R>,
         writer: W,
-    ) -> Result<(), crate::io::WriteAllError<W::Error>> {
+    ) -> Result<(), W::Error> {
         self.as_bytes().write_content(connection, writer).await
     }
 }
@@ -236,7 +218,7 @@ impl<'a> Content for fmt::Arguments<'a> {
         self,
         _connection: Connection<R>,
         mut writer: W,
-    ) -> Result<(), crate::io::WriteAllError<W::Error>> {
+    ) -> Result<(), W::Error> {
         use crate::io::WriteExt;
         write!(writer, "{}", self).await
     }
@@ -257,10 +239,7 @@ impl BodyHeaders {
 }
 
 impl HeadersIter for BodyHeaders {
-    async fn for_each_header<F: ForEachHeader>(
-        self,
-        mut f: F,
-    ) -> Result<(), crate::io::WriteAllError<F::Error>> {
+    async fn for_each_header<F: ForEachHeader>(self, mut f: F) -> Result<(), F::Error> {
         f.call("Content-Type", self.content_type).await?;
         f.call("Content-Length", self.content_length).await?;
         Ok(())
@@ -339,15 +318,19 @@ impl<R: Read, W: Write<Error = R::Error>> ResponseStream<R, W> {
     pub fn new(connection: Connection<R>, writer: W) -> Self {
         Self { connection, writer }
     }
+}
 
-    async fn do_write_response(
+impl<R: Read, W: Write<Error = R::Error>> ResponseWriter for ResponseStream<R, W> {
+    type Error = W::Error;
+
+    async fn write_response<H: HeadersIter, B: Body>(
         mut self,
         Response {
             status_code,
             headers,
             body,
-        }: Response<impl HeadersIter, impl Body>,
-    ) -> Result<ResponseSent, crate::io::WriteAllError<W::Error>> {
+        }: Response<H, B>,
+    ) -> Result<ResponseSent, W::Error> {
         struct HeadersWriter<WW: Write>(WW);
 
         impl<WW: Write> ForEachHeader for HeadersWriter<WW> {
@@ -357,7 +340,7 @@ impl<R: Read, W: Write<Error = R::Error>> ResponseStream<R, W> {
                 &mut self,
                 name: &str,
                 value: Value,
-            ) -> Result<(), crate::io::WriteAllError<Self::Error>> {
+            ) -> Result<(), Self::Error> {
                 write!(self.0, "{name}: {value}\r\n").await
             }
         }
@@ -374,27 +357,7 @@ impl<R: Read, W: Write<Error = R::Error>> ResponseStream<R, W> {
         body.write_response_body(self.connection, &mut self.writer)
             .await?;
 
-        self.writer
-            .flush()
-            .await
-            .map(ResponseSent)
-            .map_err(crate::io::WriteAllError::Other)
-    }
-}
-
-impl<R: Read, W: Write<Error = R::Error>> ResponseWriter for ResponseStream<R, W> {
-    type Error = W::Error;
-
-    async fn write_response<H: HeadersIter, B: Body>(
-        self,
-        response: Response<H, B>,
-    ) -> Result<ResponseSent, W::Error> {
-        self.do_write_response(response)
-            .await
-            .or_else(|err| match err {
-                crate::io::WriteAllError::WriteZero => Ok(ResponseSent(())),
-                crate::io::WriteAllError::Other(err) => Err(err),
-            })
+        self.writer.flush().await.map(ResponseSent)
     }
 }
 
