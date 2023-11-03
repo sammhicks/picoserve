@@ -64,6 +64,20 @@ pub trait EventSource {
 /// A stream of Events sent by the server. Return an instance of this from the handler function.
 pub struct EventStream<S: EventSource>(pub S);
 
+impl<S: EventSource> EventStream<S> {
+    /// Convert SSE stream into a [super::Response] with a status code of "OK"
+    pub fn into_response(self) -> super::Response<impl super::HeadersIter, impl super::Body> {
+        super::Response {
+            status_code: status::OK,
+            headers: [
+                ("Cache-Control", "no-cache"),
+                ("Content-Type", "text/event-stream"),
+            ],
+            body: self,
+        }
+    }
+}
+
 impl<S: EventSource> super::Body for EventStream<S> {
     async fn write_response_body<R: Read, W: Write<Error = R::Error>>(
         self,
@@ -88,16 +102,7 @@ impl<S: EventSource> super::IntoResponse for EventStream<S> {
         self,
         response_writer: W,
     ) -> Result<crate::ResponseSent, W::Error> {
-        response_writer
-            .write_response(super::Response {
-                status_code: status::OK,
-                headers: [
-                    ("Cache-Control", "no-cache"),
-                    ("Content-Type", "text/event-stream"),
-                ],
-                body: self,
-            })
-            .await
+        response_writer.write_response(self.into_response()).await
     }
 }
 

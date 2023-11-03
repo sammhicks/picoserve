@@ -91,6 +91,12 @@ impl File {
     pub const fn javascript(body: &'static str) -> Self {
         Self::with_content_type("application/javascript; charset=utf-8", body.as_bytes())
     }
+
+    /// Convert into a [super::Response] with a status code of "OK"
+    pub fn into_response(self) -> super::Response<impl super::HeadersIter, impl super::Body> {
+        let etag = self.etag.clone();
+        super::Response::ok(self).with_headers(etag)
+    }
 }
 
 impl<State, PathParameters> crate::routing::RequestHandler<State, PathParameters> for File {
@@ -144,7 +150,7 @@ impl super::IntoResponse for File {
         self,
         response_writer: W,
     ) -> Result<ResponseSent, W::Error> {
-        (self.etag.clone(), self).write_to(response_writer).await
+        response_writer.write_response(self.into_response()).await
     }
 }
 

@@ -465,7 +465,7 @@ impl<T: serde::Serialize> JsonStream<T> {
 
 struct JsonBody<T>(JsonStream<T>);
 
-impl<T: serde::Serialize> crate::response::Content for JsonBody<T> {
+impl<T: serde::Serialize> super::Content for JsonBody<T> {
     fn content_type(&self) -> &'static str {
         "application/json"
     }
@@ -474,7 +474,7 @@ impl<T: serde::Serialize> crate::response::Content for JsonBody<T> {
         match &self.0 {
             JsonStream::Short { buffer } => buffer.data.len(),
             JsonStream::Long { buffer: _, value } => {
-                let mut content_length = crate::response::MeasureFormatSize(0);
+                let mut content_length = super::MeasureFormatSize(0);
                 value
                     .serialize(Serializer(&mut content_length))
                     .map_or(0, |()| content_length.0)
@@ -484,7 +484,7 @@ impl<T: serde::Serialize> crate::response::Content for JsonBody<T> {
 
     async fn write_content<R: crate::io::Read, W: Write>(
         self,
-        _connection: crate::response::Connection<R>,
+        _connection: super::Connection<R>,
         mut writer: W,
     ) -> Result<(), W::Error> {
         self.0.write_json_value(&mut writer).await
@@ -498,16 +498,19 @@ impl<T: serde::Serialize> Json<T> {
     pub(crate) async fn do_write_to<W: Write>(&self, writer: &mut W) -> Result<(), W::Error> {
         JsonStream::new(&self.0).write_json_value(writer).await
     }
+
+    /// Convert JSON payload into a [super::Response] with a status code of "OK"
+    pub fn into_response(self) -> super::Response<impl super::HeadersIter, impl super::Body> {
+        super::Response::ok(JsonBody(JsonStream::new(self.0)))
+    }
 }
 
-impl<T: serde::Serialize> crate::response::IntoResponse for Json<T> {
-    async fn write_to<W: crate::response::ResponseWriter>(
+impl<T: serde::Serialize> super::IntoResponse for Json<T> {
+    async fn write_to<W: super::ResponseWriter>(
         self,
         response_writer: W,
     ) -> Result<crate::ResponseSent, W::Error> {
-        crate::response::Response::ok(JsonBody(JsonStream::new(self.0)))
-            .write_to(response_writer)
-            .await
+        response_writer.write_response(self.into_response()).await
     }
 }
 

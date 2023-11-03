@@ -1,4 +1,24 @@
 //! HTTP response types.
+//!
+//! Anything that implements [IntoResponse] can be returned from handlers, such as
+//!
+//! + [Response]
+//! + [Json]
+//! + [Redirect]
+//! + `(("HeaderName", "HeaderValue"), impl Content)`
+//! + `(("HeaderName0", "HeaderValue0"), ("HeaderName1", "HeaderValue1"), impl Content)`
+//! + `([("HeaderName0", "HeaderValue0"), ("HeaderName1", "HeaderValue1")], impl Content)`
+//! + `([StatusCode], impl Content)`
+//! + `([StatusCode], ("HeaderName", "HeaderValue"), impl Content)`
+//! + Tuples consisting of:
+//!     1. Optionally, a status code. If not provided, a status code of [status::OK] is used
+//!     2. A number of values which implement [HeadersIter], such as:
+//!         + `(&str, impl Display)`
+//!         + `Option<impl HeadersIter>`
+//!         + `[impl HeadersIter; N]`
+//!     3. A value which implements [Content]
+//!
+//! For a complete list, see [IntoResponse].
 
 use core::fmt;
 
@@ -78,10 +98,12 @@ impl<'a, V: fmt::Display> HeadersIter for (&'a str, V) {
     }
 }
 
-impl<'a, V: fmt::Display, const N: usize> HeadersIter for [(&'a str, V); N] {
+impl<H: HeadersIter, const N: usize> HeadersIter for [H; N] {
     async fn for_each_header<F: ForEachHeader>(self, mut f: F) -> Result<(), F::Error> {
-        for (name, value) in self {
-            f.call(name, value).await?;
+        for headers in self {
+            headers
+                .for_each_header(BorrowedForEachHeader(&mut f))
+                .await?;
         }
 
         Ok(())
@@ -224,7 +246,8 @@ impl<'a> Content for fmt::Arguments<'a> {
     }
 }
 
-struct BodyHeaders {
+#[doc(hidden)]
+pub struct BodyHeaders {
     content_type: &'static str,
     content_length: usize,
 }
@@ -272,6 +295,20 @@ impl<B: Content> Response<BodyHeaders, ContentBody<B>> {
 impl<H: HeadersIter, B: Body> Response<H, B> {
     pub fn status_code(&self) -> StatusCode {
         self.status_code
+    }
+
+    pub fn with_status_code(self, status_code: StatusCode) -> Self {
+        let Self {
+            status_code: _,
+            headers,
+            body,
+        } = self;
+
+        Self {
+            status_code,
+            headers,
+            body,
+        }
     }
 
     /// Add additional headers to a response.
