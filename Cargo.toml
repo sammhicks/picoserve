@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
+    "examples/custom_extractor",
     "examples/form",
     "examples/hello_world",
     "examples/layers",
@@ -31,7 +32,7 @@ categories = ["asynchronous", "network-programming", "web-programming::http-serv
 data-encoding = { version = "2.4.0", default-features = false }
 embedded-io-async = "0.6.0"
 futures-util = { version = "0.3.28", default-features = false }
-heapless = { version = "0.7.16", features = ["serde"] }
+heapless = { version = "0.8.0", features = ["serde"] }
 lhash = { version = "1.0.1", features = ["sha1"] }
 log = { version = "0.4.19", default-features = false }
 ryu = "1.0.14"

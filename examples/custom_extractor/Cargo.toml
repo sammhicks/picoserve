@@ -1,5 +1,5 @@
 [package]
-name = "form"
+name = "custom_extractor"
 version = "0.1.0"
 edition = "2021"
 
@@ -7,7 +7,6 @@ edition = "2021"
 
 [dependencies]
 anyhow = "1.0.72"
-heapless = { version = "0.8.0", features = ["serde"] }
 picoserve = { path = "../..", features = ["tokio"] }
 serde = { version = "1.0.183", features = ["derive"] }
 tokio = { version = "1.31.0", features = ["rt", "io-util", "net", "time", "macros"] }

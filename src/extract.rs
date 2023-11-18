@@ -1,4 +1,11 @@
 //! Types and traits for extracting data from requests.
+//!
+//! A handler function is an async function that takes any number of "extractors" as arguments. An extractor is a type that implements [FromRequest].
+//!
+//! For example:
+//!
+//! + [State<T>] will extract part or all of the application state.
+//! + [Form<T: serde::DeserializeOwned>] will extract the body of a request as Form data.
 
 use crate::{request::Request, response::status, response::IntoResponse, ResponseSent};
 
@@ -11,6 +18,20 @@ pub trait FromRequest<State>: Sized {
 
 /// Extractor that deserializes query strings into some type.
 pub struct Query<T: serde::de::DeserializeOwned>(pub T);
+
+impl<T: serde::de::DeserializeOwned> core::ops::Deref for Query<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl<T: serde::de::DeserializeOwned> core::ops::DerefMut for Query<T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
 
 /// Rejection used for [Query].
 pub enum QueryRejection {
@@ -52,6 +73,20 @@ impl<State, T: serde::de::DeserializeOwned> FromRequest<State> for Query<T> {
 
 /// URL encoded extractor.
 pub struct Form<T: serde::de::DeserializeOwned>(pub T);
+
+impl<T: serde::de::DeserializeOwned> core::ops::Deref for Form<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl<T: serde::de::DeserializeOwned> core::ops::DerefMut for Form<T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
 
 /// Rejection used for [Form].
 pub enum FormRejection {
