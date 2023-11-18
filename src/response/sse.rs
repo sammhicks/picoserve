@@ -1,4 +1,4 @@
-//! Server-Sent Events
+//! Server-Sent Events. See [server_sent_events](https://github.com/sammhicks/picoserve/blob/main/examples/server_sent_events/src/main.rs) for usage example.
 
 use core::future::Future;
 

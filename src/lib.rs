@@ -5,6 +5,7 @@
 //!
 //! It was designed with [embassy](https://embassy.dev/) on the Raspberry Pi Pico W in mind, but should work with other embedded runtimes and hardware.
 //!
+//! For examples on how to use picoserve, see the [examples](https://github.com/sammhicks/picoserve/tree/main/examples) directory
 
 pub mod extract;
 pub mod io;

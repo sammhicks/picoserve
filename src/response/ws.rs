@@ -1,4 +1,4 @@
-//! Web Sockets
+//! Web Sockets. See [web_sockets](https://github.com/sammhicks/picoserve/blob/main/examples/web_sockets/src/main.rs) for usage example.
 
 use crate::io::{Read, Write};
 
