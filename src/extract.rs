@@ -4,8 +4,8 @@
 //!
 //! For example:
 //!
-//! + [State<T>] will extract part or all of the application state.
-//! + [Form<T: serde::DeserializeOwned>] will extract the body of a request as Form data.
+//! + [`State<T>`] will extract part or all of the application state.
+//! + [`Form<T: serde::DeserializeOwned>`] will extract the body of a request as Form data.
 //!
 //! For an example of how to implement [FromRequest], see [custom_extractor](https://github.com/sammhicks/picoserve/blob/main/examples/custom_extractor/src/main.rs)
 

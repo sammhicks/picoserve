@@ -107,6 +107,7 @@ async fn main() -> anyhow::Result<()> {
     let config = picoserve::Config {
         start_read_request_timeout: Some(Duration::from_secs(5)),
         read_request_timeout: Some(Duration::from_secs(1)),
+        write_timeout: Some(Duration::from_secs(1)),
     };
 
     let socket = tokio::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 8000)).await?;

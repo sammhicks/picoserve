@@ -28,10 +28,24 @@ pub struct ResponseSent(());
 
 /// Errors arising while handling a request.
 #[derive(Debug)]
-pub enum Error<E> {
+pub enum Error<E: embedded_io_async::Error> {
     ReadTimeout,
     Read(request::ReadError<E>),
     Write(E),
+    WriteTimeout,
+}
+
+impl<E: embedded_io_async::Error> embedded_io_async::Error for Error<E> {
+    fn kind(&self) -> embedded_io_async::ErrorKind {
+        match self {
+            Error::ReadTimeout | Error::WriteTimeout => embedded_io_async::ErrorKind::TimedOut,
+            Error::Read(request::ReadError::BadRequestLine)
+            | Error::Read(request::ReadError::UnexpectedEof) => {
+                embedded_io_async::ErrorKind::InvalidData
+            }
+            Error::Read(request::ReadError::Other(err)) | Error::Write(err) => err.kind(),
+        }
+    }
 }
 
 /// Server Configuration.
@@ -39,6 +53,39 @@ pub enum Error<E> {
 pub struct Config<D> {
     pub start_read_request_timeout: Option<D>,
     pub read_request_timeout: Option<D>,
+    pub write_timeout: Option<D>,
+}
+
+/// Maps Read errors to [Error]s
+struct MapReadErrorReader<R: embedded_io_async::Read>(R);
+
+impl<R: embedded_io_async::Read> embedded_io_async::ErrorType for MapReadErrorReader<R> {
+    type Error = Error<R::Error>;
+}
+
+impl<R: embedded_io_async::Read> embedded_io_async::Read for MapReadErrorReader<R> {
+    async fn read(&mut self, buf: &mut [u8]) -> Result<usize, Self::Error> {
+        self.0
+            .read(buf)
+            .await
+            .map_err(|err| Error::Read(request::ReadError::Other(err)))
+    }
+
+    async fn read_exact(
+        &mut self,
+        buf: &mut [u8],
+    ) -> Result<(), embedded_io_async::ReadExactError<Self::Error>> {
+        self.0.read_exact(buf).await.map_err(|err| match err {
+            embedded_io_async::ReadExactError::UnexpectedEof => {
+                embedded_io_async::ReadExactError::UnexpectedEof
+            }
+            embedded_io_async::ReadExactError::Other(err) => {
+                embedded_io_async::ReadExactError::Other(Error::Read(request::ReadError::Other(
+                    err,
+                )))
+            }
+        })
+    }
 }
 
 async fn do_serve<
@@ -52,10 +99,12 @@ async fn do_serve<
     mut timer: T,
     config: &Config<T::Duration>,
     buffer: &mut [u8],
-    mut reader: R,
+    reader: R,
     mut writer: W,
     state: &State,
 ) -> Result<u64, Error<W::Error>> {
+    let mut reader = MapReadErrorReader(reader);
+
     for request_count in 0.. {
         let mut reader = match timer
             .run_with_maybe_timeout(
@@ -66,7 +115,7 @@ async fn do_serve<
         {
             Ok(Ok(Some(reader))) => reader,
             Ok(Ok(None)) | Err(_) => return Ok(request_count),
-            Ok(Err(err)) => return Err(Error::Read(request::ReadError::Other(err))),
+            Ok(Err(err)) => return Err(err),
         };
 
         match timer
@@ -74,6 +123,12 @@ async fn do_serve<
             .await
         {
             Ok(Ok((request, connection))) => {
+                let mut writer = time::WriteWithTimeout {
+                    inner: &mut writer,
+                    timer: &mut timer,
+                    timeout_duration: config.write_timeout.clone(),
+                };
+
                 router
                     .call_path_router(
                         state,
@@ -82,10 +137,19 @@ async fn do_serve<
                         request,
                         response::ResponseStream::new(connection, &mut writer),
                     )
-                    .await
-                    .map_err(Error::Write)?;
+                    .await?;
             }
-            Ok(Err(err)) => return Err(Error::Read(err)),
+            Ok(Err(err)) => {
+                return Err(match err {
+                    request::ReadError::BadRequestLine => {
+                        Error::Read(request::ReadError::BadRequestLine)
+                    }
+                    request::ReadError::UnexpectedEof => {
+                        Error::Read(request::ReadError::UnexpectedEof)
+                    }
+                    request::ReadError::Other(err) => err,
+                })
+            }
             Err(..) => return Err(Error::ReadTimeout),
         }
     }

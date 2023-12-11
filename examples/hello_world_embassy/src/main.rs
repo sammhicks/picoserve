@@ -194,6 +194,7 @@ async fn main(spawner: embassy_executor::Spawner) {
     let config = make_static!(picoserve::Config {
         start_read_request_timeout: Some(Duration::from_secs(5)),
         read_request_timeout: Some(Duration::from_secs(1)),
+        write_timeout: Some(Duration::from_secs(1)),
     });
 
     let shared_control = SharedControl(make_static!(Mutex::new(control)));
