@@ -118,7 +118,7 @@ impl<'a, W: fmt::Write> serde::Serializer for Serializer<'a, W> {
     type SerializeStructVariant = SerializeCompound<'a, W>;
 
     fn serialize_bool(mut self, v: bool) -> Result<Self::Ok, Self::Error> {
-        write!(self, "{}", if v { "true" } else { "false" })
+        self.write_str(if v { "true" } else { "false" })
     }
 
     fn serialize_f32(self, v: f32) -> Result<Self::Ok, Self::Error> {
@@ -141,8 +141,8 @@ impl<'a, W: fmt::Write> serde::Serializer for Serializer<'a, W> {
         self.serialize_str(value.encode_utf8(&mut [0; 4]))
     }
 
-    fn serialize_str(mut self, s: &str) -> Result<Self::Ok, Self::Error> {
-        write!(self, "{}", EscapedString(s))
+    fn serialize_str(self, s: &str) -> Result<Self::Ok, Self::Error> {
+        self.collect_str(s)
     }
 
     fn serialize_bytes(self, v: &[u8]) -> Result<Self::Ok, Self::Error> {
@@ -150,7 +150,7 @@ impl<'a, W: fmt::Write> serde::Serializer for Serializer<'a, W> {
     }
 
     fn serialize_none(mut self) -> Result<Self::Ok, Self::Error> {
-        write!(self, "null")
+        self.write_str("null")
     }
 
     fn serialize_some<T: serde::Serialize + ?Sized>(
@@ -282,7 +282,8 @@ impl<'a, W: fmt::Write> serde::ser::SerializeSeq for SerializeCompound<'a, W> {
     }
 
     fn end(mut self) -> Result<Self::Ok, Self::Error> {
-        write!(self.serializer, "]")
+        self.serializer
+            .write_str(if self.is_first { "[]" } else { "]" })
     }
 }
 
@@ -330,7 +331,8 @@ impl<'a, W: fmt::Write> serde::ser::SerializeTupleVariant for SerializeCompound<
     }
 
     fn end(mut self) -> Result<Self::Ok, Self::Error> {
-        write!(self.serializer, "]}}")
+        self.serializer
+            .write_str(if self.is_first { "[]}" } else { "]}" })
     }
 }
 
@@ -344,7 +346,7 @@ impl<'a, W: fmt::Write> serde::ser::SerializeMap for SerializeCompound<'a, W> {
 
         self.is_first = false;
 
-        write!(self.serializer, "[")?;
+        self.serializer.write_str("[")?;
 
         key.serialize(self.serializer.reborrow())?;
 
@@ -355,15 +357,16 @@ impl<'a, W: fmt::Write> serde::ser::SerializeMap for SerializeCompound<'a, W> {
         &mut self,
         value: &T,
     ) -> Result<(), Self::Error> {
-        write!(self.serializer, ",")?;
+        self.serializer.write_str(",")?;
         value.serialize(self.serializer.reborrow())?;
-        write!(self.serializer, "]")?;
+        self.serializer.write_str("]")?;
 
         Ok(())
     }
 
     fn end(mut self) -> Result<Self::Ok, Self::Error> {
-        write!(self.serializer, "]")
+        self.serializer
+            .write_str(if self.is_first { "[]" } else { "]" })
     }
 }
 
@@ -389,7 +392,8 @@ impl<'a, W: fmt::Write> serde::ser::SerializeStruct for SerializeCompound<'a, W>
     }
 
     fn end(mut self) -> Result<Self::Ok, Self::Error> {
-        self.serializer.write_str("}")
+        self.serializer
+            .write_str(if self.is_first { "{}" } else { "}" })
     }
 }
 
@@ -406,7 +410,8 @@ impl<'a, W: fmt::Write> serde::ser::SerializeStructVariant for SerializeCompound
     }
 
     fn end(mut self) -> Result<Self::Ok, Self::Error> {
-        self.serializer.write_str("}}")
+        self.serializer
+            .write_str(if self.is_first { "{}}" } else { "}}" })
     }
 }
 
