@@ -429,8 +429,8 @@ impl From<super::url_encoded::DeserializationError> for BadUrlEncodedForm {
     }
 }
 
-struct DeserializeUrlEncodedForm<'r> {
-    pairs: core::str::Split<'r, char>,
+struct DeserializeUrlEncodedForm<'r, T> {
+    pairs: T,
     value: (&'r str, UrlEncodedString<'r>),
 }
 
@@ -438,12 +438,14 @@ pub fn deserialize_url_encoded_form<T: serde::de::DeserializeOwned>(
     form: &str,
 ) -> Result<T, BadUrlEncodedForm> {
     T::deserialize(DeserializeUrlEncodedForm {
-        pairs: form.split('&'),
+        pairs: form.split('&').filter(|s| !s.is_empty()),
         value: ("", UrlEncodedString("")),
     })
 }
 
-impl<'de> serde::de::Deserializer<'de> for DeserializeUrlEncodedForm<'de> {
+impl<'de, T: Iterator<Item = &'de str>> serde::de::Deserializer<'de>
+    for DeserializeUrlEncodedForm<'de, T>
+{
     type Error = BadUrlEncodedForm;
 
     fn deserialize_any<V: serde::de::Visitor<'de>>(
@@ -460,7 +462,9 @@ impl<'de> serde::de::Deserializer<'de> for DeserializeUrlEncodedForm<'de> {
     }
 }
 
-impl<'de> serde::de::MapAccess<'de> for DeserializeUrlEncodedForm<'de> {
+impl<'de, T: Iterator<Item = &'de str>> serde::de::MapAccess<'de>
+    for DeserializeUrlEncodedForm<'de, T>
+{
     type Error = BadUrlEncodedForm;
 
     fn next_key_seed<K>(&mut self, seed: K) -> Result<Option<K::Value>, Self::Error>
