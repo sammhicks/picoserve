@@ -201,7 +201,7 @@ struct NamedDecodeError<'a> {
 }
 
 /// A url-encoded string.
-#[derive(Clone, Copy, serde::Deserialize)]
+#[derive(Clone, Copy, Default, serde::Deserialize)]
 #[serde(from = "UrlEncodedRepresentation")]
 pub struct UrlEncodedString<'a>(pub &'a str);
 
@@ -434,8 +434,8 @@ struct DeserializeUrlEncodedForm<'r, T> {
     value: (&'r str, UrlEncodedString<'r>),
 }
 
-pub fn deserialize_url_encoded_form<T: serde::de::DeserializeOwned>(
-    form: &str,
+pub fn deserialize_form<T: serde::de::DeserializeOwned>(
+    UrlEncodedString(form): UrlEncodedString,
 ) -> Result<T, BadUrlEncodedForm> {
     T::deserialize(DeserializeUrlEncodedForm {
         pairs: form.split('&').filter(|s| !s.is_empty()),
