@@ -16,7 +16,7 @@ exclude = [
 
 [package]
 name = "picoserve"
-version = "0.3.0"
+version = "0.4.0"
 authors = ["Samuel Hicks"]
 edition = "2021"
 description = "An async no_std HTTP server suitable for bare-metal environments"
