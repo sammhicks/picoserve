@@ -4,6 +4,7 @@ members = [
     "examples/custom_extractor",
     "examples/form",
     "examples/hello_world",
+    "examples/hello_world_single_thread",
     "examples/layers",
     "examples/path_parameters",
     "examples/server_sent_events",
@@ -16,7 +17,7 @@ exclude = [
 
 [package]
 name = "picoserve"
-version = "0.5.0"
+version = "0.6.0"
 authors = ["Samuel Hicks"]
 edition = "2021"
 rust-version = "1.75"

@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - 2024-01-02
+
+### Breaking
+
+- Changed [Config](https://docs.rs/picoserve/0.6.0/picoserve/struct.Config.html) structure
+  - Moved timeouts to separate structure
+  - Added `connection` field, describing behaviour after the response has been sent
+- Defaults to closing connection after the response has been sent
+  - To preserve previous behaviour, which requires multiple concurrent sockets accepting connections, call `keep_connection_alive` on [Config](https://docs.rs/picoserve/0.6.0/picoserve/struct.Config.html)
+
+### Changes
+
+- Allow configuration of behaviour after the response has been sent, i.e. should the TCP connection be closed or kept alive?
+  - If the request does not include the "Connection" header or it is set to "close", the response includes a header of "Connection: close", and the connection is closed after the response has been sent. Otherwise, the response includes a header of "Connection: keep-alive", and the connection is kept alive after the response has been sent, allowing additional requests to be made on the same TCP connection.
+
 ## [0.5.0] - 2024-01-02
 
 picoserve now runs on stable!

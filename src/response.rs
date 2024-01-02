@@ -349,11 +349,16 @@ pub trait ResponseWriter: Sized {
 pub(crate) struct ResponseStream<R: Read, W: Write> {
     connection: Connection<R>,
     writer: W,
+    connection_header: super::KeepAlive,
 }
 
 impl<R: Read, W: Write<Error = R::Error>> ResponseStream<R, W> {
-    pub fn new(connection: Connection<R>, writer: W) -> Self {
-        Self { connection, writer }
+    pub fn new(connection: Connection<R>, writer: W, connection_header: super::KeepAlive) -> Self {
+        Self {
+            connection,
+            writer,
+            connection_header,
+        }
     }
 }
 
@@ -385,7 +390,7 @@ impl<R: Read, W: Write<Error = R::Error>> ResponseWriter for ResponseStream<R, W
         use crate::io::WriteExt;
         write!(self.writer, "HTTP/1.1 {status_code}\r\n").await?;
 
-        headers
+        HeadersChain(headers, ("Connection", self.connection_header))
             .for_each_header(HeadersWriter(&mut self.writer))
             .await?;
 

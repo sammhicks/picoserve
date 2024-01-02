@@ -83,11 +83,12 @@ async fn main() -> anyhow::Result<()> {
             .layer(TimeLayer),
     );
 
-    let config = picoserve::Config {
-        start_read_request_timeout: Some(Duration::from_secs(5)),
-        read_request_timeout: Some(Duration::from_secs(1)),
-        write_timeout: Some(Duration::from_secs(1)),
-    };
+    let config = picoserve::Config::new(picoserve::Timeouts {
+        start_read_request: Some(Duration::from_secs(5)),
+        read_request: Some(Duration::from_secs(1)),
+        write: Some(Duration::from_secs(1)),
+    })
+    .keep_connection_alive();
 
     let socket = tokio::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 8000)).await?;
 

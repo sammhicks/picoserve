@@ -48,12 +48,75 @@ impl<E: embedded_io_async::Error> embedded_io_async::Error for Error<E> {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct Timeouts<D> {
+    pub start_read_request: Option<D>,
+    pub read_request: Option<D>,
+    pub write: Option<D>,
+}
+
+#[derive(Debug, Clone, Copy)]
+/// After the response has been sent, should the connection be kept open to allow the client to make further requests on the same TCP connection?
+pub enum KeepAlive {
+    /// Close the connection after the response has been sent, i.e. each TCP connection serves a single request.
+    Close,
+    /// Keep the connection alive after the response has been sent, allowing the client to make further requests on the same TCP connection.
+    KeepAlive,
+}
+
+impl core::fmt::Display for KeepAlive {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            KeepAlive::Close => "close",
+            KeepAlive::KeepAlive => "keep-alive",
+        }
+        .fmt(f)
+    }
+}
+
+impl KeepAlive {
+    fn from_header(headers: request::Headers) -> Self {
+        match headers.get("connection") {
+            None => Self::Close,
+            Some(close) if close.eq_ignore_ascii_case("close") => Self::Close,
+            Some(_) => Self::KeepAlive,
+        }
+    }
+}
+
 /// Server Configuration.
 #[derive(Debug, Clone)]
 pub struct Config<D> {
-    pub start_read_request_timeout: Option<D>,
-    pub read_request_timeout: Option<D>,
-    pub write_timeout: Option<D>,
+    pub timeouts: Timeouts<D>,
+    pub connection: KeepAlive,
+}
+
+impl<D> Config<D> {
+    /// Create a new configuration, setting the timeouts.
+    /// All other configuration is set to the defaults.
+    pub fn new(timeouts: Timeouts<D>) -> Self {
+        Self {
+            timeouts,
+            connection: KeepAlive::Close,
+        }
+    }
+
+    /// Keep the connection alive after the response has been sent, allowing the client to make further requests on the same TCP connection.
+    /// This should only be called if multiple sockets are handling HTTP connections to avoid a single client hogging the connection
+    /// and preventing other clients from making requests.
+    pub fn keep_connection_alive(mut self) -> Self {
+        self.connection = KeepAlive::KeepAlive;
+
+        self
+    }
+
+    /// Close the connection after the response has been sent, i.e. each TCP connection serves a single request.
+    /// This is the default, but allows the configuration to be more explicit.
+    pub fn close_connection_after_response(mut self) -> Self {
+        self.connection = KeepAlive::Close;
+
+        self
+    }
 }
 
 /// Maps Read errors to [Error]s
@@ -108,7 +171,7 @@ async fn do_serve<
     for request_count in 0.. {
         let mut reader = match timer
             .run_with_maybe_timeout(
-                config.start_read_request_timeout.clone(),
+                config.timeouts.start_read_request.clone(),
                 request::Reader::new(&mut reader, buffer),
             )
             .await
@@ -119,14 +182,19 @@ async fn do_serve<
         };
 
         match timer
-            .run_with_maybe_timeout(config.read_request_timeout.clone(), reader.read())
+            .run_with_maybe_timeout(config.timeouts.read_request.clone(), reader.read())
             .await
         {
             Ok(Ok((request, connection))) => {
+                let connection_header = match config.connection {
+                    KeepAlive::Close => KeepAlive::Close,
+                    KeepAlive::KeepAlive => KeepAlive::from_header(request.headers()),
+                };
+
                 let mut writer = time::WriteWithTimeout {
                     inner: &mut writer,
                     timer: &mut timer,
-                    timeout_duration: config.write_timeout.clone(),
+                    timeout_duration: config.timeouts.write.clone(),
                 };
 
                 router
@@ -135,9 +203,13 @@ async fn do_serve<
                         routing::NoPathParameters,
                         request.path(),
                         request,
-                        response::ResponseStream::new(connection, &mut writer),
+                        response::ResponseStream::new(connection, &mut writer, connection_header),
                     )
                     .await?;
+
+                if let KeepAlive::Close = connection_header {
+                    return Ok(request_count + 1);
+                }
             }
             Ok(Err(err)) => {
                 return Err(match err {
