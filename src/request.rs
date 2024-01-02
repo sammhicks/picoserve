@@ -80,27 +80,45 @@ impl RequestLine<Range<usize>> {
 }
 
 #[derive(Debug)]
-struct BadHeaderLine<'a>(&'a [u8]);
+pub struct BadHeaderLine<'a>(&'a [u8]);
 
-#[derive(Clone, Copy)]
-pub struct Headers<'a>(&'a [u8]);
+pub struct HeadersTryIter<'a>(core::slice::SplitInclusive<'a, u8, fn(&u8) -> bool>);
 
-pub type HeadersIter<'a> = impl Iterator<Item = (&'a str, &'a str)> + 'a;
+impl<'a> Iterator for HeadersTryIter<'a> {
+    type Item = Result<(&'a str, &'a str), BadHeaderLine<'a>>;
 
-impl<'a> Headers<'a> {
-    fn try_iter(&self) -> impl Iterator<Item = Result<(&'a str, &'a str), BadHeaderLine<'a>>> {
+    fn next(&mut self) -> Option<Self::Item> {
         fn split_line(line: &[u8]) -> Option<(&str, &str)> {
             let (name, value) = core::str::from_utf8(line).ok()?.split_once(':')?;
             Some((name.trim(), value.trim()))
         }
 
         self.0
-            .split_inclusive(|&b| b == b'\n')
+            .next()
             .map(|line| split_line(line).ok_or(BadHeaderLine(line)))
+    }
+}
+
+pub struct HeadersIter<'a>(HeadersTryIter<'a>);
+
+impl<'a> Iterator for HeadersIter<'a> {
+    type Item = (&'a str, &'a str);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.0.by_ref().find_map(Result::ok)
+    }
+}
+
+#[derive(Clone, Copy)]
+pub struct Headers<'a>(&'a [u8]);
+
+impl<'a> Headers<'a> {
+    fn try_iter(&self) -> HeadersTryIter<'a> {
+        HeadersTryIter(self.0.split_inclusive(|&b| b == b'\n'))
     }
 
     pub fn iter(&self) -> HeadersIter<'a> {
-        self.try_iter().flatten()
+        HeadersIter(self.try_iter())
     }
 
     pub fn get(&self, key: &str) -> Option<&'a str> {

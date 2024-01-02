@@ -7,18 +7,19 @@ edition = "2021"
 
 [dependencies]
 cortex-m-rt = "0.7.3"
-cyw43 = { git = "https://github.com/embassy-rs/embassy", rev="b6fc682" }
-cyw43-pio = { git = "https://github.com/embassy-rs/embassy", rev = "b6fc682" }
-embassy-executor = { git = "https://github.com/embassy-rs/embassy", rev = "b6fc682", features = ["arch-cortex-m","executor-thread","nightly","integrated-timers"] }
-embassy-futures = { git = "https://github.com/embassy-rs/embassy", rev = "b6fc682" }
-embassy-net = { git = "https://github.com/embassy-rs/embassy", rev = "b6fc682", features = ["nightly","tcp","proto-ipv4","medium-ethernet"] }
-embassy-rp = { git = "https://github.com/embassy-rs/embassy", rev = "b6fc682", features = ["critical-section-impl","time-driver","nightly","unstable-traits"] }
-embassy-sync = { git = "https://github.com/embassy-rs/embassy", rev = "b6fc682" }
-embassy-time = { git = "https://github.com/embassy-rs/embassy", rev = "b6fc682" }
-embassy-usb-logger = { git = "https://github.com/embassy-rs/embassy", rev = "b6fc682" }
+cyw43 = { git = "https://github.com/embassy-rs/embassy", rev="8d36fe3" }
+cyw43-pio = { git = "https://github.com/embassy-rs/embassy", rev = "8d36fe3" }
+embassy-executor = { git = "https://github.com/embassy-rs/embassy", rev = "8d36fe3", features = ["arch-cortex-m", "executor-thread", "nightly", "integrated-timers"] }
+embassy-futures = { git = "https://github.com/embassy-rs/embassy", rev = "8d36fe3" }
+embassy-net = { git = "https://github.com/embassy-rs/embassy", rev = "8d36fe3", features = ["tcp", "proto-ipv4", "medium-ethernet"] }
+embassy-rp = { git = "https://github.com/embassy-rs/embassy", rev = "8d36fe3", features = ["critical-section-impl", "time-driver"] }
+embassy-sync = { git = "https://github.com/embassy-rs/embassy", rev = "8d36fe3" }
+embassy-time = { git = "https://github.com/embassy-rs/embassy", rev = "8d36fe3" }
+embassy-usb-logger = { git = "https://github.com/embassy-rs/embassy", rev = "8d36fe3" }
 embedded-io-async = "0.6.0"
 log = { version = "0.4.20", default-features = false }
-picoserve = { path = "../.." }
 panic-halt = "0.2.0"
+picoserve = { path = "../.." }
+portable-atomic = { version = "1.6.0", features = ["critical-section"], default-features = false }
 rand = { version = "0.8.5", default-features = false }
-static_cell = { version = "1.2.0", features = ["nightly"] }
+static_cell = { version = "2.0.0", features = ["nightly"] }

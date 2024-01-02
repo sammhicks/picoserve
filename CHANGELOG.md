@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2024-01-02
+
+picoserve now runs on stable!
+
+### Breaking
+
+- No longer using the `async_fn_in_trait` feature
+- `hello_world_embassy` example uses newer version of `embassy` (and still requires nightly rust due to `embassy` using feature `type_alias_impl_trait`)
+
+## [0.4.1] - 2023-12-23
+
+### Fixed
+
+- Fixed JSON serialization for empty objects and arrays
+
+## [0.4.0] - 2023-12-23
+
+### Breaking
+
+- Parsing [Query](https://docs.rs/picoserve/0.4.0/picoserve/extract/struct.Query.html) and [Form](https://docs.rs/picoserve/0.4.0/picoserve/extract/struct.Form.html) now ignores blank space between two `&` characters
+  - This allows urls which end in `?` but have no query, and urls for which there's a `&` after the query
+
 ## [0.3.0] - 2023-12-11
 
 ### Breaking

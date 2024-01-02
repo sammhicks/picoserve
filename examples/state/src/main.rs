@@ -1,5 +1,3 @@
-#![feature(async_fn_in_trait)]
-
 use std::{cell::RefCell, rc::Rc, time::Duration};
 
 use picoserve::{

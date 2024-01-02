@@ -1,6 +1,6 @@
 #![no_std]
 #![no_main]
-#![feature(async_fn_in_trait, type_alias_impl_trait)]
+#![feature(type_alias_impl_trait)]
 
 use cyw43::Control;
 use cyw43_pio::PioSpi;

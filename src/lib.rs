@@ -1,5 +1,5 @@
 #![cfg_attr(not(feature = "std"), no_std)]
-#![feature(async_fn_in_trait, type_alias_impl_trait)]
+#![allow(async_fn_in_trait)]
 
 //! An async `no_std` HTTP server suitable for bare-metal environments, heavily inspired by [axum](https://github.com/tokio-rs/axum).
 //!
