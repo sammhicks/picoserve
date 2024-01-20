@@ -58,8 +58,12 @@ impl<'a> PartialEq<&'a str> for ETag {
 }
 
 impl super::HeadersIter for ETag {
-    async fn for_each_header<F: super::ForEachHeader>(self, mut f: F) -> Result<(), F::Error> {
-        f.call("ETag", self).await
+    async fn for_each_header<F: super::ForEachHeader>(
+        self,
+        mut f: F,
+    ) -> Result<F::Output, F::Error> {
+        f.call("ETag", self).await?;
+        f.finalize().await
     }
 }
 
@@ -203,13 +207,13 @@ impl<State, CurrentPathParameters> PathRouter<State, CurrentPathParameters> for 
         request: crate::request::Request<'_>,
         response_writer: W,
     ) -> Result<ResponseSent, W::Error> {
-        if !request.method.eq_ignore_ascii_case("get") {
+        if !request.method().eq_ignore_ascii_case("get") {
             return crate::routing::MethodNotAllowed
                 .call_request_handler(state, current_path_parameters, request, response_writer)
                 .await;
         }
 
-        if let Some(file) = self.matching_file(request.path) {
+        if let Some(file) = self.matching_file(request.path()) {
             file.call_request_handler(state, current_path_parameters, request, response_writer)
                 .await
         } else {

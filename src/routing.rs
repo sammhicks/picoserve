@@ -197,7 +197,7 @@ impl<State, PathParameters> RequestHandler<State, PathParameters> for MethodNotA
             status::METHOD_NOT_ALLOWED,
             format_args!(
                 "Method {} not allowed for {}\r\n",
-                request.method,
+                request.method(),
                 request.path()
             ),
         )
@@ -391,7 +391,7 @@ impl<
         request: Request<'_>,
         response_writer: W,
     ) -> Result<ResponseSent, W::Error> {
-        match request.method {
+        match request.method() {
             "GET" => {
                 self.get
                     .call_request_handler(state, path_parameters, request, response_writer)

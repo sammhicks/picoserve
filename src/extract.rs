@@ -56,7 +56,7 @@ impl<State, T: serde::de::DeserializeOwned> FromRequest<State> for Query<T> {
         _state: &State,
         request: &Request<'_>,
     ) -> Result<Query<T>, QueryRejection> {
-        super::url_encoded::deserialize_form(request.query.unwrap_or_default())
+        super::url_encoded::deserialize_form(request.query().unwrap_or_default())
             .map(Self)
             .map_err(|super::url_encoded::BadUrlEncodedForm| QueryRejection)
     }
@@ -107,7 +107,7 @@ impl<State, T: serde::de::DeserializeOwned> FromRequest<State> for Form<T> {
 
     async fn from_request(_state: &State, request: &Request<'_>) -> Result<Form<T>, FormRejection> {
         super::url_encoded::deserialize_form(crate::url_encoded::UrlEncodedString(
-            core::str::from_utf8(request.body)
+            core::str::from_utf8(request.body())
                 .map_err(|core::str::Utf8Error { .. }| FormRejection::BodyIsNotUtf8)?,
         ))
         .map(Self)

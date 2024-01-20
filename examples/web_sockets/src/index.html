@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Server-Sent Events</title>
+    <title>Websockets</title>
     <style>
         body {
             display: flex;
@@ -37,9 +37,15 @@
 
         let ws = new WebSocket("ws://localhost:8000/ws", ["messages", "ignored_protocol"]);
 
-        ws.addEventListener("error", function (ev) {
-            events.close();
+        ws.addEventListener("close", function (ev) {
+            ws.close();
             output.innerText = "Events Closed";
+        })
+
+        ws.addEventListener("error", function (ev) {
+            ws.close();
+            console.error(ev);
+            output.innerText = "Events Error";
         });
 
         ws.addEventListener("message", function (ev) {

@@ -99,18 +99,8 @@ impl<State> crate::extract::FromRequest<State> for WebSocketUpgrade {
         _state: &State,
         request: &crate::request::Request<'_>,
     ) -> Result<Self, Self::Rejection> {
-        if !request.method.eq_ignore_ascii_case("get") {
+        if !request.method().eq_ignore_ascii_case("get") {
             return Err(WebSocketUpgradeRejection::MethodNotGet);
-        }
-
-        if !request
-            .headers()
-            .get("connection")
-            .into_iter()
-            .flat_map(|connections| connections.split(',').map(str::trim))
-            .any(|connection| connection.eq_ignore_ascii_case("upgrade"))
-        {
-            return Err(WebSocketUpgradeRejection::InvalidUpgradeHeader);
         }
 
         if request
@@ -156,12 +146,14 @@ impl<State> crate::extract::FromRequest<State> for WebSocketUpgrade {
 }
 
 /// A web socket message opcode.
+#[derive(Debug)]
 pub enum Opcode {
     Data(Data),
     Control(Control),
 }
 
 /// A web socket message data opcode.
+#[derive(Debug)]
 pub enum Data {
     Continue,
     Text,
@@ -170,6 +162,7 @@ pub enum Data {
 }
 
 /// A web socket message control opcode.
+#[derive(Debug)]
 pub enum Control {
     Close,
     Ping,
@@ -193,6 +186,7 @@ impl From<u8> for Opcode {
 }
 
 /// A single Web Socket frame.
+#[derive(Debug)]
 pub struct Frame {
     /// If true, this frame is the final frame of the message.
     pub is_final: bool,
@@ -256,6 +250,7 @@ enum MessageOpcode {
 }
 
 /// Message Types.
+#[derive(Debug)]
 pub enum Message<'a> {
     Text(&'a str),
     Binary(&'a [u8]),
@@ -619,7 +614,7 @@ impl<P: WebSocketProtocol, C: WebSocketCallback> super::IntoResponse for Upgrade
                     status_code: status::SWITCHING_PROTOCOLS,
                     headers: [
                         ("Upgrade", "websocket"),
-                        ("Connection", "Upgrade"),
+                        ("Connection", "upgrade"),
                         ("Sec-WebSocket-Accept", unsafe {
                             // SAFETY: sec_websocket_accept was created by data_encoding::BASE64.encode_mut, which creates a UTF-8 string
                             core::str::from_utf8_unchecked(&sec_websocket_accept)

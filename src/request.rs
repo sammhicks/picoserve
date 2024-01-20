@@ -222,13 +222,13 @@ impl<'r> core::iter::FusedIterator for PathSegments<'r> {}
 /// Represents an HTTP request.
 #[derive(Debug, Clone, Copy)]
 pub struct Request<'r> {
-    pub method: &'r str,
-    pub path: Path<'r>,
-    pub query: Option<UrlEncodedString<'r>>,
-    pub fragments: Option<UrlEncodedString<'r>>,
-    pub http_version: &'r str,
-    pub headers: Headers<'r>,
-    pub body: &'r [u8],
+    method: &'r str,
+    path: Path<'r>,
+    query: Option<UrlEncodedString<'r>>,
+    fragments: Option<UrlEncodedString<'r>>,
+    http_version: &'r str,
+    headers: Headers<'r>,
+    body: &'r [u8],
 }
 
 impl<'r> Request<'r> {

@@ -75,11 +75,29 @@ impl core::fmt::Display for KeepAlive {
 }
 
 impl KeepAlive {
-    fn from_header(headers: request::Headers) -> Self {
+    fn default_for_http_version(http_version: &str) -> Self {
+        if http_version == "HTTP/1.1" {
+            Self::KeepAlive
+        } else {
+            Self::Close
+        }
+    }
+
+    fn from_request(http_version: &str, headers: request::Headers) -> Self {
         match headers.get("connection") {
-            None => Self::Close,
-            Some(close) if close.eq_ignore_ascii_case("close") => Self::Close,
-            Some(_) => Self::KeepAlive,
+            None => Self::default_for_http_version(http_version),
+            Some(close_header) if close_header.eq_ignore_ascii_case("close") => Self::Close,
+            Some(connection_headers) => {
+                if connection_headers
+                    .split(',')
+                    .map(str::trim)
+                    .any(|connection_header| connection_header.eq_ignore_ascii_case("upgrade"))
+                {
+                    Self::Close
+                } else {
+                    Self::default_for_http_version(http_version)
+                }
+            }
         }
     }
 }
@@ -188,7 +206,9 @@ async fn do_serve<
             Ok(Ok((request, connection))) => {
                 let connection_header = match config.connection {
                     KeepAlive::Close => KeepAlive::Close,
-                    KeepAlive::KeepAlive => KeepAlive::from_header(request.headers()),
+                    KeepAlive::KeepAlive => {
+                        KeepAlive::from_request(request.http_version(), request.headers())
+                    }
                 };
 
                 let mut writer = time::WriteWithTimeout {

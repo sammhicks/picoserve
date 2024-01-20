@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] - 2024-01-20
+
+### Fixed
+
+- The "Connection" header is no longer sent in duplicate if the handler has already sent it
+
+### Changes
+
+- The handling of the "Connection" header in the request has changed:
+  - If `picoserve` has been configured to always close the connection after responding, set the "Connection" header to "close".
+    - This is the default, overide by calling `keep_connection_alive` on [Config](https://docs.rs/picoserve/0.6.0/picoserve/struct.Config.html).
+  - If not:
+    - If the "Connection" header is missing, then check the HTTP version. If the HTTP version is equal to "HTTP/1.1", then keep the connection alive, else close the connection.
+    - If the "Connection" header is "close", close the connection.
+    - If the "Connection" header is a comma separated list and one of the entries is "upgrade", such as a websocket upgrade, close the connection after handling the response. Either the handler will handle the upgrade, setting the "Connection" header, in which case it will not also be automatically sent, or something has gone wrong, and the connection should be closed. Also, an upgraded connection, which is thus no longer HTTP, should be closed after completion, not reused.
+      - Note that the connection is closed after the "response" has been sent. In the case of websockets, sending the "response" includes sending messages to the client and also parsing incoming messages, so this is fine.
+- The title of the web_sockets example has been changed from "Server-Sent Events" to "Websockets"
+- Frame, Control, Data, and Message in [`response::ws`](https://docs.rs/picoserve/latest/picoserve/response/ws/index.html) now implement Debug
+
 ## [0.6.0] - 2024-01-02
 
 ### Breaking
