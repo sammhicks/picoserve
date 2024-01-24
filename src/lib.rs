@@ -112,7 +112,7 @@ pub struct Config<D> {
 impl<D> Config<D> {
     /// Create a new configuration, setting the timeouts.
     /// All other configuration is set to the defaults.
-    pub fn new(timeouts: Timeouts<D>) -> Self {
+    pub const fn new(timeouts: Timeouts<D>) -> Self {
         Self {
             timeouts,
             connection: KeepAlive::Close,
