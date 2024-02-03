@@ -44,7 +44,7 @@ impl super::IntoResponse for WebSocketUpgradeRejection {
                     "Websocket version must be 13\n"
                 }
                 WebSocketUpgradeRejection::WebSocketKeyHeaderMissing => {
-                    r#"Websocket upgrade header "sec-websocket-key" missing\n"#
+                    "Websocket upgrades must have a `Sec-WebSocket-Key` header\n"
                 }
             },
         )
