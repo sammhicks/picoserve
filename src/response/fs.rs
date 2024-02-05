@@ -80,7 +80,7 @@ impl File {
         Self {
             content_type,
             body,
-            etag: ETag(crate::const_sha1::sha1(body).as_bytes()),
+            etag: ETag(const_sha1::sha1(body).as_bytes()),
         }
     }
 

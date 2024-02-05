@@ -15,8 +15,8 @@ pub mod routing;
 pub mod time;
 pub mod url_encoded;
 
-// TODO - Replace with dependency when const_sha1 has published `no_std` support
-mod const_sha1;
+// // TODO - Replace with dependency when const_sha1 has published `no_std` support
+// mod const_sha1;
 
 pub use routing::Router;
 pub use time::Timer;

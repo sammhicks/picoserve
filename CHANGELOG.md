@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.2] - 2024-02-05
+
+### Changes
+
+- Using const_sha from crates.io (rather than copied into this repository) as it now has no_std support
+
+## [0.7.1] - 2024-01-24
+
+### Changes
+
+- [Config::new](https://docs.rs/picoserve/0.7.1/picoserve/struct.Config.html#method.new) is now const
+
 ## [0.7.0] - 2024-01-20
 
 ### Fixed
