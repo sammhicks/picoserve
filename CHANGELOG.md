@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.0] - 2024-02-05
+
+### Breaking
+
+- [`serve`](https://docs.rs/picoserve/0.8.0/picoserve/fn.serve.html) and [`serve_with_state`](https://docs.rs/picoserve/0.8.0/picoserve/fn.serve_with_state.html) now take a socket rather than a reader and writer.
+
+### Changes
+
+- The socket is now shut down after it has finished handling requests
+
+### Added
+
+- Added support for [`embassy`](https://github.com/embassy-rs/embassy) with the `embassy` feature.
+  - No need to declare and pass in a timer, used Embassy timers
+  - Pass a [`TcpSocket`](https://docs.rs/embassy-net/0.4.0/embassy_net/tcp/struct.TcpSocket.html) to [`serve`](https://docs.rs/picoserve/0.8.0/picoserve/fn.serve.html) and [`serve_with_state`](https://docs.rs/picoserve/0.8.0/picoserve/fn.serve_with_state.html)
+  - Added more examples which use embassy
+
 ## [0.7.2] - 2024-02-05
 
 ### Changes

@@ -4,18 +4,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Websockets</title>
+    <title>Set Pico W LED</title>
     <link rel="stylesheet" href="index.css">
     <script src="index.js" async defer></script>
 </head>
 
 <body>
-    <div>
-        Messages sent will be send to all connections
-    </div>
-    <input type="text">
-    <button type="button">Send</button>
-    <ul id="output"></ul>
+    <button type="button" onclick="on()">LED ON</button>
+    <button type="button" onclick="off()">LED OFF</button>
 </body>
 
 </html>

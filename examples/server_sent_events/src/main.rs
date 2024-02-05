@@ -121,7 +121,7 @@ async fn main() -> anyhow::Result<()> {
     tokio::task::LocalSet::new()
         .run_until(async {
             loop {
-                let (mut stream, remote_address) = socket.accept().await?;
+                let (stream, remote_address) = socket.accept().await?;
 
                 println!("Connection from {remote_address}");
 
@@ -129,11 +129,7 @@ async fn main() -> anyhow::Result<()> {
                 let config = config.clone();
 
                 tokio::task::spawn_local(async move {
-                    let (stream_rx, stream_tx) = stream.split();
-
-                    match picoserve::serve(&app, &config, &mut [0; 2048], stream_rx, stream_tx)
-                        .await
-                    {
+                    match picoserve::serve(&app, &config, &mut [0; 2048], stream).await {
                         Ok(handled_requests_count) => {
                             println!(
                                 "{handled_requests_count} requests handled from {remote_address}"

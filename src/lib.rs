@@ -7,6 +7,9 @@
 //!
 //! For examples on how to use picoserve, see the [examples](https://github.com/sammhicks/picoserve/tree/main/examples) directory
 
+#[cfg(all(feature = "tokio", feature = "embassy"))]
+compile_error!("You cannot enable both tokio and embassy support");
+
 pub mod extract;
 pub mod io;
 pub mod request;
@@ -14,9 +17,6 @@ pub mod response;
 pub mod routing;
 pub mod time;
 pub mod url_encoded;
-
-// // TODO - Replace with dependency when const_sha1 has published `no_std` support
-// mod const_sha1;
 
 pub use routing::Router;
 pub use time::Timer;
@@ -49,6 +49,8 @@ impl<E: embedded_io_async::Error> embedded_io_async::Error for Error<E> {
 }
 
 #[derive(Debug, Clone)]
+/// How long to wait before timing out for different operations.
+/// If set to None, the operation never times out.
 pub struct Timeouts<D> {
     pub start_read_request: Option<D>,
     pub read_request: Option<D>,
@@ -169,172 +171,227 @@ impl<R: embedded_io_async::Read> embedded_io_async::Read for MapReadErrorReader<
     }
 }
 
-async fn do_serve<
-    State,
-    T: Timer,
-    P: routing::PathRouter<State>,
-    R: io::Read,
-    W: io::Write<Error = R::Error>,
->(
+async fn serve_and_shutdown<State, T: Timer, P: routing::PathRouter<State>, S: io::Socket>(
     Router { router, .. }: &Router<P, State>,
     mut timer: T,
     config: &Config<T::Duration>,
     buffer: &mut [u8],
-    reader: R,
-    mut writer: W,
+    mut socket: S,
     state: &State,
-) -> Result<u64, Error<W::Error>> {
-    let mut reader = MapReadErrorReader(reader);
+) -> Result<u64, Error<S::Error>> {
+    let result = async {
+        let (reader, mut writer) = socket.split();
 
-    for request_count in 0.. {
-        let mut reader = match timer
-            .run_with_maybe_timeout(
-                config.timeouts.start_read_request.clone(),
-                request::Reader::new(&mut reader, buffer),
-            )
-            .await
-        {
-            Ok(Ok(Some(reader))) => reader,
-            Ok(Ok(None)) | Err(_) => return Ok(request_count),
-            Ok(Err(err)) => return Err(err),
-        };
+        let mut reader = MapReadErrorReader(reader);
 
-        match timer
-            .run_with_maybe_timeout(config.timeouts.read_request.clone(), reader.read())
-            .await
-        {
-            Ok(Ok((request, connection))) => {
-                let connection_header = match config.connection {
-                    KeepAlive::Close => KeepAlive::Close,
-                    KeepAlive::KeepAlive => {
-                        KeepAlive::from_request(request.http_version(), request.headers())
+        for request_count in 0.. {
+            let mut reader = match timer
+                .run_with_maybe_timeout(
+                    config.timeouts.start_read_request.clone(),
+                    request::Reader::new(&mut reader, buffer),
+                )
+                .await
+            {
+                Ok(Ok(Some(reader))) => reader,
+                Ok(Ok(None)) | Err(_) => return Ok(request_count),
+                Ok(Err(err)) => return Err(err),
+            };
+
+            match timer
+                .run_with_maybe_timeout(config.timeouts.read_request.clone(), reader.read())
+                .await
+            {
+                Ok(Ok((request, connection))) => {
+                    let connection_header = match config.connection {
+                        KeepAlive::Close => KeepAlive::Close,
+                        KeepAlive::KeepAlive => {
+                            KeepAlive::from_request(request.http_version(), request.headers())
+                        }
+                    };
+
+                    let mut writer = time::WriteWithTimeout {
+                        inner: &mut writer,
+                        timer: &mut timer,
+                        timeout_duration: config.timeouts.write.clone(),
+                    };
+
+                    router
+                        .call_path_router(
+                            state,
+                            routing::NoPathParameters,
+                            request.path(),
+                            request,
+                            response::ResponseStream::new(
+                                connection,
+                                &mut writer,
+                                connection_header,
+                            ),
+                        )
+                        .await?;
+
+                    if let KeepAlive::Close = connection_header {
+                        return Ok(request_count + 1);
                     }
-                };
-
-                let mut writer = time::WriteWithTimeout {
-                    inner: &mut writer,
-                    timer: &mut timer,
-                    timeout_duration: config.timeouts.write.clone(),
-                };
-
-                router
-                    .call_path_router(
-                        state,
-                        routing::NoPathParameters,
-                        request.path(),
-                        request,
-                        response::ResponseStream::new(connection, &mut writer, connection_header),
-                    )
-                    .await?;
-
-                if let KeepAlive::Close = connection_header {
-                    return Ok(request_count + 1);
                 }
+                Ok(Err(err)) => {
+                    return Err(match err {
+                        request::ReadError::BadRequestLine => {
+                            Error::Read(request::ReadError::BadRequestLine)
+                        }
+                        request::ReadError::UnexpectedEof => {
+                            Error::Read(request::ReadError::UnexpectedEof)
+                        }
+                        request::ReadError::Other(err) => err,
+                    })
+                }
+                Err(..) => return Err(Error::ReadTimeout),
             }
-            Ok(Err(err)) => {
-                return Err(match err {
-                    request::ReadError::BadRequestLine => {
-                        Error::Read(request::ReadError::BadRequestLine)
-                    }
-                    request::ReadError::UnexpectedEof => {
-                        Error::Read(request::ReadError::UnexpectedEof)
-                    }
-                    request::ReadError::Other(err) => err,
-                })
-            }
-            Err(..) => return Err(Error::ReadTimeout),
         }
-    }
 
-    Ok(0)
+        Ok(0)
+    }
+    .await;
+
+    let shutdown_result = socket.shutdown(&config.timeouts, &mut timer).await;
+
+    let request_count = result?;
+
+    shutdown_result?;
+
+    Ok(request_count)
 }
 
 #[cfg(feature = "tokio")]
-/// Serve incoming requests read from `reader`, route them to `app`, and write responses to `writer`. App has no state.
-pub async fn serve<
-    P: routing::PathRouter,
-    R: tokio::io::AsyncRead + Unpin,
-    W: tokio::io::AsyncWrite + Unpin,
->(
+/// Serve `app` with incoming requests. App has a no state.
+pub async fn serve<P: routing::PathRouter>(
     app: &Router<P>,
     config: &Config<std::time::Duration>,
     buffer: &mut [u8],
-    reader: R,
-    writer: W,
+    stream: tokio::net::TcpStream,
 ) -> Result<u64, Error<io::tokio_support::TokioIoError>> {
-    do_serve(
+    serve_and_shutdown(app, time::TokioTimer, config, buffer, stream, &()).await
+}
+
+#[cfg(feature = "tokio")]
+/// Serve incoming requests read from `reader`, route them to `app`, and write responses to `writer`. App has a state of `State`.
+pub async fn serve_with_state<State, P: routing::PathRouter<State>>(
+    app: &Router<P, State>,
+    config: &Config<std::time::Duration>,
+    buffer: &mut [u8],
+    stream: tokio::net::TcpStream,
+    state: &State,
+) -> Result<u64, Error<io::tokio_support::TokioIoError>> {
+    serve_and_shutdown(app, time::TokioTimer, config, buffer, stream, state).await
+}
+
+#[cfg(feature = "embassy")]
+/// Serve `app` with incoming requests. App has a no state.
+pub async fn serve<P: routing::PathRouter>(
+    app: &Router<P>,
+    config: &Config<embassy_time::Duration>,
+    buffer: &mut [u8],
+    socket: embassy_net::tcp::TcpSocket<'_>,
+) -> Result<u64, Error<embassy_net::tcp::Error>> {
+    serve_and_shutdown(app, time::EmbassyTimer, config, buffer, socket, &()).await
+}
+
+#[cfg(feature = "embassy")]
+/// Serve `app` with incoming requests. App has a state of `State`.
+pub async fn serve_with_state<State, P: routing::PathRouter<State>>(
+    app: &Router<P, State>,
+    config: &Config<embassy_time::Duration>,
+    buffer: &mut [u8],
+    socket: embassy_net::tcp::TcpSocket<'_>,
+    state: &State,
+) -> Result<u64, Error<embassy_net::tcp::Error>> {
+    serve_and_shutdown(app, time::EmbassyTimer, config, buffer, socket, state).await
+}
+
+#[cfg(feature = "embassy")]
+/// Serve `app` with incoming requests. App has a no state.
+/// `task_id` is printed in log messages.
+pub async fn listen_and_serve<P: routing::PathRouter<()>>(
+    task_id: impl core::fmt::Display,
+    app: &Router<P, ()>,
+    config: &Config<embassy_time::Duration>,
+    stack: &embassy_net::Stack<impl embassy_net::driver::Driver>,
+    port: u16,
+    tcp_rx_buffer: &mut [u8],
+    tcp_tx_buffer: &mut [u8],
+    http_buffer: &mut [u8],
+) -> ! {
+    listen_and_serve_with_state(
+        task_id,
         app,
-        time::TokioTimer,
         config,
-        buffer,
-        io::tokio_support::TokioIo(reader),
-        io::tokio_support::TokioIo(writer),
+        stack,
+        port,
+        tcp_rx_buffer,
+        tcp_tx_buffer,
+        http_buffer,
         &(),
     )
     .await
 }
 
-#[cfg(feature = "tokio")]
-/// Serve incoming requests read from `reader`, route them to `app`, and write responses to `writer`. App has a state of `State`.
-pub async fn serve_with_state<
-    State,
-    P: routing::PathRouter<State>,
-    R: tokio::io::AsyncRead + Unpin,
-    W: tokio::io::AsyncWrite + Unpin,
->(
+#[cfg(feature = "embassy")]
+/// Serve `app` with incoming requests. App has a state of `State`.
+/// `task_id` is printed in log messages.
+pub async fn listen_and_serve_with_state<State, P: routing::PathRouter<State>>(
+    task_id: impl core::fmt::Display,
     app: &Router<P, State>,
-    config: &Config<std::time::Duration>,
-    buffer: &mut [u8],
-    reader: R,
-    writer: W,
+    config: &Config<embassy_time::Duration>,
+    stack: &embassy_net::Stack<impl embassy_net::driver::Driver>,
+    port: u16,
+    tcp_rx_buffer: &mut [u8],
+    tcp_tx_buffer: &mut [u8],
+    http_buffer: &mut [u8],
     state: &State,
-) -> Result<u64, Error<io::tokio_support::TokioIoError>> {
-    do_serve(
-        app,
-        time::TokioTimer,
-        config,
-        buffer,
-        io::tokio_support::TokioIo(reader),
-        io::tokio_support::TokioIo(writer),
-        state,
-    )
-    .await
+) -> ! {
+    loop {
+        let mut socket = embassy_net::tcp::TcpSocket::new(stack, tcp_rx_buffer, tcp_tx_buffer);
+
+        log::info!("{task_id}: Listening on TCP:{port}...");
+
+        if let Err(e) = socket.accept(port).await {
+            log::warn!("{task_id}: accept error: {:?}", e);
+            continue;
+        }
+
+        let remote_endpoint = socket.remote_endpoint();
+
+        log::info!("{task_id}: Received connection from {remote_endpoint:?}",);
+
+        match serve_with_state(app, config, http_buffer, socket, state).await {
+            Ok(handled_requests_count) => {
+                log::info!("{handled_requests_count} requests handled from {remote_endpoint:?}",);
+            }
+            Err(err) => log::error!("{err:?}"),
+        }
+    }
 }
 
-#[cfg(not(feature = "tokio"))]
-/// Serve incoming requests read from `reader`, route them to `app`, and write responses to `writer`. App has no state.
-pub async fn serve<
-    T: Timer,
-    P: routing::PathRouter,
-    R: io::Read,
-    W: io::Write<Error = R::Error>,
->(
+#[cfg(not(any(feature = "tokio", feature = "embassy")))]
+/// Serve `app` with incoming requests. App has no state.
+pub async fn serve<T: Timer, P: routing::PathRouter, S: io::Socket>(
     app: &Router<P>,
     timer: T,
     config: &Config<T::Duration>,
     buffer: &mut [u8],
-    reader: R,
-    writer: W,
-) -> Result<u64, Error<W::Error>> {
-    do_serve(app, timer, config, buffer, reader, writer, &()).await
+    socket: S,
+) -> Result<u64, Error<S::Error>> {
+    serve_and_shutdown(app, timer, config, buffer, socket, &()).await
 }
 
-#[cfg(not(feature = "tokio"))]
-/// Serve incoming requests read from `reader`, route them to `app`, and write responses to `writer`. App has a state of `State`.
-pub async fn serve_with_state<
-    State,
-    T: Timer,
-    P: routing::PathRouter<State>,
-    R: io::Read,
-    W: io::Write<Error = R::Error>,
->(
+#[cfg(not(any(feature = "tokio", feature = "embassy")))]
+/// Serve `app` with incoming requests. App has a state of `State`.
+pub async fn serve_with_state<State, T: Timer, P: routing::PathRouter<State>, S: io::Socket>(
     app: &Router<P, State>,
     timer: T,
     config: &Config<T::Duration>,
     buffer: &mut [u8],
-    reader: R,
-    writer: W,
+    socket: S,
     state: &State,
-) -> Result<u64, Error<W::Error>> {
-    do_serve(app, timer, config, buffer, reader, writer, state).await
+) -> Result<u64, Error<S::Error>> {
+    serve_and_shutdown(app, timer, config, buffer, socket, state).await
 }

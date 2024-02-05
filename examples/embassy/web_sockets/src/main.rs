@@ -11,18 +11,10 @@ use embassy_rp::{
 };
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, mutex::Mutex};
 use embassy_time::Duration;
-use panic_halt as _;
-use picoserve::{
-    response::DebugValue,
-    routing::{get, parse_path_segment},
-};
+use panic_persist as _;
+use picoserve::{response::ws, routing::get};
 use rand::Rng;
 use static_cell::make_static;
-
-use picoserve::extract::State;
-
-const WIFI_SSID: &str = "Pico W WiFi";
-const WIFI_PASSWORD: &str = "MyVerySecurePassword";
 
 embassy_rp::bind_interrupts!(struct Irqs {
     PIO0_IRQ_0 => embassy_rp::pio::InterruptHandler<embassy_rp::peripherals::PIO0>;
@@ -91,44 +83,63 @@ async fn web_task(
     config: &'static picoserve::Config<Duration>,
     state: AppState,
 ) -> ! {
-    let mut rx_buffer = [0; 1024];
-    let mut tx_buffer = [0; 1024];
+    let port = 80;
+    let mut tcp_rx_buffer = [0; 1024];
+    let mut tcp_tx_buffer = [0; 1024];
+    let mut http_buffer = [0; 2048];
 
-    loop {
-        let mut socket = embassy_net::tcp::TcpSocket::new(stack, &mut rx_buffer, &mut tx_buffer);
+    picoserve::listen_and_serve_with_state(
+        id,
+        app,
+        config,
+        stack,
+        port,
+        &mut tcp_rx_buffer,
+        &mut tcp_tx_buffer,
+        &mut http_buffer,
+        &state,
+    )
+    .await
+}
 
-        log::info!("{id}: Listening on TCP:80...");
-        if let Err(e) = socket.accept(80).await {
-            log::warn!("{id}: accept error: {:?}", e);
-            continue;
-        }
+struct WebsocketEcho;
 
-        log::info!(
-            "{id}: Received connection from {:?}",
-            socket.remote_endpoint()
-        );
+impl ws::WebSocketCallback for WebsocketEcho {
+    async fn run<R: embedded_io_async::Read, W: embedded_io_async::Write<Error = R::Error>>(
+        self,
+        mut rx: ws::SocketRx<R>,
+        mut tx: ws::SocketTx<W>,
+    ) -> Result<(), W::Error> {
+        let mut buffer = [0; 1024];
 
-        let (socket_rx, socket_tx) = socket.split();
+        let close_reason = loop {
+            match rx.next_message(&mut buffer).await {
+                Ok(ws::Message::Text(data)) => tx.send_text(data).await,
+                Ok(ws::Message::Binary(data)) => tx.send_binary(data).await,
+                Ok(ws::Message::Close(reason)) => {
+                    log::info!("Websocket close reason: {reason:?}");
+                    break None;
+                }
+                Ok(ws::Message::Ping(data)) => tx.send_pong(data).await,
+                Ok(ws::Message::Pong(_)) => continue,
+                Err(err) => {
+                    log::error!("Websocket Error: {err:?}");
 
-        match picoserve::serve_with_state(
-            app,
-            EmbassyTimer,
-            config,
-            &mut [0; 2048],
-            socket_rx,
-            socket_tx,
-            &state,
-        )
-        .await
-        {
-            Ok(handled_requests_count) => {
-                log::info!(
-                    "{handled_requests_count} requests handled from {:?}",
-                    socket.remote_endpoint()
-                );
-            }
-            Err(err) => log::error!("{err:?}"),
-        }
+                    let code = match err {
+                        ws::ReadMessageError::Io(err) => return Err(err),
+                        ws::ReadMessageError::ReadFrameError(_)
+                        | ws::ReadMessageError::MessageStartsWithContinuation
+                        | ws::ReadMessageError::UnexpectedMessageStart => 1002,
+                        ws::ReadMessageError::ReservedOpcode(_) => 1003,
+                        ws::ReadMessageError::TextIsNotUtf8 => 1007,
+                    };
+
+                    break Some((code, "Websocket Error"));
+                }
+            }?;
+        };
+
+        tx.close(close_reason).await
     }
 }
 
@@ -138,8 +149,15 @@ async fn main(spawner: embassy_executor::Spawner) {
 
     spawner.must_spawn(logger_task(p.USB));
 
-    let fw = include_bytes!("../cyw43-firmware/43439A0.bin");
-    let clm = include_bytes!("../cyw43-firmware/43439A0_clm.bin");
+    if let Some(panic_message) = panic_persist::get_panic_message_utf8() {
+        loop {
+            log::error!("{panic_message}");
+            embassy_time::Timer::after_secs(5).await;
+        }
+    }
+
+    let fw = include_bytes!("../../cyw43-firmware/43439A0.bin");
+    let clm = include_bytes!("../../cyw43-firmware/43439A0_clm.bin");
 
     let pwr = Output::new(p.PIN_23, Level::Low);
     let cs = Output::new(p.PIN_25, Level::High);
@@ -155,7 +173,9 @@ async fn main(spawner: embassy_executor::Spawner) {
     );
 
     let state = make_static!(cyw43::State::new());
+
     let (net_device, mut control, runner) = cyw43::new(state, pwr, spi, fw).await;
+
     spawner.must_spawn(wifi_task(runner));
 
     control.init(clm).await;
@@ -173,19 +193,33 @@ async fn main(spawner: embassy_executor::Spawner) {
 
     spawner.must_spawn(net_task(stack));
 
-    control.start_ap_wpa2(WIFI_SSID, WIFI_PASSWORD, 8).await;
+    control
+        .start_ap_wpa2(
+            example_secrets::WIFI_SSID,
+            example_secrets::WIFI_PASSWORD,
+            8,
+        )
+        .await;
 
     fn make_app() -> picoserve::Router<AppRouter, AppState> {
         picoserve::Router::new()
-            .route("/", get(|| async move { "Hello World" }))
             .route(
-                ("/set", parse_path_segment()),
-                get(
-                    |led_is_on, State(SharedControl(control)): State<SharedControl>| async move {
-                        control.lock().await.gpio_set(0, led_is_on).await;
-                        DebugValue(led_is_on)
-                    },
-                ),
+                "/",
+                get(|| picoserve::response::File::html(include_str!("index.html"))),
+            )
+            .route(
+                "/index.css",
+                get(|| picoserve::response::File::css(include_str!("index.css"))),
+            )
+            .route(
+                "/index.js",
+                get(|| picoserve::response::File::javascript(include_str!("index.js"))),
+            )
+            .route(
+                "/ws",
+                get(|upgrade: picoserve::response::WebSocketUpgrade| {
+                    upgrade.on_upgrade(WebsocketEcho).with_protocol("echo")
+                }),
             )
     }
 

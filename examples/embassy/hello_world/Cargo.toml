@@ -1,0 +1,26 @@
+[package]
+name = "hello_world"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+cortex-m-rt = { workspace = true }
+cyw43 = { workspace = true }
+cyw43-pio = { workspace = true }
+embassy-executor = { workspace = true }
+embassy-futures = { workspace = true }
+embassy-net = { workspace = true }
+embassy-rp = { workspace = true }
+embassy-sync = { workspace = true }
+embassy-time = { workspace = true }
+embassy-usb-logger = { workspace = true }
+embedded-io-async = { workspace = true }
+log = { workspace = true }
+panic-persist = { workspace = true }
+picoserve = { workspace = true }
+portable-atomic = { workspace = true }
+rand = { workspace = true }
+static_cell = { workspace = true }
+example_secrets = { path = "../example_secrets" }

@@ -79,6 +79,26 @@ pub trait WriteExt: Write {
 
 impl<W: Write> WriteExt for W {}
 
+pub trait Socket: Sized {
+    type Error: embedded_io_async::Error;
+
+    type ReadHalf<'a>: Read<Error = Self::Error>
+    where
+        Self: 'a;
+
+    type WriteHalf<'a>: Write<Error = Self::Error>
+    where
+        Self: 'a;
+
+    fn split(&mut self) -> (Self::ReadHalf<'_>, Self::WriteHalf<'_>);
+
+    async fn shutdown<Timer: crate::Timer>(
+        self,
+        timeouts: &crate::Timeouts<Timer::Duration>,
+        timer: &mut Timer,
+    ) -> Result<(), super::Error<Self::Error>>;
+}
+
 #[cfg(feature = "tokio")]
 pub(crate) mod tokio_support {
     use embedded_io_async::{Error, ErrorKind, ErrorType, Read, Write};
@@ -110,5 +130,90 @@ pub(crate) mod tokio_support {
             use tokio::io::AsyncWriteExt;
             self.0.write(buf).await.map_err(TokioIoError)
         }
+    }
+
+    impl super::Socket for tokio::net::TcpStream {
+        type Error = TokioIoError;
+        type ReadHalf<'a> = TokioIo<tokio::net::tcp::ReadHalf<'a>>;
+        type WriteHalf<'a> = TokioIo<tokio::net::tcp::WriteHalf<'a>>;
+
+        fn split(&mut self) -> (Self::ReadHalf<'_>, Self::WriteHalf<'_>) {
+            let (read_half, write_half) = tokio::net::TcpStream::split(self);
+
+            (TokioIo(read_half), TokioIo(write_half))
+        }
+
+        async fn shutdown<Timer: crate::Timer>(
+            mut self,
+            timeouts: &crate::Timeouts<Timer::Duration>,
+            timer: &mut Timer,
+        ) -> Result<(), crate::Error<Self::Error>> {
+            use crate::time::TimerExt;
+
+            timer
+                .run_with_maybe_timeout(
+                    timeouts.write.clone(),
+                    tokio::io::AsyncWriteExt::shutdown(&mut self),
+                )
+                .await
+                .map_err(|_err| crate::Error::WriteTimeout)?
+                .map_err(|err| crate::Error::Write(TokioIoError(err)))?;
+
+            let mut buffer = [0; 128];
+
+            while timer
+                .run_with_maybe_timeout(
+                    timeouts.read_request.clone(),
+                    tokio::io::AsyncReadExt::read(&mut self, &mut buffer),
+                )
+                .await
+                .map_err(|_err| crate::Error::ReadTimeout)?
+                .map_err(|err| {
+                    crate::Error::Read(crate::request::ReadError::Other(TokioIoError(err)))
+                })?
+                > 0
+            {}
+
+            Ok(())
+        }
+    }
+}
+
+#[cfg(feature = "embassy")]
+impl<'s> Socket for embassy_net::tcp::TcpSocket<'s> {
+    type Error = embassy_net::tcp::Error;
+    type ReadHalf<'a> = embassy_net::tcp::TcpReader<'a> where 's: 'a;
+    type WriteHalf<'a> = embassy_net::tcp::TcpWriter<'a> where 's: 'a;
+
+    fn split(&mut self) -> (Self::ReadHalf<'_>, Self::WriteHalf<'_>) {
+        embassy_net::tcp::TcpSocket::split(self)
+    }
+
+    async fn shutdown<Timer: crate::Timer>(
+        mut self,
+        timeouts: &crate::Timeouts<Timer::Duration>,
+        timer: &mut Timer,
+    ) -> Result<(), crate::Error<Self::Error>> {
+        self.close();
+
+        use crate::time::TimerExt;
+
+        timer
+            .run_with_maybe_timeout(timeouts.write.clone(), self.flush())
+            .await
+            .map_err(|_err| crate::Error::WriteTimeout)?
+            .map_err(crate::Error::Write)?;
+
+        let mut buffer = [0; 128];
+
+        while timer
+            .run_with_maybe_timeout(timeouts.read_request.clone(), self.read(&mut buffer))
+            .await
+            .map_err(|_err| crate::Error::ReadTimeout)?
+            .map_err(|err| crate::Error::Read(crate::request::ReadError::Other(err)))?
+            > 0
+        {}
+
+        Ok(())
     }
 }

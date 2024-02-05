@@ -44,6 +44,23 @@ impl Timer for TokioTimer {
     }
 }
 
+#[cfg(feature = "embassy")]
+pub struct EmbassyTimer;
+
+#[cfg(feature = "embassy")]
+impl Timer for EmbassyTimer {
+    type Duration = embassy_time::Duration;
+    type TimeoutError = embassy_time::TimeoutError;
+
+    async fn run_with_timeout<F: core::future::Future>(
+        &mut self,
+        duration: Self::Duration,
+        future: F,
+    ) -> Result<F::Output, Self::TimeoutError> {
+        embassy_time::with_timeout(duration, future).await
+    }
+}
+
 pub(crate) struct WriteWithTimeout<'t, W: embedded_io_async::Write, T: Timer> {
     pub inner: W,
     pub timer: &'t mut T,

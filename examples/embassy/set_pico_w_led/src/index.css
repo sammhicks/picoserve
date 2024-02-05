@@ -1,0 +1,10 @@
+body {
+    display: flex;
+    flex-flow: column nowrap;
+    align-items: center;
+}
+
+button {
+    margin: 1em 0;
+    padding: 1em;
+}
