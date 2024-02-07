@@ -1,3 +1,5 @@
+use embedded_io_async::{Read, Write};
+
 use crate::{
     request::{Path, Request},
     ResponseSent,
@@ -7,12 +9,14 @@ use super::{MethodHandler, PathRouter, ResponseWriter};
 
 /// The remainer of a middleware stack, including the handler.
 pub trait Next<State, PathParameters> {
-    async fn run<W: ResponseWriter>(
+    async fn run<R: Read, WW: Write<Error = R::Error>, W: ResponseWriter>(
         self,
         state: &State,
         path_parameters: PathParameters,
+        body_reader: R,
+        write: WW,
         response_writer: W,
-    ) -> Result<ResponseSent, W::Error>;
+    ) -> Result<ResponseSent, R::Error>;
 }
 
 /// A middleware "layer", which can be used to inspect requests and transform responses.
@@ -34,6 +38,8 @@ pub trait Layer<State, PathParameters> {
 
     async fn call_layer<
         NextLayer: Next<Self::NextState, Self::NextPathParameters>,
+        R: Read,
+        WW: Write<Error = R::Error>,
         W: ResponseWriter,
     >(
         &self,
@@ -41,8 +47,10 @@ pub trait Layer<State, PathParameters> {
         state: &State,
         path_parameters: PathParameters,
         request: Request<'_>,
+        body_reader: R,
+        write: WW,
         response_writer: W,
-    ) -> Result<ResponseSent, W::Error>;
+    ) -> Result<ResponseSent, R::Error>;
 }
 
 struct NextMethodRouterLayer<'a, N> {
@@ -53,14 +61,23 @@ struct NextMethodRouterLayer<'a, N> {
 impl<'a, State, PathParameters, N: MethodHandler<State, PathParameters>> Next<State, PathParameters>
     for NextMethodRouterLayer<'a, N>
 {
-    async fn run<W: ResponseWriter>(
+    async fn run<R: Read, WW: Write<Error = R::Error>, W: ResponseWriter>(
         self,
         state: &State,
         path_parameters: PathParameters,
+        body_reader: R,
+        write: WW,
         response_writer: W,
-    ) -> Result<ResponseSent, W::Error> {
+    ) -> Result<ResponseSent, R::Error> {
         self.next
-            .call_method_handler(state, path_parameters, self.request, response_writer)
+            .call_method_handler(
+                state,
+                path_parameters,
+                self.request,
+                body_reader,
+                write,
+                response_writer,
+            )
             .await
     }
 }
@@ -77,13 +94,15 @@ impl<
         PathParameters,
     > MethodHandler<State, PathParameters> for MethodRouterLayer<L, I>
 {
-    async fn call_method_handler<W: ResponseWriter>(
+    async fn call_method_handler<R: Read, WW: Write<Error = R::Error>, W: ResponseWriter>(
         &self,
         state: &State,
         path_parameters: PathParameters,
         request: Request<'_>,
+        body_reader: R,
+        write: WW,
         response_writer: W,
-    ) -> Result<ResponseSent, W::Error> {
+    ) -> Result<ResponseSent, R::Error> {
         self.layer
             .call_layer(
                 NextMethodRouterLayer {
@@ -93,6 +112,8 @@ impl<
                 state,
                 path_parameters,
                 request,
+                body_reader,
+                write,
                 response_writer,
             )
             .await
@@ -108,18 +129,22 @@ struct NextPathRouterLayer<'a, N> {
 impl<'a, State, CurrentPathParameters, N: PathRouter<State, CurrentPathParameters>>
     Next<State, CurrentPathParameters> for NextPathRouterLayer<'a, N>
 {
-    async fn run<W: ResponseWriter>(
+    async fn run<R: Read, WW: Write<Error = R::Error>, W: ResponseWriter>(
         self,
         state: &State,
         current_path_parameters: CurrentPathParameters,
+        body_reader: R,
+        write: WW,
         response_writer: W,
-    ) -> Result<ResponseSent, W::Error> {
+    ) -> Result<ResponseSent, R::Error> {
         self.next
             .call_path_router(
                 state,
                 current_path_parameters,
                 self.path,
                 self.request,
+                body_reader,
+                write,
                 response_writer,
             )
             .await
@@ -138,14 +163,16 @@ impl<
         CurrentPathParameters,
     > PathRouter<State, CurrentPathParameters> for PathRouterLayer<L, I>
 {
-    async fn call_path_router<W: ResponseWriter>(
+    async fn call_path_router<R: Read, WW: Write<Error = R::Error>, W: ResponseWriter>(
         &self,
         state: &State,
         current_path_parameters: CurrentPathParameters,
         path: Path<'_>,
         request: Request<'_>,
+        body_reader: R,
+        write: WW,
         response_writer: W,
-    ) -> Result<ResponseSent, W::Error> {
+    ) -> Result<ResponseSent, R::Error> {
         self.layer
             .call_layer(
                 NextPathRouterLayer {
@@ -156,6 +183,8 @@ impl<
                 state,
                 current_path_parameters,
                 request,
+                body_reader,
+                write,
                 response_writer,
             )
             .await

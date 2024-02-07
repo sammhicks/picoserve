@@ -1,8 +1,11 @@
 use core::fmt;
 
+use embedded_io_async::Read;
 use serde::Serialize;
 
 use crate::io::{FormatBuffer, FormatBufferWriteError, Write};
+
+use super::Connection;
 
 #[derive(Debug)]
 struct SerializeError;
@@ -511,11 +514,15 @@ impl<T: serde::Serialize> Json<T> {
 }
 
 impl<T: serde::Serialize> super::IntoResponse for Json<T> {
-    async fn write_to<W: super::ResponseWriter>(
+    async fn write_to<R: Read, W: super::ResponseWriter, WW: Write<Error = R::Error>>(
         self,
+        writer: WW,
+        connection: Connection<R>,
         response_writer: W,
-    ) -> Result<crate::ResponseSent, W::Error> {
-        response_writer.write_response(self.into_response()).await
+    ) -> Result<crate::ResponseSent, R::Error> {
+        response_writer
+            .write_response(writer, connection, self.into_response())
+            .await
     }
 }
 

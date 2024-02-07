@@ -2,7 +2,7 @@
 
 use crate::io::{Read, Write};
 
-use super::status;
+use super::{status, Connection, ResponseWriter};
 
 /// Indicates that the websocket failed to be upgraded.
 pub enum WebSocketUpgradeRejection {
@@ -19,10 +19,12 @@ pub enum WebSocketUpgradeRejection {
 }
 
 impl super::IntoResponse for WebSocketUpgradeRejection {
-    async fn write_to<W: super::ResponseWriter>(
+    async fn write_to<R: Read, W: ResponseWriter, WW: Write<Error = R::Error>>(
         self,
+        writer: WW,
+        connection: Connection<R>,
         response_writer: W,
-    ) -> Result<crate::ResponseSent, W::Error> {
+    ) -> Result<crate::ResponseSent, R::Error> {
         (
             status::BAD_REQUEST,
             match self {
@@ -31,7 +33,7 @@ impl super::IntoResponse for WebSocketUpgradeRejection {
                         status::METHOD_NOT_ALLOWED,
                         "Websocket upgrades must use the `GET` method\n",
                     )
-                        .write_to(response_writer)
+                        .write_to(writer, connection, response_writer)
                         .await
                 }
                 WebSocketUpgradeRejection::InvalidConnectionHeader => {
@@ -48,7 +50,7 @@ impl super::IntoResponse for WebSocketUpgradeRejection {
                 }
             },
         )
-            .write_to(response_writer)
+            .write_to(writer, connection, response_writer)
             .await
     }
 }
@@ -95,9 +97,10 @@ impl WebSocketUpgrade {
 impl<State> crate::extract::FromRequest<State> for WebSocketUpgrade {
     type Rejection = WebSocketUpgradeRejection;
 
-    async fn from_request(
+    async fn from_request<R: Read>(
         _state: &State,
         request: &crate::request::Request<'_>,
+        _body_reader: R,
     ) -> Result<Self, Self::Rejection> {
         if !request.method().eq_ignore_ascii_case("get") {
             return Err(WebSocketUpgradeRejection::MethodNotGet);
@@ -598,10 +601,12 @@ impl<C: WebSocketCallback> super::Body for UpgradedWebSocketBody<C> {
 }
 
 impl<P: WebSocketProtocol, C: WebSocketCallback> super::IntoResponse for UpgradedWebSocket<P, C> {
-    async fn write_to<W: super::ResponseWriter>(
+    async fn write_to<R: Read, W: ResponseWriter, WW: Write<Error = R::Error>>(
         self,
+        writer: WW,
+        connection: Connection<R>,
         response_writer: W,
-    ) -> Result<crate::ResponseSent, W::Error> {
+    ) -> Result<crate::ResponseSent, R::Error> {
         let UpgradedWebSocket {
             sec_websocket_accept,
             sec_websocket_protocol,
@@ -610,6 +615,8 @@ impl<P: WebSocketProtocol, C: WebSocketCallback> super::IntoResponse for Upgrade
 
         response_writer
             .write_response(
+                writer,
+                connection,
                 super::Response {
                     status_code: status::SWITCHING_PROTOCOLS,
                     headers: [

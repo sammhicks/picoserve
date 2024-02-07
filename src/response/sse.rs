@@ -98,11 +98,13 @@ impl<S: EventSource> super::Body for EventStream<S> {
 }
 
 impl<S: EventSource> super::IntoResponse for EventStream<S> {
-    async fn write_to<W: super::ResponseWriter>(
+    async fn write_to<R: Read, W: super::ResponseWriter, WW: Write<Error = R::Error>>(
         self,
+        writer: WW,
+        connection: super::Connection<R>,
         response_writer: W,
-    ) -> Result<crate::ResponseSent, W::Error> {
-        response_writer.write_response(self.into_response()).await
+    ) -> Result<crate::ResponseSent, R::Error> {
+        response_writer.write_response(writer, connection, self.into_response()).await
     }
 }
 

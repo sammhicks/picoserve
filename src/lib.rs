@@ -221,11 +221,9 @@ async fn serve_and_shutdown<State, T: Timer, P: routing::PathRouter<State>, S: i
                             routing::NoPathParameters,
                             request.path(),
                             request,
-                            response::ResponseStream::new(
-                                connection,
-                                &mut writer,
-                                connection_header,
-                            ),
+                            connection,
+                            &mut writer,
+                            response::ResponseStream::new(connection_header),
                         )
                         .await?;
 

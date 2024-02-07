@@ -228,7 +228,7 @@ pub struct Request<'r> {
     fragments: Option<UrlEncodedString<'r>>,
     http_version: &'r str,
     headers: Headers<'r>,
-    body: &'r [u8],
+    content_length: usize,
 }
 
 impl<'r> Request<'r> {
@@ -256,8 +256,8 @@ impl<'r> Request<'r> {
         self.headers
     }
 
-    pub fn body(&self) -> &'r [u8] {
-        self.body
+    pub fn content_length(&self) -> usize {
+        self.content_length
     }
 }
 
@@ -400,7 +400,7 @@ impl<'b, R: Read> Reader<'b, R> {
 
     pub async fn read(
         &mut self,
-    ) -> Result<(Request<'_>, super::response::Connection<&mut R>), ReadError<R::Error>> {
+    ) -> Result<(Request<'_>, &mut R), ReadError<R::Error>> {
         let request_line = self.read_request_line().await?;
 
         let request_line = request_line.range();
@@ -413,12 +413,6 @@ impl<'b, R: Read> Reader<'b, R> {
             .unwrap_or(0);
 
         let headers = headers.range;
-
-        let body_start = self.read_position;
-
-        self.next_slice(body_length).await?;
-
-        let body_end = body_start + body_length;
 
         let used_buffer = &self.buffer[..self.buffer_usage];
 
@@ -449,9 +443,9 @@ impl<'b, R: Read> Reader<'b, R> {
                 fragments,
                 http_version,
                 headers: Headers(&used_buffer[headers]),
-                body: &used_buffer[body_start..body_end],
+                content_length: body_length
             },
-            super::response::Connection(&mut self.reader),
+            &mut self.reader,
         ))
     }
 }

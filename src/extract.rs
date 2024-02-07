@@ -9,13 +9,15 @@
 //!
 //! For an example of how to implement [FromRequest], see [custom_extractor](https://github.com/sammhicks/picoserve/blob/main/examples/custom_extractor/src/main.rs)
 
-use crate::{request::Request, response::status, response::IntoResponse, ResponseSent};
+use embedded_io_async::{Read, Write};
+
+use crate::{request::Request, response, response::IntoResponse, ResponseSent};
 
 /// Types that can be created from requests.
 pub trait FromRequest<State>: Sized {
     type Rejection: IntoResponse;
 
-    async fn from_request(state: &State, request: &Request) -> Result<Self, Self::Rejection>;
+    async fn from_request<R: Read>(state: &State, request: &Request, body_reader: R) -> Result<Self, Self::Rejection>;
 }
 
 /// Extractor that deserializes query strings into some type.
@@ -39,12 +41,14 @@ impl<T: serde::de::DeserializeOwned> core::ops::DerefMut for Query<T> {
 pub struct QueryRejection;
 
 impl IntoResponse for QueryRejection {
-    async fn write_to<W: super::response::ResponseWriter>(
+    async fn write_to<R: Read, W: response::ResponseWriter, WW: Write<Error = R::Error>>(
         self,
+        writer: WW,
+        connection: response::Connection<R>,
         response_writer: W,
-    ) -> Result<ResponseSent, W::Error> {
-        (status::BAD_REQUEST, "Bad Query\n")
-            .write_to(response_writer)
+    ) -> Result<ResponseSent, R::Error> {
+        (response::status::BAD_REQUEST, "Bad Query\n")
+            .write_to(writer, connection, response_writer)
             .await
     }
 }
@@ -52,13 +56,15 @@ impl IntoResponse for QueryRejection {
 impl<State, T: serde::de::DeserializeOwned> FromRequest<State> for Query<T> {
     type Rejection = QueryRejection;
 
-    async fn from_request(
+    async fn from_request<R: Read>(
         _state: &State,
         request: &Request<'_>,
+        _body_reader: R,
     ) -> Result<Query<T>, QueryRejection> {
-        super::url_encoded::deserialize_form(request.query().unwrap_or_default())
-            .map(Self)
-            .map_err(|super::url_encoded::BadUrlEncodedForm| QueryRejection)
+        todo!()
+        // super::url_encoded::deserialize_form(request.query().unwrap_or_default())
+        //     .map(Self)
+        //     .map_err(|super::url_encoded::BadUrlEncodedForm| QueryRejection)
     }
 }
 
@@ -86,18 +92,20 @@ pub enum FormRejection {
 }
 
 impl IntoResponse for FormRejection {
-    async fn write_to<W: super::response::ResponseWriter>(
+    async fn write_to<R: Read, W: response::ResponseWriter, WW: Write<Error = R::Error>>(
         self,
+        writer: WW,
+        connection: response::Connection<R>,
         response_writer: W,
-    ) -> Result<ResponseSent, W::Error> {
+    ) -> Result<ResponseSent, R::Error> {
         (
-            status::BAD_REQUEST,
+            response::status::BAD_REQUEST,
             match self {
                 Self::BodyIsNotUtf8 => "Body is not UTF-8\n",
                 Self::BadForm => "Bad Form\n",
             },
         )
-            .write_to(response_writer)
+            .write_to(writer, connection, response_writer)
             .await
     }
 }
@@ -105,13 +113,14 @@ impl IntoResponse for FormRejection {
 impl<State, T: serde::de::DeserializeOwned> FromRequest<State> for Form<T> {
     type Rejection = FormRejection;
 
-    async fn from_request(_state: &State, request: &Request<'_>) -> Result<Form<T>, FormRejection> {
-        super::url_encoded::deserialize_form(crate::url_encoded::UrlEncodedString(
-            core::str::from_utf8(request.body())
-                .map_err(|core::str::Utf8Error { .. }| FormRejection::BodyIsNotUtf8)?,
-        ))
-        .map(Self)
-        .map_err(|super::url_encoded::BadUrlEncodedForm| FormRejection::BadForm)
+    async fn from_request<R: Read>(_state: &State, request: &Request<'_>, body_reader: R) -> Result<Form<T>, FormRejection> {
+        todo!()
+        // super::url_encoded::deserialize_form(crate::url_encoded::UrlEncodedString(
+        //     core::str::from_utf8(request.body())
+        //         .map_err(|core::str::Utf8Error { .. }| FormRejection::BodyIsNotUtf8)?,
+        // ))
+        // .map(Self)
+        // .map_err(|super::url_encoded::BadUrlEncodedForm| FormRejection::BadForm)
     }
 }
 
@@ -137,7 +146,7 @@ pub struct State<T>(
 impl<S, T: FromRef<S>> FromRequest<S> for State<T> {
     type Rejection = core::convert::Infallible;
 
-    async fn from_request(state: &S, _request: &Request<'_>) -> Result<Self, Self::Rejection> {
+    async fn from_request<R: Read>(state: &S, _request: &Request<'_>, _body_reader: R) -> Result<Self, Self::Rejection> {
         Ok(State(T::from_ref(state)))
     }
 }
