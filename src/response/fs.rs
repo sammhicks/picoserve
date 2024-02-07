@@ -9,7 +9,7 @@ use crate::{
     ResponseSent,
 };
 
-use super::{status, IntoResponse};
+use super::{status, HeadersIter, IntoResponse};
 
 #[derive(Clone, PartialEq, Eq)]
 struct ETag([u8; 20]);
@@ -69,18 +69,29 @@ impl super::HeadersIter for ETag {
 
 /// [RequestHandler] that serves a single file.
 #[derive(Debug, Clone)]
-pub struct File {
+pub struct File<H: HeadersIter + 'static> {
     content_type: &'static str,
     body: &'static [u8],
     etag: ETag,
+    headers: Option<H>,
 }
 
-impl File {
+impl<H: HeadersIter> File<H> {
     pub const fn with_content_type(content_type: &'static str, body: &'static [u8]) -> Self {
         Self {
             content_type,
             body,
             etag: ETag(const_sha1::sha1(body).as_bytes()),
+            headers: None
+        }
+    }
+
+    pub const fn with_content_type_and_headers(content_type: &'static str, body: &'static [u8], headers: H) -> Self {
+        Self {
+            content_type,
+            body,
+            etag: ETag(const_sha1::sha1(body).as_bytes()),
+            headers: Some(headers)
         }
     }
 
@@ -97,13 +108,16 @@ impl File {
     }
 
     /// Convert into a [super::Response] with a status code of "OK"
-    pub fn into_response(self) -> super::Response<impl super::HeadersIter, impl super::Body> {
+    pub fn into_response(mut self) -> super::Response<impl super::HeadersIter, impl super::Body> {
         let etag = self.etag.clone();
-        super::Response::ok(self).with_headers(etag)
+        let headers = self.headers.take();
+        super::Response::ok(self)
+            .with_headers(headers)
+            .with_headers(etag)
     }
 }
 
-impl<State, PathParameters> crate::routing::RequestHandler<State, PathParameters> for File {
+impl<State, PathParameters, H: HeadersIter + Clone> crate::routing::RequestHandler<State, PathParameters> for File<H> {
     async fn call_request_handler<W: super::ResponseWriter>(
         &self,
         _state: &State,
@@ -131,7 +145,7 @@ impl<State, PathParameters> crate::routing::RequestHandler<State, PathParameters
     }
 }
 
-impl super::Content for File {
+impl<H: HeadersIter> super::Content for File<H> {
     fn content_type(&self) -> &'static str {
         self.content_type
     }
@@ -149,7 +163,7 @@ impl super::Content for File {
     }
 }
 
-impl super::IntoResponse for File {
+impl<H: HeadersIter> super::IntoResponse for File<H> {
     async fn write_to<W: super::ResponseWriter>(
         self,
         response_writer: W,
@@ -158,7 +172,7 @@ impl super::IntoResponse for File {
     }
 }
 
-impl core::future::IntoFuture for File {
+impl<H: HeadersIter> core::future::IntoFuture for File<H> {
     type Output = Self;
     type IntoFuture = core::future::Ready<Self>;
 
@@ -169,13 +183,13 @@ impl core::future::IntoFuture for File {
 
 /// [PathRouter] that serves a single file.
 #[derive(Debug, Default)]
-pub struct Directory {
-    pub files: &'static [(&'static str, File)],
-    pub sub_directories: &'static [(&'static str, Directory)],
+pub struct Directory<H: HeadersIter + 'static> {
+    pub files: &'static [(&'static str, File<H>)],
+    pub sub_directories: &'static [(&'static str, Directory<H>)],
 }
 
-impl Directory {
-    fn matching_file(&self, path: crate::request::Path) -> Option<&File> {
+impl<H: HeadersIter> Directory<H> {
+    fn matching_file(&self, path: crate::request::Path) -> Option<&File<H>> {
         for (name, file) in self.files.iter() {
             if let Some(crate::request::Path(crate::url_encoded::UrlEncodedString(""))) =
                 path.strip_slash_and_prefix(name)
@@ -198,7 +212,7 @@ impl Directory {
     }
 }
 
-impl<State, CurrentPathParameters> PathRouter<State, CurrentPathParameters> for Directory {
+impl<State, CurrentPathParameters, H: HeadersIter + Clone> PathRouter<State, CurrentPathParameters> for Directory<H> {
     async fn call_path_router<W: super::ResponseWriter>(
         &self,
         state: &State,
