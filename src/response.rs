@@ -366,7 +366,7 @@ impl ResponseStream {
 
 impl ResponseWriter for ResponseStream {
     async fn write_response<H: HeadersIter, B: Body, W: Write, R: Read<Error = W::Error>>(
-        mut self,
+        self,
         mut writer: W,
         connection: Connection<R>,
         Response {

@@ -265,6 +265,7 @@ impl<'r> Request<'r> {
 pub enum ReadError<E> {
     BadRequestLine,
     UnexpectedEof,
+    BufferTooSmall,
     Other(E),
 }
 
@@ -272,7 +273,6 @@ pub struct Reader<'b, R: Read> {
     reader: R,
     read_position: usize,
     buffer: &'b mut [u8],
-    buffer_usage: usize,
 }
 
 impl<'b, R: Read> Reader<'b, R> {
@@ -280,55 +280,45 @@ impl<'b, R: Read> Reader<'b, R> {
         mut reader: R,
         buffer: &'b mut [u8],
     ) -> Result<Option<Reader<'b, R>>, R::Error> {
-        let buffer_usage = reader.read(buffer).await?;
+        let buffer_usage = reader.read(buffer.get_mut(..1).unwrap_or_default()).await?;
 
         Ok((buffer_usage > 0).then_some(Self {
             reader,
-            read_position: 0,
+            read_position: 1,
             buffer,
-            buffer_usage,
         }))
     }
 
     fn used_buffer(&self) -> &[u8] {
-        &self.buffer[..self.buffer_usage]
-    }
-
-    async fn read_more(&mut self, required_space: usize) -> Result<(), ReadError<R::Error>> {
-        while (self.read_position + required_space) > self.buffer_usage {
-            let read_size = self
-                .reader
-                .read(&mut self.buffer[self.buffer_usage..])
-                .await
-                .map_err(ReadError::Other)?;
-
-            if read_size == 0 {
-                return Err(ReadError::UnexpectedEof);
-            }
-
-            self.buffer_usage += read_size;
-        }
-
-        Ok(())
+        &self.buffer[..self.read_position]
     }
 
     async fn next_byte(&mut self) -> Result<u8, ReadError<R::Error>> {
-        self.read_more(1).await?;
-        let b = self.used_buffer()[self.read_position];
+        let read_size = self
+            .reader
+            .read(
+                &mut self.buffer[self.read_position..]
+                    .get_mut(..1)
+                    .ok_or(ReadError::BufferTooSmall)?,
+            )
+            .await
+            .map_err(ReadError::Other)?;
+
+        if read_size == 0 {
+            return Err(ReadError::UnexpectedEof);
+        }
+
         self.read_position += 1;
 
-        Ok(b)
-    }
-
-    async fn next_slice(&mut self, len: usize) -> Result<&[u8], ReadError<R::Error>> {
-        self.read_more(len).await?;
-        let start = self.read_position;
-        let end = self.read_position + len;
-        Ok(&self.used_buffer()[start..end])
+        Ok(self.buffer[self.read_position - 1])
     }
 
     async fn read_line(&mut self) -> Result<Subslice, ReadError<R::Error>> {
-        let start_index = self.read_position;
+        let start_index = if self.read_position == 1 {
+            0
+        } else {
+            self.read_position
+        };
 
         loop {
             let end_index = self.read_position;
@@ -398,9 +388,7 @@ impl<'b, R: Read> Reader<'b, R> {
         }
     }
 
-    pub async fn read(
-        &mut self,
-    ) -> Result<(Request<'_>, &mut R), ReadError<R::Error>> {
+    pub async fn read(&mut self) -> Result<(Request<'_>, &mut R), ReadError<R::Error>> {
         let request_line = self.read_request_line().await?;
 
         let request_line = request_line.range();
@@ -414,7 +402,7 @@ impl<'b, R: Read> Reader<'b, R> {
 
         let headers = headers.range;
 
-        let used_buffer = &self.buffer[..self.buffer_usage];
+        let used_buffer = &self.buffer[..self.read_position];
 
         let RequestLine {
             method,
@@ -443,9 +431,52 @@ impl<'b, R: Read> Reader<'b, R> {
                 fragments,
                 http_version,
                 headers: Headers(&used_buffer[headers]),
-                content_length: body_length
+                content_length: body_length,
             },
             &mut self.reader,
         ))
     }
 }
+
+/*
+pub struct BodyReader<'r, R> {
+    reader: R,
+    already_read: &'r [u8],
+    content_length_left_in_reader: usize,
+}
+
+impl<'r, R: ErrorType> ErrorType for BodyReader<'r, R> {
+    type Error = R::Error;
+}
+
+impl<'r, R: Read> Read for BodyReader<'r, R> {
+    async fn read(&mut self, mut buf: &mut [u8]) -> Result<usize, R::Error> {
+        while !self.already_read.is_empty() {
+            if buf.len() >= self.already_read.len() {
+                buf[..self.already_read.len()].copy_from_slice(self.already_read);
+            }
+
+        }
+
+        let len = buf.len().min(self.content_length_left);
+        let buf = &mut buf[..len];
+
+        if len == 0 {
+            return Ok(0);
+        }
+
+        self.reader
+            .read(buf)
+            .await
+            .inspect(|n| self.content_length_left -= n)
+    }
+}
+
+impl<R: Read> BodyReader<R> {
+    async fn finalize(mut self) -> Result<response::Connection<R>, R::Error> {
+        let mut buf = [0; 64];
+        while self.read(&mut buf).await? != 0 {}
+        Ok(response::Connection(self.reader))
+    }
+}
+*/
