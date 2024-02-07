@@ -13,7 +13,7 @@ use crate::{
 
 mod layer;
 
-use embedded_io_async::{Read, Write};
+use embedded_io_async::{ErrorType, Read, Write};
 pub use layer::{Layer, Next};
 
 #[doc(hidden)]
@@ -37,6 +37,39 @@ trait HandlerFunction<State, PathParameters, FunctionParameters, FunctionReturn>
     ) -> Result<ResponseSent, WW::Error>;
 }
 
+struct BodyReader<R> {
+    reader: R,
+    content_length_left: usize,
+}
+
+impl<R: ErrorType> ErrorType for BodyReader<R> {
+    type Error = R::Error;
+}
+
+impl<R: Read> Read for BodyReader<R> {
+    async fn read(&mut self, buf: &mut [u8]) -> Result<usize, R::Error> {
+        let len = buf.len().min(self.content_length_left);
+        let buf = &mut buf[..len];
+
+        if len == 0 {
+            return Ok(0);
+        }
+
+        self.reader
+            .read(buf)
+            .await
+            .inspect(|n| self.content_length_left -= n)
+    }
+}
+
+impl<R: Read> BodyReader<R> {
+    async fn finalize(mut self) -> Result<response::Connection<R>, R::Error> {
+        let mut buf = [0; 64];
+        while self.read(&mut buf).await? != 0 {}
+        Ok(response::Connection(self.reader))
+    }
+}
+
 macro_rules! declare_handler_func {
     ($($($name:ident)*;)*) => {
         $(
@@ -51,17 +84,22 @@ macro_rules! declare_handler_func {
                     state: &State,
                     path_parameters: NoPathParameters,
                     request: Request<'_>,
-                    mut body_reader: R,
+                    body_reader: R,
                     writer: WW,
                     response_writer: W,
                 ) -> Result<ResponseSent, WW::Error> {
-                    (self)($(match <$name>::from_request(state, &request, &mut body_reader).await {
+                    let mut body_reader = BodyReader {
+                        reader: body_reader,
+                        content_length_left: request.content_length(),
+                    };
+
+                    let res = (self)($(match <$name>::from_request(state, &request, &mut body_reader).await {
                         Ok(value) => value,
-                        Err(err) => return err.write_to(writer, response::Connection(body_reader), response_writer).await,
+                        Err(err) => return err.write_to(writer, body_reader.finalize().await?, response_writer).await,
                     },)*)
-                    .await
-                    .write_to(writer, response::Connection(body_reader), response_writer)
-                    .await
+                    .await;
+
+                    res.write_to(writer, body_reader.finalize().await?, response_writer).await
                 }
             }
 
@@ -76,20 +114,24 @@ macro_rules! declare_handler_func {
                     state: &State,
                     OnePathParameter(path_parameter): OnePathParameter<PathParameter>,
                     request: Request<'_>,
-                    mut body_reader: R,
+                    body_reader: R,
                     writer: WW,
                     response_writer: W,
                 ) -> Result<ResponseSent, WW::Error> {
-                    (self)(
+                    let mut body_reader = BodyReader {
+                        reader: body_reader,
+                        content_length_left: request.content_length(),
+                    };
+                    let res = (self)(
                         path_parameter,
                         $(match <$name>::from_request(state, &request, &mut body_reader).await {
                             Ok(value) => value,
-                            Err(err) => return err.write_to(writer, response::Connection(body_reader), response_writer).await,
+                            Err(err) => return err.write_to(writer, body_reader.finalize().await?, response_writer).await,
                         },)*
                     )
-                    .await
-                    .write_to(writer, response::Connection(body_reader), response_writer)
-                    .await
+                    .await;
+
+                    res.write_to(writer, body_reader.finalize().await?, response_writer).await
                 }
             }
 
@@ -104,20 +146,24 @@ macro_rules! declare_handler_func {
                     state: &State,
                     ManyPathParameters(path_parameters): ManyPathParameters<PathParameters>,
                     request: Request<'_>,
-                    mut body_reader: R,
+                    body_reader: R,
                     writer: WW,
                     response_writer: W,
                 ) -> Result<ResponseSent, WW::Error> {
-                    (self)(
+                    let mut body_reader = BodyReader {
+                        reader: body_reader,
+                        content_length_left: request.content_length(),
+                    };
+                    let res = (self)(
                         path_parameters,
                         $(match <$name>::from_request(state, &request, &mut body_reader).await {
                             Ok(value) => value,
-                            Err(err) => return err.write_to(writer, response::Connection(body_reader), response_writer).await,
+                            Err(err) => return err.write_to(writer, body_reader.finalize().await?, response_writer).await,
                         },)*
                     )
-                    .await
-                    .write_to(writer, response::Connection(body_reader), response_writer)
-                    .await
+                    .await;
+
+                    res.write_to(writer, body_reader.finalize().await?, response_writer).await
                 }
             }
         )*

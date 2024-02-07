@@ -201,7 +201,7 @@ async fn serve_and_shutdown<State, T: Timer, P: routing::PathRouter<State>, S: i
                 .run_with_maybe_timeout(config.timeouts.read_request.clone(), reader.read())
                 .await
             {
-                Ok(Ok((request, connection))) => {
+                Ok(Ok((request, body_reader))) => {
                     let connection_header = match config.connection {
                         KeepAlive::Close => KeepAlive::Close,
                         KeepAlive::KeepAlive => {
@@ -221,7 +221,7 @@ async fn serve_and_shutdown<State, T: Timer, P: routing::PathRouter<State>, S: i
                             routing::NoPathParameters,
                             request.path(),
                             request,
-                            connection,
+                            body_reader,
                             &mut writer,
                             response::ResponseStream::new(connection_header),
                         )
