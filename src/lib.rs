@@ -1,4 +1,4 @@
-#![cfg_attr(not(feature = "std"), no_std)]
+#![cfg_attr(not(any(feature = "std", test)), no_std)]
 #![allow(async_fn_in_trait)]
 
 //! An async `no_std` HTTP server suitable for bare-metal environments, heavily inspired by [axum](https://github.com/tokio-rs/axum).
@@ -17,6 +17,9 @@ pub mod response;
 pub mod routing;
 pub mod time;
 pub mod url_encoded;
+
+#[cfg(test)]
+mod tests;
 
 pub use routing::Router;
 pub use time::Timer;
@@ -182,18 +185,18 @@ async fn serve_and_shutdown<State, T: Timer, P: routing::PathRouter<State>, S: i
     let result = async {
         let (reader, mut writer) = socket.split();
 
-        let mut reader = MapReadErrorReader(reader);
+        let mut reader = request::Reader::new(MapReadErrorReader(reader), buffer);
 
         for request_count in 0.. {
-            let mut reader = match timer
+            match timer
                 .run_with_maybe_timeout(
                     config.timeouts.start_read_request.clone(),
-                    request::Reader::new(&mut reader, buffer),
+                    reader.request_is_pending(),
                 )
                 .await
             {
-                Ok(Ok(Some(reader))) => reader,
-                Ok(Ok(None)) | Err(_) => return Ok(request_count),
+                Ok(Ok(true)) => (),
+                Ok(Ok(false)) | Err(_) => return Ok(request_count),
                 Ok(Err(err)) => return Err(err),
             };
 
@@ -201,12 +204,13 @@ async fn serve_and_shutdown<State, T: Timer, P: routing::PathRouter<State>, S: i
                 .run_with_maybe_timeout(config.timeouts.read_request.clone(), reader.read())
                 .await
             {
-                Ok(Ok((request, connection))) => {
+                Ok(Ok(request)) => {
                     let connection_header = match config.connection {
                         KeepAlive::Close => KeepAlive::Close,
-                        KeepAlive::KeepAlive => {
-                            KeepAlive::from_request(request.http_version(), request.headers())
-                        }
+                        KeepAlive::KeepAlive => KeepAlive::from_request(
+                            request.parts.http_version(),
+                            request.parts.headers(),
+                        ),
                     };
 
                     let mut writer = time::WriteWithTimeout {
@@ -219,13 +223,9 @@ async fn serve_and_shutdown<State, T: Timer, P: routing::PathRouter<State>, S: i
                         .call_path_router(
                             state,
                             routing::NoPathParameters,
-                            request.path(),
+                            request.parts.path(),
                             request,
-                            response::ResponseStream::new(
-                                connection,
-                                &mut writer,
-                                connection_header,
-                            ),
+                            response::ResponseStream::new(&mut writer, connection_header),
                         )
                         .await?;
 
@@ -261,7 +261,7 @@ async fn serve_and_shutdown<State, T: Timer, P: routing::PathRouter<State>, S: i
     Ok(request_count)
 }
 
-#[cfg(feature = "tokio")]
+#[cfg(any(feature = "tokio", test))]
 /// Serve `app` with incoming requests. App has a no state.
 pub async fn serve<P: routing::PathRouter>(
     app: &Router<P>,
@@ -272,7 +272,7 @@ pub async fn serve<P: routing::PathRouter>(
     serve_and_shutdown(app, time::TokioTimer, config, buffer, stream, &()).await
 }
 
-#[cfg(feature = "tokio")]
+#[cfg(any(feature = "tokio", test))]
 /// Serve incoming requests read from `reader`, route them to `app`, and write responses to `writer`. App has a state of `State`.
 pub async fn serve_with_state<State, P: routing::PathRouter<State>>(
     app: &Router<P, State>,
@@ -371,7 +371,7 @@ pub async fn listen_and_serve_with_state<State, P: routing::PathRouter<State>>(
     }
 }
 
-#[cfg(not(any(feature = "tokio", feature = "embassy")))]
+#[cfg(not(any(feature = "tokio", feature = "embassy", test)))]
 /// Serve `app` with incoming requests. App has no state.
 pub async fn serve<T: Timer, P: routing::PathRouter, S: io::Socket>(
     app: &Router<P>,
@@ -383,13 +383,13 @@ pub async fn serve<T: Timer, P: routing::PathRouter, S: io::Socket>(
     serve_and_shutdown(app, timer, config, buffer, socket, &()).await
 }
 
-#[cfg(not(any(feature = "tokio", feature = "embassy")))]
+#[cfg(not(any(feature = "tokio", feature = "embassy", test)))]
 /// Serve `app` with incoming requests. App has a state of `State`.
-pub async fn serve_with_state<State, T: Timer, P: routing::PathRouter<State>, S: io::Socket>(
+pub async fn serve_with_state<'r, State, T: Timer, P: routing::PathRouter<State>, S: io::Socket>(
     app: &Router<P, State>,
     timer: T,
     config: &Config<T::Duration>,
-    buffer: &mut [u8],
+    buffer: &'r mut [u8],
     socket: S,
     state: &State,
 ) -> Result<u64, Error<S::Error>> {

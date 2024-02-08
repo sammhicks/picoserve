@@ -99,7 +99,7 @@ pub trait Socket: Sized {
     ) -> Result<(), super::Error<Self::Error>>;
 }
 
-#[cfg(feature = "tokio")]
+#[cfg(any(feature = "tokio", test))]
 pub(crate) mod tokio_support {
     use embedded_io_async::{Error, ErrorKind, ErrorType, Read, Write};
 

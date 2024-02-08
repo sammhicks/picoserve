@@ -49,15 +49,66 @@ impl fmt::Write for MeasureFormatSize {
     }
 }
 
+pub(crate) struct BufferedReader<'r, R: Read> {
+    pub(crate) reader: R,
+    pub(crate) buffer: &'r mut [u8],
+    pub(crate) read_position: usize,
+    pub(crate) buffer_usage: usize,
+}
+
+impl<'r, R: Read> BufferedReader<'r, R> {
+    async fn read_into(&mut self, buffer: &mut [u8]) -> Result<usize, R::Error> {
+        let prefix = &self.buffer[self.read_position..self.buffer_usage];
+
+        if prefix.is_empty() {
+            self.reader.read(buffer).await
+        } else {
+            let read_size = prefix.len().min(buffer.len());
+
+            buffer[..read_size].copy_from_slice(prefix);
+            self.read_position += read_size;
+
+            Ok(read_size)
+        }
+    }
+}
+
+pub struct UpgradedConnection<'r, R: Read> {
+    reader: BufferedReader<'r, R>,
+}
+
+impl<'r, R: Read> crate::io::ErrorType for UpgradedConnection<'r, R> {
+    type Error = R::Error;
+}
+
+impl<'r, R: Read> Read for UpgradedConnection<'r, R> {
+    async fn read(&mut self, buffer: &mut [u8]) -> Result<usize, Self::Error> {
+        self.reader.read_into(buffer).await
+    }
+}
+
 /// A handle to the current conneection. Allows a long-lasting response to check if the client has disconnected.
-pub struct Connection<R: Read>(pub(crate) R);
+pub struct Connection<'r, R: Read> {
+    pub(crate) reader: BufferedReader<'r, R>,
+    pub(crate) has_been_upgraded: &'r mut bool,
+}
 
-impl<R: Read> Connection<R> {
+impl<'r, R: Read> Connection<'r, R> {
+    /// Upgrade the connection and get access to the inner reader
+    pub fn upgrade(
+        self,
+        _upgrade_token: crate::extract::UpgradeToken,
+    ) -> UpgradedConnection<'r, R> {
+        *self.has_been_upgraded = true;
+
+        UpgradedConnection {
+            reader: self.reader,
+        }
+    }
+
     /// Wait for the client to disconnect. This will discard any additional data sent by the client.
-    pub async fn wait_for_disconnection(mut self) -> Result<(), R::Error> {
-        while self.0.read(&mut [0; 8]).await? > 0 {}
-
-        Ok(())
+    pub async fn wait_for_disconnection(self) -> Result<(), R::Error> {
+        crate::extract::UpgradeToken::discard_all_data(self).await
     }
 }
 
@@ -151,7 +202,7 @@ impl<A: HeadersIter, B: HeadersIter> HeadersIter for HeadersChain<A, B> {
 pub trait Body {
     async fn write_response_body<R: Read, W: Write<Error = R::Error>>(
         self,
-        connection: Connection<R>,
+        connection: Connection<'_, R>,
         writer: W,
     ) -> Result<(), W::Error>;
 }
@@ -161,7 +212,7 @@ struct NoBody;
 impl Body for NoBody {
     async fn write_response_body<R: Read, W: Write<Error = R::Error>>(
         self,
-        _connection: Connection<R>,
+        _connection: Connection<'_, R>,
         _writer: W,
     ) -> Result<(), W::Error> {
         Ok(())
@@ -179,7 +230,7 @@ pub trait Content {
     /// Write the content data.
     async fn write_content<R: Read, W: Write<Error = R::Error>>(
         self,
-        connection: Connection<R>,
+        connection: Connection<'_, R>,
         writer: W,
     ) -> Result<(), W::Error>;
 }
@@ -190,7 +241,7 @@ pub struct ContentBody<C: Content>(C);
 impl<C: Content> Body for ContentBody<C> {
     async fn write_response_body<R: Read, W: Write<Error = R::Error>>(
         self,
-        connection: Connection<R>,
+        connection: Connection<'_, R>,
         writer: W,
     ) -> Result<(), W::Error> {
         self.0.write_content(connection, writer).await
@@ -208,7 +259,7 @@ impl<'a> Content for &'a [u8] {
 
     async fn write_content<R: Read, W: Write>(
         self,
-        _connection: Connection<R>,
+        _connection: Connection<'_, R>,
         mut writer: W,
     ) -> Result<(), W::Error> {
         writer.write_all(self).await
@@ -226,7 +277,7 @@ impl<'a> Content for &'a str {
 
     async fn write_content<R: Read, W: Write<Error = R::Error>>(
         self,
-        connection: Connection<R>,
+        connection: Connection<'_, R>,
         writer: W,
     ) -> Result<(), W::Error> {
         self.as_bytes().write_content(connection, writer).await
@@ -246,7 +297,7 @@ impl<'a> Content for fmt::Arguments<'a> {
 
     async fn write_content<R: Read, W: Write>(
         self,
-        _connection: Connection<R>,
+        _connection: Connection<'_, R>,
         mut writer: W,
     ) -> Result<(), W::Error> {
         use crate::io::WriteExt;
@@ -348,39 +399,39 @@ impl<H: HeadersIter, B: Body> Response<H, B> {
 pub trait ResponseWriter: Sized {
     type Error;
 
-    async fn write_response<H: HeadersIter, B: Body>(
+    async fn write_response<R: Read<Error = Self::Error>, H: HeadersIter, B: Body>(
         self,
+        connection: Connection<'_, R>,
         response: Response<H, B>,
     ) -> Result<ResponseSent, Self::Error>;
 }
 
-pub(crate) struct ResponseStream<R: Read, W: Write> {
-    connection: Connection<R>,
+pub(crate) struct ResponseStream<W: Write> {
     writer: W,
     connection_header: super::KeepAlive,
 }
 
-impl<R: Read, W: Write<Error = R::Error>> ResponseStream<R, W> {
-    pub fn new(connection: Connection<R>, writer: W, connection_header: super::KeepAlive) -> Self {
+impl<W: Write> ResponseStream<W> {
+    pub fn new(writer: W, connection_header: super::KeepAlive) -> Self {
         Self {
-            connection,
             writer,
             connection_header,
         }
     }
 }
 
-impl<R: Read, W: Write<Error = R::Error>> ResponseWriter for ResponseStream<R, W> {
+impl<W: Write> ResponseWriter for ResponseStream<W> {
     type Error = W::Error;
 
-    async fn write_response<H: HeadersIter, B: Body>(
+    async fn write_response<R: Read<Error = Self::Error>, H: HeadersIter, B: Body>(
         mut self,
+        connection: Connection<'_, R>,
         Response {
             status_code,
             headers,
             body,
         }: Response<H, B>,
-    ) -> Result<ResponseSent, W::Error> {
+    ) -> Result<ResponseSent, Self::Error> {
         struct HeadersWriter<WW: Write> {
             writer: WW,
             connection_header: Option<KeepAlive>,
@@ -422,7 +473,7 @@ impl<R: Read, W: Write<Error = R::Error>> ResponseWriter for ResponseStream<R, W
 
         self.writer.write_all(b"\r\n").await?;
 
-        body.write_response_body(self.connection, &mut self.writer)
+        body.write_response_body(connection, &mut self.writer)
             .await?;
 
         self.writer.flush().await.map(ResponseSent)
@@ -434,24 +485,27 @@ impl<R: Read, W: Write<Error = R::Error>> ResponseWriter for ResponseStream<R, W
 /// Types that implement IntoResponse can be returned from handlers.
 pub trait IntoResponse: Sized {
     /// Write the generated response into the given [ResponseWriter].
-    async fn write_to<W: ResponseWriter>(
+    async fn write_to<R: Read, W: ResponseWriter<Error = R::Error>>(
         self,
+        connection: Connection<'_, R>,
         response_writer: W,
     ) -> Result<ResponseSent, W::Error>;
 }
 
 impl<H: HeadersIter, B: Body> IntoResponse for Response<H, B> {
-    async fn write_to<W: ResponseWriter>(
+    async fn write_to<R: Read, W: ResponseWriter<Error = R::Error>>(
         self,
+        connection: Connection<'_, R>,
         response_writer: W,
     ) -> Result<ResponseSent, W::Error> {
-        response_writer.write_response(self).await
+        response_writer.write_response(connection, self).await
     }
 }
 
 impl IntoResponse for core::convert::Infallible {
-    async fn write_to<W: ResponseWriter>(
+    async fn write_to<R: Read, W: ResponseWriter<Error = R::Error>>(
         self,
+        _connection: Connection<'_, R>,
         _response_writer: W,
     ) -> Result<ResponseSent, W::Error> {
         match self {}
@@ -459,60 +513,69 @@ impl IntoResponse for core::convert::Infallible {
 }
 
 impl IntoResponse for () {
-    #[allow(clippy::let_unit_value)]
-    async fn write_to<W: ResponseWriter>(
+    async fn write_to<R: Read, W: ResponseWriter<Error = R::Error>>(
         self,
+        connection: Connection<'_, R>,
         response_writer: W,
     ) -> Result<ResponseSent, W::Error> {
-        "OK\n".write_to(response_writer).await
+        "OK\n".write_to(connection, response_writer).await
     }
 }
 
 impl<'a> IntoResponse for &'a str {
-    async fn write_to<W: ResponseWriter>(
+    async fn write_to<R: Read, W: ResponseWriter<Error = R::Error>>(
         self,
+        connection: Connection<'_, R>,
         response_writer: W,
     ) -> Result<ResponseSent, W::Error> {
-        response_writer.write_response(Response::ok(self)).await
+        response_writer
+            .write_response(connection, Response::ok(self))
+            .await
     }
 }
 
 impl<'a> IntoResponse for fmt::Arguments<'a> {
-    async fn write_to<W: ResponseWriter>(
+    async fn write_to<R: Read, W: ResponseWriter<Error = R::Error>>(
         self,
+        connection: Connection<'_, R>,
         response_writer: W,
     ) -> Result<ResponseSent, W::Error> {
-        response_writer.write_response(Response::ok(self)).await
+        response_writer
+            .write_response(connection, Response::ok(self))
+            .await
     }
 }
 
 impl<const N: usize> IntoResponse for heapless::String<N> {
-    async fn write_to<W: ResponseWriter>(
+    async fn write_to<R: Read, W: ResponseWriter<Error = R::Error>>(
         self,
+        connection: Connection<'_, R>,
         response_writer: W,
     ) -> Result<ResponseSent, W::Error> {
-        self.as_str().write_to(response_writer).await
+        self.as_str().write_to(connection, response_writer).await
     }
 }
 
 #[cfg(feature = "std")]
 impl IntoResponse for std::string::String {
-    async fn write_to<W: ResponseWriter>(
+    async fn write_to<R: Read, W: ResponseWriter<Error = R::Error>>(
         self,
+        connection: Connection<'_, R>,
         response_writer: W,
     ) -> Result<ResponseSent, W::Error> {
-        self.as_str().write_to(response_writer).await
+        self.as_str().write_to(connection, response_writer).await
     }
 }
 
 impl<T: IntoResponse, E: IntoResponse> IntoResponse for Result<T, E> {
-    async fn write_to<W: ResponseWriter>(
+    async fn write_to<R: Read, W: ResponseWriter<Error = R::Error>>(
         self,
+        connection: Connection<'_, R>,
         response_writer: W,
     ) -> Result<ResponseSent, W::Error> {
         match self {
-            Ok(value) => value.write_to(response_writer).await,
-            Err(err) => err.write_to(response_writer).await,
+            Ok(value) => value.write_to(connection, response_writer).await,
+            Err(err) => err.write_to(connection, response_writer).await,
         }
     }
 }
@@ -522,10 +585,11 @@ macro_rules! declare_tuple_into_response {
         $(
             impl<$($name: HeadersIter,)* C: Content> IntoResponse for (StatusCode, $($name,)* C,) {
                 #[allow(non_snake_case)]
-                async fn write_to<W: ResponseWriter>(self, response_writer: W) -> Result<ResponseSent, W::Error> {
+                async fn write_to<R: Read, W: ResponseWriter<Error = R::Error>>(self, connection: Connection<'_, R>, response_writer: W) -> Result<ResponseSent, W::Error> {
                     let (status_code, $($name,)* body) = self;
 
                     response_writer.write_response(
+                        connection,
                         Response::new(status_code, body)
                         $(.with_headers($name,))*
                     ).await
@@ -534,10 +598,11 @@ macro_rules! declare_tuple_into_response {
 
             impl<$($name: HeadersIter,)* C: Content> IntoResponse for ($($name,)* C,) {
                 #[allow(non_snake_case)]
-                async fn write_to<W: ResponseWriter>(self, response_writer: W) -> Result<ResponseSent, W::Error> {
+                async fn write_to<R: Read, W: ResponseWriter<Error = R::Error>>(self, connection: Connection<'_, R>, response_writer: W) -> Result<ResponseSent, W::Error> {
                     let ($($name,)* body,) = self;
 
                     response_writer.write_response(
+                        connection,
                         Response::new(status::OK, body)
                         $(.with_headers($name,))*
                     ).await
@@ -571,12 +636,13 @@ declare_tuple_into_response!(
 pub struct DebugValue<D>(pub D);
 
 impl<D: fmt::Debug> IntoResponse for DebugValue<D> {
-    async fn write_to<W: ResponseWriter>(
+    async fn write_to<R: Read, W: ResponseWriter<Error = R::Error>>(
         self,
+        connection: Connection<'_, R>,
         response_writer: W,
     ) -> Result<ResponseSent, W::Error> {
         response_writer
-            .write_response(Response::ok(format_args!("{:?}\r\n", self.0)))
+            .write_response(connection, Response::ok(format_args!("{:?}\r\n", self.0)))
             .await
     }
 }
@@ -607,8 +673,9 @@ impl Redirect {
 }
 
 impl IntoResponse for Redirect {
-    async fn write_to<W: ResponseWriter>(
+    async fn write_to<R: Read, W: ResponseWriter<Error = R::Error>>(
         self,
+        connection: Connection<'_, R>,
         response_writer: W,
     ) -> Result<ResponseSent, W::Error> {
         (
@@ -616,7 +683,7 @@ impl IntoResponse for Redirect {
             ("Location", self.location),
             format_args!("{}\n", self.location),
         )
-            .write_to(response_writer)
+            .write_to(connection, response_writer)
             .await
     }
 }

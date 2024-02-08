@@ -9,13 +9,48 @@
 //!
 //! For an example of how to implement [FromRequest], see [custom_extractor](https://github.com/sammhicks/picoserve/blob/main/examples/custom_extractor/src/main.rs)
 
-use crate::{request::Request, response::status, response::IntoResponse, ResponseSent};
+use crate::{
+    io::Read,
+    request::{RequestBody, RequestParts},
+    response::{status, IntoResponse},
+    ResponseSent,
+};
 
-/// Types that can be created from requests.
-pub trait FromRequest<State>: Sized {
+mod private {
+    pub struct ViaRequest;
+    pub struct ViaParts;
+}
+
+pub trait FromRequestParts<State>: Sized {
     type Rejection: IntoResponse;
 
-    async fn from_request(state: &State, request: &Request) -> Result<Self, Self::Rejection>;
+    async fn from_request_parts(
+        state: &State,
+        request_parts: &RequestParts<'_>,
+    ) -> Result<Self, Self::Rejection>;
+}
+
+/// Types that can be created from requests.
+pub trait FromRequest<State, M = private::ViaRequest>: Sized {
+    type Rejection: IntoResponse;
+
+    async fn from_request<R: Read>(
+        state: &State,
+        request_parts: RequestParts<'_>,
+        request_body: RequestBody<'_, R>,
+    ) -> Result<Self, Self::Rejection>;
+}
+
+impl<State, T: FromRequestParts<State>> FromRequest<State, private::ViaParts> for T {
+    type Rejection = <Self as FromRequestParts<State>>::Rejection;
+
+    async fn from_request<R: Read>(
+        state: &State,
+        request_parts: RequestParts<'_>,
+        _request_body: RequestBody<'_, R>,
+    ) -> Result<Self, Self::Rejection> {
+        Self::from_request_parts(state, &request_parts).await
+    }
 }
 
 /// Extractor that deserializes query strings into some type.
@@ -39,24 +74,25 @@ impl<T: serde::de::DeserializeOwned> core::ops::DerefMut for Query<T> {
 pub struct QueryRejection;
 
 impl IntoResponse for QueryRejection {
-    async fn write_to<W: super::response::ResponseWriter>(
+    async fn write_to<R: Read, W: crate::response::ResponseWriter<Error = R::Error>>(
         self,
+        connection: crate::response::Connection<'_, R>,
         response_writer: W,
     ) -> Result<ResponseSent, W::Error> {
         (status::BAD_REQUEST, "Bad Query\n")
-            .write_to(response_writer)
+            .write_to(connection, response_writer)
             .await
     }
 }
 
-impl<State, T: serde::de::DeserializeOwned> FromRequest<State> for Query<T> {
+impl<State, T: serde::de::DeserializeOwned> FromRequestParts<State> for Query<T> {
     type Rejection = QueryRejection;
 
-    async fn from_request(
+    async fn from_request_parts(
         _state: &State,
-        request: &Request<'_>,
-    ) -> Result<Query<T>, QueryRejection> {
-        super::url_encoded::deserialize_form(request.query().unwrap_or_default())
+        request_parts: &RequestParts<'_>,
+    ) -> Result<Self, Self::Rejection> {
+        super::url_encoded::deserialize_form(request_parts.query().unwrap_or_default())
             .map(Self)
             .map_err(|super::url_encoded::BadUrlEncodedForm| QueryRejection)
     }
@@ -86,8 +122,9 @@ pub enum FormRejection {
 }
 
 impl IntoResponse for FormRejection {
-    async fn write_to<W: super::response::ResponseWriter>(
+    async fn write_to<R: Read, W: crate::response::ResponseWriter<Error = R::Error>>(
         self,
+        connection: crate::response::Connection<'_, R>,
         response_writer: W,
     ) -> Result<ResponseSent, W::Error> {
         (
@@ -97,7 +134,7 @@ impl IntoResponse for FormRejection {
                 Self::BadForm => "Bad Form\n",
             },
         )
-            .write_to(response_writer)
+            .write_to(connection, response_writer)
             .await
     }
 }
@@ -105,10 +142,19 @@ impl IntoResponse for FormRejection {
 impl<State, T: serde::de::DeserializeOwned> FromRequest<State> for Form<T> {
     type Rejection = FormRejection;
 
-    async fn from_request(_state: &State, request: &Request<'_>) -> Result<Form<T>, FormRejection> {
+    async fn from_request<R: Read>(
+        _state: &State,
+        _request_parts: RequestParts<'_>,
+        request_body: RequestBody<'_, R>,
+    ) -> Result<Self, Self::Rejection> {
         super::url_encoded::deserialize_form(crate::url_encoded::UrlEncodedString(
-            core::str::from_utf8(request.body())
-                .map_err(|core::str::Utf8Error { .. }| FormRejection::BodyIsNotUtf8)?,
+            core::str::from_utf8(
+                request_body
+                    .read_all()
+                    .await
+                    .map_err(|_| FormRejection::BadForm)?,
+            )
+            .map_err(|core::str::Utf8Error { .. }| FormRejection::BodyIsNotUtf8)?,
         ))
         .map(Self)
         .map_err(|super::url_encoded::BadUrlEncodedForm| FormRejection::BadForm)
@@ -134,10 +180,65 @@ pub struct State<T>(
     pub T,
 );
 
-impl<S, T: FromRef<S>> FromRequest<S> for State<T> {
+impl<S, T: FromRef<S>> FromRequestParts<S> for State<T> {
     type Rejection = core::convert::Infallible;
 
-    async fn from_request(state: &S, _request: &Request<'_>) -> Result<Self, Self::Rejection> {
+    async fn from_request_parts(
+        state: &S,
+        _request_parts: &RequestParts<'_>,
+    ) -> Result<Self, Self::Rejection> {
         Ok(State(T::from_ref(state)))
+    }
+}
+
+#[derive(Debug)]
+pub struct NoUpgradeHeader;
+
+impl IntoResponse for NoUpgradeHeader {
+    async fn write_to<R: Read, W: crate::response::ResponseWriter<Error = R::Error>>(
+        self,
+        connection: crate::response::Connection<'_, R>,
+        response_writer: W,
+    ) -> Result<ResponseSent, W::Error> {
+        (
+            status::BAD_REQUEST,
+            "Connection header did not include `upgrade`\n",
+        )
+            .write_to(connection, response_writer)
+            .await
+    }
+}
+
+/// A token which allows a connection to be upgraded. Verifies that the "Upgrade" header has been set
+#[derive(Debug)]
+pub struct UpgradeToken(());
+
+impl<State> FromRequestParts<State> for UpgradeToken {
+    type Rejection = NoUpgradeHeader;
+
+    async fn from_request_parts(
+        _state: &State,
+        request_parts: &RequestParts<'_>,
+    ) -> Result<Self, Self::Rejection> {
+        request_parts
+            .headers()
+            .get("upgrade")
+            .map(|_| Self(()))
+            .ok_or(NoUpgradeHeader)
+    }
+}
+
+impl UpgradeToken {
+    pub(crate) async fn discard_all_data<R: Read>(
+        connection: crate::response::Connection<'_, R>,
+    ) -> Result<(), R::Error> {
+        // Consumes and discards all data, so cannot gain access to the next requests data,
+        // and the connection is consumed so cannot be upgraded after this call
+
+        let mut reader = connection.upgrade(UpgradeToken(()));
+
+        while reader.read(&mut [0; 8]).await? > 0 {}
+
+        Ok(())
     }
 }

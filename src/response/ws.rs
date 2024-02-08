@@ -1,6 +1,9 @@
 //! Web Sockets. See [web_sockets](https://github.com/sammhicks/picoserve/blob/main/examples/web_sockets/src/main.rs) for usage example.
 
-use crate::io::{Read, Write};
+use crate::{
+    extract::FromRequestParts,
+    io::{Read, Write},
+};
 
 use super::status;
 
@@ -19,8 +22,9 @@ pub enum WebSocketUpgradeRejection {
 }
 
 impl super::IntoResponse for WebSocketUpgradeRejection {
-    async fn write_to<W: super::ResponseWriter>(
+    async fn write_to<R: Read, W: super::ResponseWriter<Error = R::Error>>(
         self,
+        connection: super::Connection<'_, R>,
         response_writer: W,
     ) -> Result<crate::ResponseSent, W::Error> {
         (
@@ -31,7 +35,7 @@ impl super::IntoResponse for WebSocketUpgradeRejection {
                         status::METHOD_NOT_ALLOWED,
                         "Websocket upgrades must use the `GET` method\n",
                     )
-                        .write_to(response_writer)
+                        .write_to(connection, response_writer)
                         .await
                 }
                 WebSocketUpgradeRejection::InvalidConnectionHeader => {
@@ -48,7 +52,7 @@ impl super::IntoResponse for WebSocketUpgradeRejection {
                 }
             },
         )
-            .write_to(response_writer)
+            .write_to(connection, response_writer)
             .await
     }
 }
@@ -80,6 +84,7 @@ impl<P: AsRef<str>> WebSocketProtocol for SpecifiedProtocol<P> {
 pub struct WebSocketUpgrade {
     key: [u8; 28],
     protocols: Option<heapless::String<32>>,
+    upgrade_token: crate::extract::UpgradeToken,
 }
 
 impl WebSocketUpgrade {
@@ -95,15 +100,22 @@ impl WebSocketUpgrade {
 impl<State> crate::extract::FromRequest<State> for WebSocketUpgrade {
     type Rejection = WebSocketUpgradeRejection;
 
-    async fn from_request(
-        _state: &State,
-        request: &crate::request::Request<'_>,
+    async fn from_request<R: Read>(
+        state: &State,
+        request_parts: crate::request::RequestParts<'_>,
+        _request_body: crate::request::RequestBody<'_, R>,
     ) -> Result<Self, Self::Rejection> {
-        if !request.method().eq_ignore_ascii_case("get") {
+        if !request_parts.method().eq_ignore_ascii_case("get") {
             return Err(WebSocketUpgradeRejection::MethodNotGet);
         }
 
-        if request
+        let upgrade_token = crate::extract::UpgradeToken::from_request_parts(state, &request_parts)
+            .await
+            .map_err(|crate::extract::NoUpgradeHeader| {
+                WebSocketUpgradeRejection::InvalidUpgradeHeader
+            })?;
+
+        if request_parts
             .headers()
             .get("upgrade")
             .map_or(true, |upgrade| !upgrade.eq_ignore_ascii_case("websocket"))
@@ -111,11 +123,11 @@ impl<State> crate::extract::FromRequest<State> for WebSocketUpgrade {
             return Err(WebSocketUpgradeRejection::InvalidUpgradeHeader);
         }
 
-        if request.headers().get("sec-websocket-version") != Some("13") {
+        if request_parts.headers().get("sec-websocket-version") != Some("13") {
             return Err(WebSocketUpgradeRejection::InvalidWebSocketVersionHeader);
         }
 
-        let key = request
+        let key = request_parts
             .headers()
             .get("sec-websocket-key")
             .map(|key| {
@@ -132,7 +144,7 @@ impl<State> crate::extract::FromRequest<State> for WebSocketUpgrade {
             })
             .ok_or(WebSocketUpgradeRejection::WebSocketKeyHeaderMissing)?;
 
-        let protocols = request
+        let protocols = request_parts
             .headers()
             .get("sec-websocket-protocol")
             .and_then(|protocol| {
@@ -141,7 +153,11 @@ impl<State> crate::extract::FromRequest<State> for WebSocketUpgrade {
                 Some(buffer)
             });
 
-        Ok(Self { key, protocols })
+        Ok(Self {
+            key,
+            protocols,
+            upgrade_token,
+        })
     }
 }
 
@@ -543,6 +559,7 @@ pub trait WebSocketCallback {
 pub struct UpgradedWebSocket<P: WebSocketProtocol, C: WebSocketCallback> {
     sec_websocket_accept: [u8; 28],
     sec_websocket_protocol: P,
+    upgrade_token: crate::extract::UpgradeToken,
     callback: C,
 }
 
@@ -555,12 +572,14 @@ impl<C: WebSocketCallback> UpgradedWebSocket<UnspecifiedProtocol, C> {
         let UpgradedWebSocket {
             sec_websocket_accept,
             sec_websocket_protocol: UnspecifiedProtocol,
+            upgrade_token,
             callback,
         } = self;
 
         UpgradedWebSocket {
             sec_websocket_accept,
             sec_websocket_protocol: SpecifiedProtocol(protocol),
+            upgrade_token,
             callback,
         }
     }
@@ -573,15 +592,23 @@ impl WebSocketUpgrade {
         self,
         callback: C,
     ) -> UpgradedWebSocket<UnspecifiedProtocol, C> {
+        let Self {
+            key, upgrade_token, ..
+        } = self;
+
         UpgradedWebSocket {
-            sec_websocket_accept: self.key,
+            sec_websocket_accept: key,
             sec_websocket_protocol: UnspecifiedProtocol,
+            upgrade_token,
             callback,
         }
     }
 }
 
-struct UpgradedWebSocketBody<C: WebSocketCallback>(C);
+struct UpgradedWebSocketBody<C: WebSocketCallback> {
+    upgrade_token: crate::extract::UpgradeToken,
+    callback: C,
+}
 
 impl<C: WebSocketCallback> super::Body for UpgradedWebSocketBody<C> {
     async fn write_response_body<
@@ -589,27 +616,37 @@ impl<C: WebSocketCallback> super::Body for UpgradedWebSocketBody<C> {
         W: embedded_io_async::Write<Error = R::Error>,
     >(
         self,
-        super::Connection(reader): super::Connection<R>,
+        connection: super::Connection<'_, R>,
         mut writer: W,
     ) -> Result<(), W::Error> {
         writer.flush().await?;
-        self.0.run(SocketRx { reader }, SocketTx { writer }).await
+        self.callback
+            .run(
+                SocketRx {
+                    reader: connection.upgrade(self.upgrade_token),
+                },
+                SocketTx { writer },
+            )
+            .await
     }
 }
 
 impl<P: WebSocketProtocol, C: WebSocketCallback> super::IntoResponse for UpgradedWebSocket<P, C> {
-    async fn write_to<W: super::ResponseWriter>(
+    async fn write_to<R: Read, W: super::ResponseWriter<Error = R::Error>>(
         self,
+        connection: super::Connection<'_, R>,
         response_writer: W,
     ) -> Result<crate::ResponseSent, W::Error> {
         let UpgradedWebSocket {
             sec_websocket_accept,
             sec_websocket_protocol,
+            upgrade_token,
             callback,
         } = self;
 
         response_writer
             .write_response(
+                connection,
                 super::Response {
                     status_code: status::SWITCHING_PROTOCOLS,
                     headers: [
@@ -620,7 +657,10 @@ impl<P: WebSocketProtocol, C: WebSocketCallback> super::IntoResponse for Upgrade
                             core::str::from_utf8_unchecked(&sec_websocket_accept)
                         }),
                     ],
-                    body: UpgradedWebSocketBody(callback),
+                    body: UpgradedWebSocketBody {
+                        upgrade_token,
+                        callback,
+                    },
                 }
                 .with_headers(sec_websocket_protocol.name().map(
                     |sec_websocket_protocol| ("Sec-WebSocket-Protocol", sec_websocket_protocol),

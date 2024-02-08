@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.0] - 2024-02-12
+
+### Breaking
+
+- Request bodies are no longer automatically read, but must be read.
+- [`request::Reader`](https://docs.rs/picoserve/0.8.1/picoserve/request/struct.Reader.html) is no longer public.
+- Connection must be given an [`UpgradeToken`](https://docs.rs/picoserve/0.9.0/picoserve/extract/struct.UpgradeToken.html) when upgraded.
+- [`ResponseWriter`](https://docs.rs/picoserve/0.9.0/picoserve/response/trait.ResponseWriter.html) must be given a [`Connection`](https://docs.rs/picoserve/0.9.0/picoserve/response/struct.Connection.html) when writing the response.
+
+### Changes
+
+- Request Bodies can not be either read into the internal buffer (as previously), or converted into a [`RequestBodyReader`](https://docs.rs/picoserve/0.9.0/picoserve/response/struct.RequestBodyReader.html), which implements Read.
+
+### Added
+
+- Added several unit tests around routing and reading requests.
+
+## [0.8.1] - 2024-02-05
+
+### Changes
+
+- Fixed newline in WebSocketKeyHeaderMissing message.
+
 ## [0.8.0] - 2024-02-05
 
 ### Breaking

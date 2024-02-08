@@ -1,13 +1,14 @@
 use crate::{
-    request::{Path, Request},
+    io::Read,
+    request::{Path, Request, RequestParts},
     ResponseSent,
 };
 
 use super::{MethodHandler, PathRouter, ResponseWriter};
 
 /// The remainer of a middleware stack, including the handler.
-pub trait Next<State, PathParameters> {
-    async fn run<W: ResponseWriter>(
+pub trait Next<R: Read, State, PathParameters> {
+    async fn run<W: ResponseWriter<Error = R::Error>>(
         self,
         state: &State,
         path_parameters: PathParameters,
@@ -33,27 +34,28 @@ pub trait Layer<State, PathParameters> {
     type NextPathParameters;
 
     async fn call_layer<
-        NextLayer: Next<Self::NextState, Self::NextPathParameters>,
-        W: ResponseWriter,
+        R: Read,
+        NextLayer: Next<R, Self::NextState, Self::NextPathParameters>,
+        W: ResponseWriter<Error = R::Error>,
     >(
         &self,
         next: NextLayer,
         state: &State,
         path_parameters: PathParameters,
-        request: Request<'_>,
+        request_parts: RequestParts<'_>,
         response_writer: W,
     ) -> Result<ResponseSent, W::Error>;
 }
 
-struct NextMethodRouterLayer<'a, N> {
+struct NextMethodRouterLayer<'a, R: Read, N> {
     next: &'a N,
-    request: Request<'a>,
+    request: Request<'a, R>,
 }
 
-impl<'a, State, PathParameters, N: MethodHandler<State, PathParameters>> Next<State, PathParameters>
-    for NextMethodRouterLayer<'a, N>
+impl<'a, R: Read, State, PathParameters, N: MethodHandler<State, PathParameters>>
+    Next<R, State, PathParameters> for NextMethodRouterLayer<'a, R, N>
 {
-    async fn run<W: ResponseWriter>(
+    async fn run<W: ResponseWriter<Error = R::Error>>(
         self,
         state: &State,
         path_parameters: PathParameters,
@@ -77,13 +79,15 @@ impl<
         PathParameters,
     > MethodHandler<State, PathParameters> for MethodRouterLayer<L, I>
 {
-    async fn call_method_handler<W: ResponseWriter>(
+    async fn call_method_handler<R: Read, W: ResponseWriter<Error = R::Error>>(
         &self,
         state: &State,
         path_parameters: PathParameters,
-        request: Request<'_>,
+        request: Request<'_, R>,
         response_writer: W,
     ) -> Result<ResponseSent, W::Error> {
+        let request_parts = request.parts;
+
         self.layer
             .call_layer(
                 NextMethodRouterLayer {
@@ -92,23 +96,23 @@ impl<
                 },
                 state,
                 path_parameters,
-                request,
+                request_parts,
                 response_writer,
             )
             .await
     }
 }
 
-struct NextPathRouterLayer<'a, N> {
+struct NextPathRouterLayer<'a, R: Read, N> {
     next: &'a N,
     path: Path<'a>,
-    request: Request<'a>,
+    request: Request<'a, R>,
 }
 
-impl<'a, State, CurrentPathParameters, N: PathRouter<State, CurrentPathParameters>>
-    Next<State, CurrentPathParameters> for NextPathRouterLayer<'a, N>
+impl<'a, R: Read, State, CurrentPathParameters, N: PathRouter<State, CurrentPathParameters>>
+    Next<R, State, CurrentPathParameters> for NextPathRouterLayer<'a, R, N>
 {
-    async fn run<W: ResponseWriter>(
+    async fn run<W: ResponseWriter<Error = R::Error>>(
         self,
         state: &State,
         current_path_parameters: CurrentPathParameters,
@@ -138,14 +142,16 @@ impl<
         CurrentPathParameters,
     > PathRouter<State, CurrentPathParameters> for PathRouterLayer<L, I>
 {
-    async fn call_path_router<W: ResponseWriter>(
+    async fn call_path_router<R: Read, W: ResponseWriter<Error = R::Error>>(
         &self,
         state: &State,
         current_path_parameters: CurrentPathParameters,
         path: Path<'_>,
-        request: Request<'_>,
+        request: Request<'_, R>,
         response_writer: W,
     ) -> Result<ResponseSent, W::Error> {
+        let request_parts = request.parts;
+
         self.layer
             .call_layer(
                 NextPathRouterLayer {
@@ -155,7 +161,7 @@ impl<
                 },
                 state,
                 current_path_parameters,
-                request,
+                request_parts,
                 response_writer,
             )
             .await
