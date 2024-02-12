@@ -73,6 +73,7 @@ pub struct File {
     content_type: &'static str,
     body: &'static [u8],
     etag: ETag,
+    headers: &'static [(&'static str, &'static str)],
 }
 
 impl File {
@@ -81,6 +82,20 @@ impl File {
             content_type,
             body,
             etag: ETag(const_sha1::sha1(body).as_bytes()),
+            headers: &[],
+        }
+    }
+
+    pub const fn with_content_type_and_headers(
+        content_type: &'static str,
+        body: &'static [u8],
+        headers: &'static [(&'static str, &'static str)],
+    ) -> Self {
+        Self {
+            content_type,
+            body,
+            etag: ETag(const_sha1::sha1(body).as_bytes()),
+            headers,
         }
     }
 
@@ -99,7 +114,10 @@ impl File {
     /// Convert into a [super::Response] with a status code of "OK"
     pub fn into_response(self) -> super::Response<impl super::HeadersIter, impl super::Body> {
         let etag = self.etag.clone();
-        super::Response::ok(self).with_headers(etag)
+        let headers = self.headers;
+        super::Response::ok(self)
+            .with_headers(headers)
+            .with_headers(etag)
     }
 }
 

@@ -158,6 +158,15 @@ impl<'a, V: fmt::Display> HeadersIter for (&'a str, V) {
     }
 }
 
+impl<'a, 'b, V: fmt::Display> HeadersIter for &'a [(&'b str, V)] {
+    async fn for_each_header<F: ForEachHeader>(self, mut f: F) -> Result<F::Output, F::Error> {
+        for (name, value) in self {
+            f.call(name, value).await?;
+        }
+        f.finalize().await
+    }
+}
+
 impl<H: HeadersIter, const N: usize> HeadersIter for [H; N] {
     async fn for_each_header<F: ForEachHeader>(self, mut f: F) -> Result<F::Output, F::Error> {
         for headers in self {
