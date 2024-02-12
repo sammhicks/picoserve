@@ -9,7 +9,7 @@ use crate::{
     ResponseSent,
 };
 
-use super::{status, HeadersIter, IntoResponse};
+use super::{status, IntoResponse};
 
 #[derive(Clone, PartialEq, Eq)]
 struct ETag([u8; 20]);
@@ -69,29 +69,33 @@ impl super::HeadersIter for ETag {
 
 /// [RequestHandler] that serves a single file.
 #[derive(Debug, Clone)]
-pub struct File<H: HeadersIter + 'static> {
+pub struct File {
     content_type: &'static str,
     body: &'static [u8],
     etag: ETag,
-    headers: Option<H>,
+    headers: &'static [(&'static str, &'static str)],
 }
 
-impl<H: HeadersIter> File<H> {
+impl File {
     pub const fn with_content_type(content_type: &'static str, body: &'static [u8]) -> Self {
         Self {
             content_type,
             body,
             etag: ETag(const_sha1::sha1(body).as_bytes()),
-            headers: None
+            headers: &[],
         }
     }
 
-    pub const fn with_content_type_and_headers(content_type: &'static str, body: &'static [u8], headers: H) -> Self {
+    pub const fn with_content_type_and_headers(
+        content_type: &'static str,
+        body: &'static [u8],
+        headers: &'static [(&'static str, &'static str)],
+    ) -> Self {
         Self {
             content_type,
             body,
             etag: ETag(const_sha1::sha1(body).as_bytes()),
-            headers: Some(headers)
+            headers,
         }
     }
 
@@ -108,17 +112,17 @@ impl<H: HeadersIter> File<H> {
     }
 
     /// Convert into a [super::Response] with a status code of "OK"
-    pub fn into_response(mut self) -> super::Response<impl super::HeadersIter, impl super::Body> {
+    pub fn into_response(self) -> super::Response<impl super::HeadersIter, impl super::Body> {
         let etag = self.etag.clone();
-        let headers = self.headers.take();
+        let headers = self.headers;
         super::Response::ok(self)
             .with_headers(headers)
             .with_headers(etag)
     }
 }
 
-impl<State, PathParameters, H: HeadersIter + Clone> crate::routing::RequestHandler<State, PathParameters> for File<H> {
-    async fn call_request_handler<W: super::ResponseWriter>(
+impl<State, PathParameters> crate::routing::RequestHandler<State, PathParameters> for File {
+    async fn call_request_handler<R: Read, W: super::ResponseWriter<Error = R::Error>>(
         &self,
         _state: &State,
         _path_parameters: PathParameters,
@@ -150,7 +154,7 @@ impl<State, PathParameters, H: HeadersIter + Clone> crate::routing::RequestHandl
     }
 }
 
-impl<H: HeadersIter> super::Content for File<H> {
+impl super::Content for File {
     fn content_type(&self) -> &'static str {
         self.content_type
     }
@@ -168,8 +172,8 @@ impl<H: HeadersIter> super::Content for File<H> {
     }
 }
 
-impl<H: HeadersIter> super::IntoResponse for File<H> {
-    async fn write_to<W: super::ResponseWriter>(
+impl super::IntoResponse for File {
+    async fn write_to<R: Read, W: super::ResponseWriter<Error = R::Error>>(
         self,
         connection: super::Connection<'_, R>,
         response_writer: W,
@@ -180,7 +184,7 @@ impl<H: HeadersIter> super::IntoResponse for File<H> {
     }
 }
 
-impl<H: HeadersIter> core::future::IntoFuture for File<H> {
+impl core::future::IntoFuture for File {
     type Output = Self;
     type IntoFuture = core::future::Ready<Self>;
 
@@ -191,13 +195,13 @@ impl<H: HeadersIter> core::future::IntoFuture for File<H> {
 
 /// [PathRouter] that serves a single file.
 #[derive(Debug, Default)]
-pub struct Directory<H: HeadersIter + 'static> {
-    pub files: &'static [(&'static str, File<H>)],
-    pub sub_directories: &'static [(&'static str, Directory<H>)],
+pub struct Directory {
+    pub files: &'static [(&'static str, File)],
+    pub sub_directories: &'static [(&'static str, Directory)],
 }
 
-impl<H: HeadersIter> Directory<H> {
-    fn matching_file(&self, path: crate::request::Path) -> Option<&File<H>> {
+impl Directory {
+    fn matching_file(&self, path: crate::request::Path) -> Option<&File> {
         for (name, file) in self.files.iter() {
             if let Some(crate::request::Path(crate::url_encoded::UrlEncodedString(""))) =
                 path.strip_slash_and_prefix(name)
@@ -220,8 +224,8 @@ impl<H: HeadersIter> Directory<H> {
     }
 }
 
-impl<State, CurrentPathParameters, H: HeadersIter + Clone> PathRouter<State, CurrentPathParameters> for Directory<H> {
-    async fn call_path_router<W: super::ResponseWriter>(
+impl<State, CurrentPathParameters> PathRouter<State, CurrentPathParameters> for Directory {
+    async fn call_path_router<R: Read, W: super::ResponseWriter<Error = R::Error>>(
         &self,
         state: &State,
         current_path_parameters: CurrentPathParameters,
