@@ -257,12 +257,31 @@ impl<'a> Content for &'a [u8] {
         self.len()
     }
 
-    async fn write_content<R: Read, W: Write>(
+    async fn write_content<R: Read, W: Write<Error = R::Error>>(
         self,
         _connection: Connection<'_, R>,
         mut writer: W,
     ) -> Result<(), W::Error> {
         writer.write_all(self).await
+    }
+}
+
+#[cfg(feature = "alloc")]
+impl Content for alloc::vec::Vec<u8> {
+    fn content_type(&self) -> &'static str {
+        self.as_slice().content_type()
+    }
+
+    fn content_length(&self) -> usize {
+        self.as_slice().content_length()
+    }
+
+    async fn write_content<R: Read, W: Write<Error = R::Error>>(
+        self,
+        connection: Connection<'_, R>,
+        writer: W,
+    ) -> Result<(), W::Error> {
+        self.as_slice().write_content(connection, writer).await
     }
 }
 
@@ -281,6 +300,25 @@ impl<'a> Content for &'a str {
         writer: W,
     ) -> Result<(), W::Error> {
         self.as_bytes().write_content(connection, writer).await
+    }
+}
+
+#[cfg(feature = "alloc")]
+impl Content for alloc::string::String {
+    fn content_type(&self) -> &'static str {
+        self.as_str().content_type()
+    }
+
+    fn content_length(&self) -> usize {
+        self.as_str().content_length()
+    }
+
+    async fn write_content<R: Read, W: Write<Error = R::Error>>(
+        self,
+        connection: Connection<'_, R>,
+        writer: W,
+    ) -> Result<(), W::Error> {
+        self.as_str().write_content(connection, writer).await
     }
 }
 
