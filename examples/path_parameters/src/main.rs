@@ -13,8 +13,12 @@ struct PrefixOperation {
 }
 
 impl IntoResponse for PrefixOperation {
-    async fn write_to<W: picoserve::response::ResponseWriter>(
+    async fn write_to<
+        R: picoserve::io::Read,
+        W: picoserve::response::ResponseWriter<Error = R::Error>,
+    >(
         self,
+        connection: picoserve::response::Connection<'_, R>,
         response_writer: W,
     ) -> Result<ResponseSent, W::Error> {
         let Self {
@@ -24,7 +28,7 @@ impl IntoResponse for PrefixOperation {
         } = self;
 
         format_args!("{operator}({input}) = {output}\n")
-            .write_to(response_writer)
+            .write_to(connection, response_writer)
             .await
     }
 }
@@ -37,8 +41,12 @@ struct InfixOperation {
 }
 
 impl IntoResponse for InfixOperation {
-    async fn write_to<W: picoserve::response::ResponseWriter>(
+    async fn write_to<
+        R: picoserve::io::Read,
+        W: picoserve::response::ResponseWriter<Error = R::Error>,
+    >(
         self,
+        connection: picoserve::response::Connection<'_, R>,
         response_writer: W,
     ) -> Result<ResponseSent, W::Error> {
         let Self {
@@ -49,7 +57,7 @@ impl IntoResponse for InfixOperation {
         } = self;
 
         format_args!("({input_0}) {operator} ({input_1}) = {output}\n")
-            .write_to(response_writer)
+            .write_to(connection, response_writer)
             .await
     }
 }

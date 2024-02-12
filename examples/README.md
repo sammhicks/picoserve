@@ -15,6 +15,8 @@
 
 ## Embassy on Pico W
 
-| Example                                                              | Description                                      |
-| -------------------------------------------------------------------- | ------------------------------------------------ |
-| [`hello_world_embassy`](../examples/hello_world_embassy/src/main.rs) | A minimal example showing how to set up a Router |
+| Example                                                              | Description                                                           |
+| -------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| [`hello_world_embassy`](../examples/embassy/hello_world/src/main.rs) | A minimal example showing how to set up a Router                      |
+| [`web_sockets_embassy`](../examples/embassy/web_sockets/src/main.rs) | A long-lived connection both sending and receiving WebSocket messages |
+

@@ -489,7 +489,7 @@ impl<T: serde::Serialize> super::Content for JsonBody<T> {
 
     async fn write_content<R: crate::io::Read, W: Write>(
         self,
-        _connection: super::Connection<R>,
+        _connection: super::Connection<'_, R>,
         mut writer: W,
     ) -> Result<(), W::Error> {
         self.0.write_json_value(&mut writer).await
@@ -511,11 +511,14 @@ impl<T: serde::Serialize> Json<T> {
 }
 
 impl<T: serde::Serialize> super::IntoResponse for Json<T> {
-    async fn write_to<W: super::ResponseWriter>(
+    async fn write_to<R: embedded_io_async::Read, W: super::ResponseWriter<Error = R::Error>>(
         self,
+        connection: super::Connection<'_, R>,
         response_writer: W,
     ) -> Result<crate::ResponseSent, W::Error> {
-        response_writer.write_response(self.into_response()).await
+        response_writer
+            .write_response(connection, self.into_response())
+            .await
     }
 }
 

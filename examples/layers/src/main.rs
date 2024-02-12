@@ -1,6 +1,7 @@
 use std::time::{Duration, Instant};
 
 use picoserve::{
+    io::Read,
     request::Path,
     response::ResponseWriter,
     routing::{get, parse_path_segment},
@@ -15,13 +16,21 @@ struct TimedResponseWriter<'r, W> {
 impl<'r, W: ResponseWriter> ResponseWriter for TimedResponseWriter<'r, W> {
     type Error = W::Error;
 
-    async fn write_response<H: picoserve::response::HeadersIter, B: picoserve::response::Body>(
+    async fn write_response<
+        R: Read<Error = Self::Error>,
+        H: picoserve::response::HeadersIter,
+        B: picoserve::response::Body,
+    >(
         self,
+        connection: picoserve::response::Connection<'_, R>,
         response: picoserve::response::Response<H, B>,
-    ) -> Result<picoserve::ResponseSent, W::Error> {
+    ) -> Result<picoserve::ResponseSent, Self::Error> {
         let status_code = response.status_code();
 
-        let result = self.response_writer.write_response(response).await;
+        let result = self
+            .response_writer
+            .write_response(connection, response)
+            .await;
 
         println!(
             "Path: {}; Status Code: {}; Response Time: {}ms",
@@ -41,17 +50,18 @@ impl<State, PathParameters> picoserve::routing::Layer<State, PathParameters> for
     type NextPathParameters = PathParameters;
 
     async fn call_layer<
-        NextLayer: picoserve::routing::Next<Self::NextState, Self::NextPathParameters>,
-        W: ResponseWriter,
+        R: Read,
+        NextLayer: picoserve::routing::Next<R, Self::NextState, Self::NextPathParameters>,
+        W: ResponseWriter<Error = R::Error>,
     >(
         &self,
         next: NextLayer,
         state: &State,
         path_parameters: PathParameters,
-        request: picoserve::request::Request<'_>,
+        request_parts: picoserve::request::RequestParts<'_>,
         response_writer: W,
     ) -> Result<picoserve::ResponseSent, W::Error> {
-        let path = request.path();
+        let path = request_parts.path();
 
         next.run(
             state,

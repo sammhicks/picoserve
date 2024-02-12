@@ -6,19 +6,32 @@ use picoserve::{
     ResponseSent,
 };
 
-struct NewMessageRejection(std::str::Utf8Error);
+enum NewMessageRejection {
+    ReadError,
+    NotUtf8(std::str::Utf8Error),
+}
 
 impl response::IntoResponse for NewMessageRejection {
-    async fn write_to<W: response::ResponseWriter>(
+    async fn write_to<R: picoserve::io::Read, W: response::ResponseWriter<Error = R::Error>>(
         self,
+        connection: response::Connection<'_, R>,
         response_writer: W,
     ) -> Result<ResponseSent, W::Error> {
-        (
-            status::BAD_REQUEST,
-            format_args!("Body is not UTF-8: {}\n", self.0),
-        )
-            .write_to(response_writer)
-            .await
+        match self {
+            NewMessageRejection::ReadError => {
+                (status::BAD_REQUEST, "Read Error")
+                    .write_to(connection, response_writer)
+                    .await
+            }
+            NewMessageRejection::NotUtf8(err) => {
+                (
+                    status::BAD_REQUEST,
+                    format_args!("Body is not UTF-8: {err}\n"),
+                )
+                    .write_to(connection, response_writer)
+                    .await
+            }
+        }
     }
 }
 
@@ -27,13 +40,19 @@ struct NewMessage(String);
 impl<State> picoserve::extract::FromRequest<State> for NewMessage {
     type Rejection = NewMessageRejection;
 
-    async fn from_request(
+    async fn from_request<R: picoserve::io::Read>(
         _state: &State,
-        request: &picoserve::request::Request<'_>,
+        _request_parts: picoserve::request::RequestParts<'_>,
+        request_body: picoserve::request::RequestBody<'_, R>,
     ) -> Result<Self, Self::Rejection> {
-        core::str::from_utf8(request.body())
-            .map(|message| NewMessage(message.into()))
-            .map_err(NewMessageRejection)
+        core::str::from_utf8(
+            request_body
+                .read_all()
+                .await
+                .map_err(|_err| NewMessageRejection::ReadError)?,
+        )
+        .map(|message| NewMessage(message.into()))
+        .map_err(NewMessageRejection::NotUtf8)
     }
 }
 
@@ -57,26 +76,6 @@ impl response::sse::EventSource for Events {
         }
     }
 }
-
-const STATIC_FILES: response::Directory = response::Directory {
-    files: &[],
-    sub_directories: &[
-        (
-            "styles",
-            response::Directory {
-                files: &[("index.css", response::File::css(include_str!("index.css")))],
-                sub_directories: &[],
-            },
-        ),
-        (
-            "scripts",
-            response::Directory {
-                files: &[("index.js", response::File::css(include_str!("index.js")))],
-                sub_directories: &[],
-            },
-        ),
-    ],
-};
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> anyhow::Result<()> {
@@ -104,7 +103,35 @@ async fn main() -> anyhow::Result<()> {
                 "/events",
                 get(move || response::EventStream(Events(messages_rx.clone()))),
             )
-            .nest("/static", STATIC_FILES),
+            .nest("/static", {
+                const STATIC_FILES: response::Directory = response::Directory {
+                    files: &[],
+                    sub_directories: &[
+                        (
+                            "styles",
+                            response::Directory {
+                                files: &[(
+                                    "index.css",
+                                    response::File::css(include_str!("index.css")),
+                                )],
+                                sub_directories: &[],
+                            },
+                        ),
+                        (
+                            "scripts",
+                            response::Directory {
+                                files: &[(
+                                    "index.js",
+                                    response::File::css(include_str!("index.js")),
+                                )],
+                                sub_directories: &[],
+                            },
+                        ),
+                    ],
+                };
+
+                STATIC_FILES
+            }),
     );
 
     let config = picoserve::Config::new(picoserve::Timeouts {

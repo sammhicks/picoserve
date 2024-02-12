@@ -122,26 +122,31 @@ impl<State, PathParameters, H: HeadersIter + Clone> crate::routing::RequestHandl
         &self,
         _state: &State,
         _path_parameters: PathParameters,
-        request: crate::request::Request<'_>,
+        request: crate::request::Request<'_, R>,
         response_writer: W,
     ) -> Result<ResponseSent, W::Error> {
-        if let Some(if_none_match) = request.headers().get("If-None-Match") {
+        if let Some(if_none_match) = request.parts.headers().get("If-None-Match") {
             if if_none_match
                 .split(',')
                 .map(str::trim)
                 .any(|etag| self.etag == etag)
             {
                 return response_writer
-                    .write_response(super::Response {
-                        status_code: status::NOT_MODIFIED,
-                        headers: self.etag.clone(),
-                        body: super::NoBody,
-                    })
+                    .write_response(
+                        request.body.finalize().await?,
+                        super::Response {
+                            status_code: status::NOT_MODIFIED,
+                            headers: self.etag.clone(),
+                            body: super::NoBody,
+                        },
+                    )
                     .await;
             }
         }
 
-        self.clone().write_to(response_writer).await
+        self.clone()
+            .write_to(request.body.finalize().await?, response_writer)
+            .await
     }
 }
 
@@ -156,7 +161,7 @@ impl<H: HeadersIter> super::Content for File<H> {
 
     async fn write_content<R: Read, W: Write>(
         self,
-        _connection: super::Connection<R>,
+        _connection: super::Connection<'_, R>,
         mut writer: W,
     ) -> Result<(), W::Error> {
         writer.write_all(self.body).await
@@ -166,9 +171,12 @@ impl<H: HeadersIter> super::Content for File<H> {
 impl<H: HeadersIter> super::IntoResponse for File<H> {
     async fn write_to<W: super::ResponseWriter>(
         self,
+        connection: super::Connection<'_, R>,
         response_writer: W,
     ) -> Result<ResponseSent, W::Error> {
-        response_writer.write_response(self.into_response()).await
+        response_writer
+            .write_response(connection, self.into_response())
+            .await
     }
 }
 
@@ -218,16 +226,16 @@ impl<State, CurrentPathParameters, H: HeadersIter + Clone> PathRouter<State, Cur
         state: &State,
         current_path_parameters: CurrentPathParameters,
         path: Path<'_>,
-        request: crate::request::Request<'_>,
+        request: crate::request::Request<'_, R>,
         response_writer: W,
     ) -> Result<ResponseSent, W::Error> {
-        if !request.method().eq_ignore_ascii_case("get") {
+        if !request.parts.method().eq_ignore_ascii_case("get") {
             return crate::routing::MethodNotAllowed
                 .call_request_handler(state, current_path_parameters, request, response_writer)
                 .await;
         }
 
-        if let Some(file) = self.matching_file(request.path()) {
+        if let Some(file) = self.matching_file(path) {
             file.call_request_handler(state, current_path_parameters, request, response_writer)
                 .await
         } else {

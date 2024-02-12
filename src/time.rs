@@ -27,10 +27,10 @@ pub(crate) trait TimerExt: Timer {
 
 impl<T: Timer> TimerExt for T {}
 
-#[cfg(feature = "tokio")]
+#[cfg(any(feature = "tokio", test))]
 pub struct TokioTimer;
 
-#[cfg(feature = "tokio")]
+#[cfg(any(feature = "tokio", test))]
 impl Timer for TokioTimer {
     type Duration = std::time::Duration;
     type TimeoutError = tokio::time::error::Elapsed;

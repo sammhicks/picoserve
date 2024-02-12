@@ -81,7 +81,7 @@ impl<S: EventSource> EventStream<S> {
 impl<S: EventSource> super::Body for EventStream<S> {
     async fn write_response_body<R: Read, W: Write<Error = R::Error>>(
         self,
-        connection: super::Connection<R>,
+        connection: super::Connection<'_, R>,
         mut writer: W,
     ) -> Result<(), W::Error> {
         writer.flush().await?;
@@ -98,11 +98,14 @@ impl<S: EventSource> super::Body for EventStream<S> {
 }
 
 impl<S: EventSource> super::IntoResponse for EventStream<S> {
-    async fn write_to<W: super::ResponseWriter>(
+    async fn write_to<R: Read, W: super::ResponseWriter<Error = R::Error>>(
         self,
+        connection: super::Connection<'_, R>,
         response_writer: W,
     ) -> Result<crate::ResponseSent, W::Error> {
-        response_writer.write_response(self.into_response()).await
+        response_writer
+            .write_response(connection, self.into_response())
+            .await
     }
 }
 
