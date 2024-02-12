@@ -10,6 +10,9 @@
 #[cfg(all(feature = "tokio", feature = "embassy"))]
 compile_error!("You cannot enable both tokio and embassy support");
 
+#[cfg(feature = "alloc")]
+extern crate alloc;
+
 pub mod extract;
 pub mod io;
 pub mod request;
