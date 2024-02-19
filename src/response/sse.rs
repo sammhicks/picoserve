@@ -8,6 +8,7 @@ use super::status;
 
 /// Types which can be used as the data of an event.
 pub trait EventData {
+    /// Write event data to the socket.
     async fn write_to<W: Write>(self, writer: &mut W) -> Result<(), W::Error>;
 }
 
@@ -58,6 +59,7 @@ impl<W: Write> EventWriter<W> {
 
 /// Implement this trait to generate events to send to the client.
 pub trait EventSource {
+    /// Produce a stream of events and write them to `writer`
     async fn write_events<W: Write>(self, writer: EventWriter<W>) -> Result<(), W::Error>;
 }
 

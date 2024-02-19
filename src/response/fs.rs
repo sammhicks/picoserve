@@ -5,7 +5,7 @@ use core::fmt;
 use crate::{
     io::{Read, Write},
     request::Path,
-    routing::{PathRouter, RequestHandler},
+    routing::{PathRouter, PathRouterService, RequestHandler, RequestHandlerService},
     ResponseSent,
 };
 
@@ -77,6 +77,7 @@ pub struct File {
 }
 
 impl File {
+    /// Create a file with the given content type but no additional headers.
     pub const fn with_content_type(content_type: &'static str, body: &'static [u8]) -> Self {
         Self {
             content_type,
@@ -86,6 +87,7 @@ impl File {
         }
     }
 
+    /// Create a file with the given content type and some additional headers.
     pub const fn with_content_type_and_headers(
         content_type: &'static str,
         body: &'static [u8],
@@ -99,14 +101,17 @@ impl File {
         }
     }
 
+    /// A HyperText Markup Language file with a MIME type of "text/html; charset=utf-8"
     pub const fn html(body: &'static str) -> Self {
         Self::with_content_type("text/html; charset=utf-8", body.as_bytes())
     }
 
+    /// Cascading StyleSheets file with a MIME type of "text/css"
     pub const fn css(body: &'static str) -> Self {
         Self::with_content_type("text/css", body.as_bytes())
     }
 
+    /// A Javascript file with a MIME type of "application/javascript; charset=utf-8"
     pub const fn javascript(body: &'static str) -> Self {
         Self::with_content_type("application/javascript; charset=utf-8", body.as_bytes())
     }
@@ -121,8 +126,8 @@ impl File {
     }
 }
 
-impl<State, PathParameters> crate::routing::RequestHandler<State, PathParameters> for File {
-    async fn call_request_handler<R: Read, W: super::ResponseWriter<Error = R::Error>>(
+impl<State, PathParameters> crate::routing::RequestHandlerService<State, PathParameters> for File {
+    async fn call_request_handler_service<R: Read, W: super::ResponseWriter<Error = R::Error>>(
         &self,
         _state: &State,
         _path_parameters: PathParameters,
@@ -137,7 +142,7 @@ impl<State, PathParameters> crate::routing::RequestHandler<State, PathParameters
             {
                 return response_writer
                     .write_response(
-                        request.body.finalize().await?,
+                        request.body_connection.finalize().await?,
                         super::Response {
                             status_code: status::NOT_MODIFIED,
                             headers: self.etag.clone(),
@@ -149,7 +154,7 @@ impl<State, PathParameters> crate::routing::RequestHandler<State, PathParameters
         }
 
         self.clone()
-            .write_to(request.body.finalize().await?, response_writer)
+            .write_to(request.body_connection.finalize().await?, response_writer)
             .await
     }
 }
@@ -196,7 +201,10 @@ impl core::future::IntoFuture for File {
 /// [PathRouter] that serves a single file.
 #[derive(Debug, Default)]
 pub struct Directory {
+    /// The files in the directory.
     pub files: &'static [(&'static str, File)],
+
+    /// Subdirectories inside this directory.
     pub sub_directories: &'static [(&'static str, Directory)],
 }
 
@@ -224,8 +232,8 @@ impl Directory {
     }
 }
 
-impl<State, CurrentPathParameters> PathRouter<State, CurrentPathParameters> for Directory {
-    async fn call_path_router<R: Read, W: super::ResponseWriter<Error = R::Error>>(
+impl<State, CurrentPathParameters> PathRouterService<State, CurrentPathParameters> for Directory {
+    async fn call_request_handler_service<R: Read, W: super::ResponseWriter<Error = R::Error>>(
         &self,
         state: &State,
         current_path_parameters: CurrentPathParameters,
@@ -240,8 +248,13 @@ impl<State, CurrentPathParameters> PathRouter<State, CurrentPathParameters> for 
         }
 
         if let Some(file) = self.matching_file(path) {
-            file.call_request_handler(state, current_path_parameters, request, response_writer)
-                .await
+            file.call_request_handler_service(
+                state,
+                current_path_parameters,
+                request,
+                response_writer,
+            )
+            .await
         } else {
             crate::routing::NotFound
                 .call_path_router(

@@ -135,7 +135,7 @@ async fn main() -> anyhow::Result<()> {
                 "/",
                 get(|| picoserve::response::File::html(include_str!("index.html"))),
             )
-            .nest("/static", {
+            .nest_service("/static", {
                 const STATIC_FILES: picoserve::response::Directory =
                     picoserve::response::Directory {
                         files: &[

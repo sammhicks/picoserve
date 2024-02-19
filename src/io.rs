@@ -1,3 +1,5 @@
+//! IO Utility
+
 use core::fmt;
 
 pub use embedded_io_async::{self, Error, ErrorKind, ErrorType, Read, Write};
@@ -61,6 +63,8 @@ impl FormatBuffer {
 
 /// An extension trait for [Write] which allows writing of [core::fmt::Arguments].
 pub trait WriteExt: Write {
+    /// Write a formatted string into the writer. If the string cannot be written in one go, the string might be formatted multiple times.
+    /// It's crucial that the same output is produced each time the string is formatted.
     async fn write_fmt(&mut self, args: fmt::Arguments<'_>) -> Result<(), Self::Error> {
         let mut ignore_count = 0;
 
@@ -79,19 +83,25 @@ pub trait WriteExt: Write {
 
 impl<W: Write> WriteExt for W {}
 
+/// A connection socket, which can be split into its read and write half, and shut down when finished.
 pub trait Socket: Sized {
+    /// Error type of all the IO operations on this type.
     type Error: embedded_io_async::Error;
 
+    /// The "read" half of the socket
     type ReadHalf<'a>: Read<Error = Self::Error>
     where
         Self: 'a;
 
+    /// The "write" half of the socket
     type WriteHalf<'a>: Write<Error = Self::Error>
     where
         Self: 'a;
 
+    /// Split the socket into its "read" and "write" half
     fn split(&mut self) -> (Self::ReadHalf<'_>, Self::WriteHalf<'_>);
 
+    /// Perform a graceful shutdown
     async fn shutdown<Timer: crate::Timer>(
         self,
         timeouts: &crate::Timeouts<Timer::Duration>,
@@ -169,7 +179,7 @@ pub(crate) mod tokio_support {
                 .await
                 .map_err(|_err| crate::Error::ReadTimeout)?
                 .map_err(|err| {
-                    crate::Error::Read(crate::request::ReadError::Other(TokioIoError(err)))
+                    crate::Error::Read(crate::request::ReadError::IO(TokioIoError(err)))
                 })?
                 > 0
             {}
@@ -210,7 +220,7 @@ impl<'s> Socket for embassy_net::tcp::TcpSocket<'s> {
             .run_with_maybe_timeout(timeouts.read_request.clone(), self.read(&mut buffer))
             .await
             .map_err(|_err| crate::Error::ReadTimeout)?
-            .map_err(|err| crate::Error::Read(crate::request::ReadError::Other(err)))?
+            .map_err(|err| crate::Error::Read(crate::request::ReadError::IO(err)))?
             > 0
         {}
 

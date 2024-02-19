@@ -1,25 +1,21 @@
 use std::time::Duration;
 
-use picoserve::{
-    io::Read,
-    response::IntoResponse,
-    routing::{get, NoPathParameters},
-};
+use picoserve::{io::Read, response::IntoResponse, routing::get};
 
 struct MeasureBody;
 
-impl picoserve::routing::RequestHandler<(), NoPathParameters> for MeasureBody {
-    async fn call_request_handler<
+impl picoserve::routing::RequestHandlerService<()> for MeasureBody {
+    async fn call_request_handler_service<
         R: Read,
         W: picoserve::response::ResponseWriter<Error = R::Error>,
     >(
         &self,
         (): &(),
-        NoPathParameters: NoPathParameters,
+        (): (),
         mut request: picoserve::request::Request<'_, R>,
         response_writer: W,
     ) -> Result<picoserve::ResponseSent, W::Error> {
-        let mut reader = request.body.body().reader();
+        let mut reader = request.body_connection.body().reader();
 
         let mut buffer = [0; 1024];
 
@@ -35,7 +31,7 @@ impl picoserve::routing::RequestHandler<(), NoPathParameters> for MeasureBody {
         }
 
         format!("Total Size: {total_size}\r\n")
-            .write_to(request.body.finalize().await?, response_writer)
+            .write_to(request.body_connection.finalize().await?, response_writer)
             .await
     }
 }

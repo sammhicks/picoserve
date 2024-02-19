@@ -308,7 +308,7 @@ async fn file_routing() {
         )],
     };
 
-    let app = Router::new().nest(STATIC_DIR, FILES);
+    let app = Router::new().nest_service(STATIC_DIR, FILES);
 
     {
         let (parts, body) = run_single_request_test(
@@ -511,14 +511,14 @@ async fn upgrade_with_request_body() {
         read_body: BodyReadType,
     }
 
-    impl routing::RequestHandler<(), routing::NoPathParameters> for BodyCheck {
-        async fn call_request_handler<
+    impl routing::RequestHandlerService<()> for BodyCheck {
+        async fn call_request_handler_service<
             R: embedded_io_async::Read,
             W: response::ResponseWriter<Error = R::Error>,
         >(
             &self,
             state: &(),
-            routing::NoPathParameters: routing::NoPathParameters,
+            (): (),
             mut request: request::Request<'_, R>,
             response_writer: W,
         ) -> Result<ResponseSent, W::Error> {
@@ -532,14 +532,14 @@ async fn upgrade_with_request_body() {
             match self.read_body {
                 BodyReadType::DoNotRead => (),
                 BodyReadType::ReadAll => {
-                    let actual_body = request.body.body().read_all().await.unwrap();
+                    let actual_body = request.body_connection.body().read_all().await.unwrap();
 
                     assert_eq!(actual_body, "BODY".as_bytes());
                 }
                 BodyReadType::ReadExternally { buffer_size } => {
                     let mut buffer = vec![0; buffer_size];
 
-                    let mut reader = request.body.body().reader();
+                    let mut reader = request.body_connection.body().reader();
 
                     let mut read_position = 0;
 
@@ -566,7 +566,7 @@ async fn upgrade_with_request_body() {
                 }
             }
 
-            let connection = request.body.finalize().await?;
+            let connection = request.body_connection.finalize().await?;
 
             response::Response::new(response::status::OK, UpgradeCheck { upgrade_token })
                 .write_to(connection, response_writer)
@@ -629,11 +629,14 @@ async fn huge_request() {
         expected_body: Option<String>,
     }
 
-    impl routing::RequestHandler<(), routing::NoPathParameters> for ReadBody {
-        async fn call_request_handler<R: Read, W: response::ResponseWriter<Error = R::Error>>(
+    impl routing::RequestHandlerService<()> for ReadBody {
+        async fn call_request_handler_service<
+            R: Read,
+            W: response::ResponseWriter<Error = R::Error>,
+        >(
             &self,
             (): &(),
-            routing::NoPathParameters: routing::NoPathParameters,
+            (): (),
             mut request: request::Request<'_, R>,
             response_writer: W,
         ) -> Result<ResponseSent, W::Error> {
@@ -641,7 +644,7 @@ async fn huge_request() {
                 let mut buffer = vec![0; expected_body.len()];
 
                 request
-                    .body
+                    .body_connection
                     .body()
                     .reader()
                     .read_exact(&mut buffer)
@@ -653,7 +656,7 @@ async fn huge_request() {
 
             response_writer
                 .write_response(
-                    request.body.finalize().await?,
+                    request.body_connection.finalize().await?,
                     response::Response::ok("Hello"),
                 )
                 .await

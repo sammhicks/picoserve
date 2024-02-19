@@ -103,7 +103,7 @@ async fn main() -> anyhow::Result<()> {
                 "/events",
                 get(move || response::EventStream(Events(messages_rx.clone()))),
             )
-            .nest("/static", {
+            .nest_service("/static", {
                 const STATIC_FILES: response::Directory = response::Directory {
                     files: &[],
                     sub_directories: &[

@@ -73,6 +73,7 @@ impl<'r, R: Read> BufferedReader<'r, R> {
     }
 }
 
+/// A connection which has been upgraded, and is thus allowed to read arbitary data from the socket.
 pub struct UpgradedConnection<'r, R: Read> {
     reader: BufferedReader<'r, R>,
 }
@@ -147,6 +148,7 @@ impl<'a, F: ForEachHeader> ForEachHeader for BorrowedForEachHeader<'a, F> {
 
 /// The HTTP response headers.
 pub trait HeadersIter {
+    /// Perform the following action for each header.
     async fn for_each_header<F: ForEachHeader>(self, f: F) -> Result<F::Output, F::Error>;
 }
 
@@ -209,6 +211,7 @@ impl<A: HeadersIter, B: HeadersIter> HeadersIter for HeadersChain<A, B> {
 
 /// The HTTP response body.
 pub trait Body {
+    /// Write the response body to the socket.
     async fn write_response_body<R: Read, W: Write<Error = R::Error>>(
         self,
         connection: Connection<'_, R>,
@@ -399,10 +402,12 @@ impl<B: Content> Response<BodyHeaders, ContentBody<B>> {
 }
 
 impl<H: HeadersIter, B: Body> Response<H, B> {
+    /// Get the status code of the response.
     pub fn status_code(&self) -> StatusCode {
         self.status_code
     }
 
+    /// Return a new response with the given status code.
     pub fn with_status_code(self, status_code: StatusCode) -> Self {
         let Self {
             status_code: _,
@@ -444,8 +449,10 @@ impl<H: HeadersIter, B: Body> Response<H, B> {
 
 /// Types which a HTTP response can be written to.
 pub trait ResponseWriter: Sized {
+    /// Errors arising while writing the response.
     type Error;
 
+    /// Write the given response to the socket, which may include the upgraded data, which thus may read from the provided connenction.
     async fn write_response<R: Read<Error = Self::Error>, H: HeadersIter, B: Body>(
         self,
         connection: Connection<'_, R>,

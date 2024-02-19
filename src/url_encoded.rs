@@ -6,14 +6,14 @@ use serde::de::Error;
 
 /// The error returned when attempting to decode a character in a [UrlEncodedString].
 #[derive(Debug)]
-pub enum BadUrlEncodedCharacter {
+pub enum UrlEncodedCharacterDecodeError {
     /// Percent symbol is not followed by two hex digits.
     BadlyFormattedPercentEncoding,
     /// Percent-encoded sequence does not decode into UTF-8 byte sequence.
     Utf8Error,
 }
 
-impl fmt::Display for BadUrlEncodedCharacter {
+impl fmt::Display for UrlEncodedCharacterDecodeError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::BadlyFormattedPercentEncoding => {
@@ -28,7 +28,7 @@ impl fmt::Display for BadUrlEncodedCharacter {
 }
 
 #[cfg(feature = "std")]
-impl std::error::Error for BadUrlEncodedCharacter {}
+impl std::error::Error for UrlEncodedCharacterDecodeError {}
 
 /// A decoded character.
 pub enum UrlDecodedCharacter {
@@ -58,7 +58,7 @@ impl<'a> UrlDecodedCharacters<'a> {
 }
 
 impl<'a> Iterator for UrlDecodedCharacters<'a> {
-    type Item = Result<UrlDecodedCharacter, BadUrlEncodedCharacter>;
+    type Item = Result<UrlDecodedCharacter, UrlEncodedCharacterDecodeError>;
 
     fn next(&mut self) -> Option<Self::Item> {
         Some(Ok(match self.0.next()? {
@@ -84,10 +84,14 @@ impl<'a> Iterator for UrlDecodedCharacters<'a> {
 
                 let mut first_byte = {
                     let Some(first) = self.0.next().and_then(to_hex) else {
-                        return Some(Err(BadUrlEncodedCharacter::BadlyFormattedPercentEncoding));
+                        return Some(Err(
+                            UrlEncodedCharacterDecodeError::BadlyFormattedPercentEncoding,
+                        ));
                     };
                     let Some(second) = self.0.next().and_then(to_hex) else {
-                        return Some(Err(BadUrlEncodedCharacter::BadlyFormattedPercentEncoding));
+                        return Some(Err(
+                            UrlEncodedCharacterDecodeError::BadlyFormattedPercentEncoding,
+                        ));
                     };
 
                     first * 0x10 + second
@@ -99,7 +103,7 @@ impl<'a> Iterator for UrlDecodedCharacters<'a> {
                     let byte_count = 1 + bits.count();
 
                     if byte_count == 1 {
-                        return Some(Err(BadUrlEncodedCharacter::Utf8Error));
+                        return Some(Err(UrlEncodedCharacterDecodeError::Utf8Error));
                     }
 
                     // Zero our the prefix bytes
@@ -110,18 +114,18 @@ impl<'a> Iterator for UrlDecodedCharacters<'a> {
 
                     for _ in 1..byte_count {
                         let Some('%') = self.0.next() else {
-                            return Some(Err(BadUrlEncodedCharacter::Utf8Error));
+                            return Some(Err(UrlEncodedCharacterDecodeError::Utf8Error));
                         };
 
                         let next_byte = {
                             let Some(first) = self.0.next().and_then(to_hex) else {
                                 return Some(Err(
-                                    BadUrlEncodedCharacter::BadlyFormattedPercentEncoding,
+                                    UrlEncodedCharacterDecodeError::BadlyFormattedPercentEncoding,
                                 ));
                             };
                             let Some(second) = self.0.next().and_then(to_hex) else {
                                 return Some(Err(
-                                    BadUrlEncodedCharacter::BadlyFormattedPercentEncoding,
+                                    UrlEncodedCharacterDecodeError::BadlyFormattedPercentEncoding,
                                 ));
                             };
 
@@ -129,7 +133,7 @@ impl<'a> Iterator for UrlDecodedCharacters<'a> {
                         };
 
                         if (0b11000000 & next_byte) != 0b10000000 {
-                            return Some(Err(BadUrlEncodedCharacter::Utf8Error));
+                            return Some(Err(UrlEncodedCharacterDecodeError::Utf8Error));
                         }
 
                         code_point <<= 6;
@@ -142,7 +146,7 @@ impl<'a> Iterator for UrlDecodedCharacters<'a> {
                 };
 
                 let Some(c) = char::from_u32(code_point) else {
-                    return Some(Err(BadUrlEncodedCharacter::Utf8Error));
+                    return Some(Err(UrlEncodedCharacterDecodeError::Utf8Error));
                 };
                 UrlDecodedCharacter::Encoded(c)
             }
@@ -176,7 +180,7 @@ struct UrlEncodedRepresentation<'a> {
 #[derive(Debug)]
 pub enum DecodeError {
     /// Error during decoding a character.
-    BadUrlEncodedCharacter(BadUrlEncodedCharacter),
+    BadUrlEncodedCharacter(UrlEncodedCharacterDecodeError),
     /// The provided buffer does not have enough space to store the string.
     NoSpace,
 }
@@ -243,7 +247,9 @@ impl<'a> UrlEncodedString<'a> {
 
     #[cfg(feature = "std")]
     /// Try decoding the chars into a std::string::String.
-    pub fn try_into_std_string(self) -> Result<std::string::String, BadUrlEncodedCharacter> {
+    pub fn try_into_std_string(
+        self,
+    ) -> Result<std::string::String, UrlEncodedCharacterDecodeError> {
         self.chars()
             .map(|c| c.map(UrlDecodedCharacter::into_char))
             .collect()
@@ -404,24 +410,25 @@ impl<'de> serde::Deserializer<'de> for DeserializeUrlEncoded<'de> {
 }
 
 #[derive(Debug)]
-pub struct BadUrlEncodedForm;
+/// Failed to deserialize a URL-Encoded form
+pub struct FormDeserializationError;
 
-impl fmt::Display for BadUrlEncodedForm {
+impl fmt::Display for FormDeserializationError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Bad Url Encoded Form")
+        write!(f, "Failed to deserialize Url Encoded Form")
     }
 }
 
-impl serde::de::Error for BadUrlEncodedForm {
+impl serde::de::Error for FormDeserializationError {
     fn custom<T: fmt::Display>(_msg: T) -> Self {
         Self
     }
 }
 
 #[cfg(feature = "std")]
-impl std::error::Error for BadUrlEncodedForm {}
+impl std::error::Error for FormDeserializationError {}
 
-impl From<super::url_encoded::DeserializationError> for BadUrlEncodedForm {
+impl From<super::url_encoded::DeserializationError> for FormDeserializationError {
     fn from(
         super::url_encoded::DeserializationError: super::url_encoded::DeserializationError,
     ) -> Self {
@@ -434,9 +441,10 @@ struct DeserializeUrlEncodedForm<'r, T> {
     value: (&'r str, UrlEncodedString<'r>),
 }
 
+/// Deserialize the given URL-Encoded Form.
 pub fn deserialize_form<T: serde::de::DeserializeOwned>(
     UrlEncodedString(form): UrlEncodedString,
-) -> Result<T, BadUrlEncodedForm> {
+) -> Result<T, FormDeserializationError> {
     T::deserialize(DeserializeUrlEncodedForm {
         pairs: form.split('&').filter(|s| !s.is_empty()),
         value: ("", UrlEncodedString("")),
@@ -446,7 +454,7 @@ pub fn deserialize_form<T: serde::de::DeserializeOwned>(
 impl<'de, T: Iterator<Item = &'de str>> serde::de::Deserializer<'de>
     for DeserializeUrlEncodedForm<'de, T>
 {
-    type Error = BadUrlEncodedForm;
+    type Error = FormDeserializationError;
 
     fn deserialize_any<V: serde::de::Visitor<'de>>(
         self,
@@ -465,7 +473,7 @@ impl<'de, T: Iterator<Item = &'de str>> serde::de::Deserializer<'de>
 impl<'de, T: Iterator<Item = &'de str>> serde::de::MapAccess<'de>
     for DeserializeUrlEncodedForm<'de, T>
 {
-    type Error = BadUrlEncodedForm;
+    type Error = FormDeserializationError;
 
     fn next_key_seed<K>(&mut self, seed: K) -> Result<Option<K::Value>, Self::Error>
     where
@@ -474,7 +482,7 @@ impl<'de, T: Iterator<Item = &'de str>> serde::de::MapAccess<'de>
         self.pairs
             .next()
             .map(|value| {
-                let (key, value) = value.split_once('=').ok_or(BadUrlEncodedForm)?;
+                let (key, value) = value.split_once('=').ok_or(FormDeserializationError)?;
 
                 self.value = (key, UrlEncodedString(value));
 

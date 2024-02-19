@@ -80,12 +80,12 @@ impl RequestLine<Range<usize>> {
 }
 
 #[derive(Debug)]
-pub struct BadHeaderLine<'a>(&'a [u8]);
+pub struct HeaderLineDecodeError<'a>(&'a [u8]);
 
 pub struct HeadersTryIter<'a>(core::slice::SplitInclusive<'a, u8, fn(&u8) -> bool>);
 
 impl<'a> Iterator for HeadersTryIter<'a> {
-    type Item = Result<(&'a str, &'a str), BadHeaderLine<'a>>;
+    type Item = Result<(&'a str, &'a str), HeaderLineDecodeError<'a>>;
 
     fn next(&mut self) -> Option<Self::Item> {
         fn split_line(line: &[u8]) -> Option<(&str, &str)> {
@@ -95,7 +95,7 @@ impl<'a> Iterator for HeadersTryIter<'a> {
 
         self.0
             .next()
-            .map(|line| split_line(line).ok_or(BadHeaderLine(line)))
+            .map(|line| split_line(line).ok_or(HeaderLineDecodeError(line)))
     }
 }
 
@@ -110,20 +110,24 @@ impl<'a> Iterator for HeadersIter<'a> {
 }
 
 #[derive(Clone, Copy)]
+/// The Request Headers.
 pub struct Headers<'a>(&'a [u8]);
 
 impl<'a> Headers<'a> {
+    /// Attempt to iterator over all headers which are valid UTF-8.
     fn try_iter(&self) -> HeadersTryIter<'a> {
         HeadersTryIter(self.0.split_inclusive(|&b| b == b'\n'))
     }
 
+    /// Iterator over all headers which are valid UTF-8. Will skip invalid headers.
     pub fn iter(&self) -> HeadersIter<'a> {
         HeadersIter(self.try_iter())
     }
 
-    pub fn get(&self, key: &str) -> Option<&'a str> {
+    /// Get a header with a name which matches (ignoring ASCII case) the given name
+    pub fn get(&self, name: &str) -> Option<&'a str> {
         self.iter()
-            .find_map(|(header_key, value)| key.eq_ignore_ascii_case(header_key).then_some(value))
+            .find_map(|(header_key, value)| name.eq_ignore_ascii_case(header_key).then_some(value))
     }
 }
 
@@ -143,6 +147,7 @@ impl<'a> fmt::Debug for Headers<'a> {
 }
 
 #[derive(Debug, Clone, Copy)]
+/// The URL-encoded path of the request
 pub struct Path<'r>(pub(crate) UrlEncodedString<'r>);
 
 impl<'r> fmt::Display for Path<'r> {
@@ -158,6 +163,7 @@ impl<'r> PartialEq<&'r str> for Path<'r> {
 }
 
 impl<'r> Path<'r> {
+    /// Return the encoded string
     pub fn encoded(self) -> &'r str {
         self.0 .0
     }
@@ -173,6 +179,8 @@ impl<'r> Path<'r> {
             .map(Self)
     }
 
+    /// Split the path into the first segment (everything before the first `/`) and the rest of the path.
+    /// If the path is empty, return None.
     pub fn split_first_segment(self) -> Option<(UrlEncodedString<'r>, Path<'r>)> {
         let path = self.encoded().strip_prefix('/')?;
 
@@ -184,6 +192,7 @@ impl<'r> Path<'r> {
         Some((UrlEncodedString(segment), Path(UrlEncodedString(path))))
     }
 
+    /// Iterate over the segments of the path, more or less split by `/`
     pub fn segments(self) -> PathSegments<'r> {
         PathSegments(self)
     }
@@ -199,9 +208,11 @@ impl<'r> IntoIterator for Path<'r> {
 }
 
 #[derive(Clone)]
+/// A path "segment", i.e. the text between two `/`s.
 pub struct PathSegments<'r>(Path<'r>);
 
 impl<'r> PathSegments<'r> {
+    /// Represent a path segment as a path
     pub fn as_path(&self) -> Path<'r> {
         self.0
     }
@@ -231,31 +242,38 @@ pub struct RequestParts<'r> {
 }
 
 impl<'r> RequestParts<'r> {
+    /// Return the method as sent by the client
     pub fn method(&self) -> &'r str {
         self.method
     }
 
+    /// Return the request path, without the query or fragments
     pub fn path(&self) -> Path<'r> {
         self.path
     }
 
+    /// Return the query section of the request URL, i.e. everything after the "?"
     pub fn query(&self) -> Option<UrlEncodedString<'r>> {
         self.query
     }
 
+    /// Return the fragments of the request URL, i.e. everything after the "#"
     pub fn fragments(&self) -> Option<UrlEncodedString<'r>> {
         self.fragments
     }
 
+    /// Return the HTTP version as sent by the client
     pub fn http_version(&self) -> &'r str {
         self.http_version
     }
 
+    /// Return the request headers
     pub fn headers(&self) -> Headers<'r> {
         self.headers
     }
 }
 
+/// Reads the body asynchronously. Implements [Read].
 pub struct RequestBodyReader<'r, R: Read> {
     content_length: usize,
     reader: &'r mut R,
@@ -268,6 +286,7 @@ impl<'r, R: Read> crate::io::ErrorType for RequestBodyReader<'r, R> {
 }
 
 impl<'r, R: Read> RequestBodyReader<'r, R> {
+    /// Returns the total length of the body
     pub fn content_length(&self) -> usize {
         self.content_length
     }
@@ -301,13 +320,18 @@ impl<'r, R: Read> Read for RequestBodyReader<'r, R> {
 }
 
 #[derive(Debug)]
+/// Errors arising when reading the entire body
 pub enum ReadAllBodyError<E> {
+    /// The body does not fit into the remaining request buffer.
     BufferIsTooSmall,
+    /// EndOfFile reached while reading the body before the entire body has been read.
     UnexpectedEof,
+    /// The socket failed to read.
     IO(E),
 }
 
 #[derive(Debug)]
+/// The body of the request, which may not have yet been buffered.
 pub struct RequestBody<'r, R: Read> {
     content_length: usize,
     reader: &'r mut R,
@@ -317,10 +341,12 @@ pub struct RequestBody<'r, R: Read> {
 }
 
 impl<'r, R: Read> RequestBody<'r, R> {
+    /// The total length of the body
     pub fn content_length(&self) -> usize {
         self.content_length
     }
 
+    /// Read the entire body into the HTTP buffer.
     pub async fn read_all(self) -> Result<&'r mut [u8], ReadAllBodyError<R::Error>> {
         let buffer = self
             .buffer
@@ -346,6 +372,7 @@ impl<'r, R: Read> RequestBody<'r, R> {
         Ok(buffer)
     }
 
+    /// Return a reader which can be used to asynchronously read the body, such as decoding it on the fly or streaming into an external buffer.
     pub fn reader(self) -> RequestBodyReader<'r, R> {
         RequestBodyReader {
             content_length: self.content_length,
@@ -356,6 +383,8 @@ impl<'r, R: Read> RequestBody<'r, R> {
     }
 }
 
+/// The connection reading the request body. Can be used to read the request body and then extract the underlying connection for reading further data,
+/// such as if the connenction has been upgraded.
 pub struct RequestBodyConnection<'r, R: Read> {
     content_length: usize,
     reader: &'r mut R,
@@ -366,10 +395,12 @@ pub struct RequestBodyConnection<'r, R: Read> {
 }
 
 impl<'r, R: Read> RequestBodyConnection<'r, R> {
+    /// Return the total length of the body
     pub fn content_length(&self) -> usize {
         self.content_length
     }
 
+    /// Return the Request Body
     pub fn body(&mut self) -> RequestBody<'_, R> {
         RequestBody {
             content_length: self.content_length,
@@ -380,6 +411,7 @@ impl<'r, R: Read> RequestBodyConnection<'r, R> {
         }
     }
 
+    /// "Finalize" the connection, reading and discarding the rest of the body if need be, and returning the underlying connection
     pub async fn finalize(
         self,
     ) -> Result<crate::response::Connection<'r, impl Read<Error = R::Error> + 'r>, R::Error> {
@@ -432,16 +464,23 @@ impl<'r, R: Read> RequestBodyConnection<'r, R> {
     }
 }
 
+/// A HTTP Request
 pub struct Request<'r, R: Read> {
+    /// The method, path, query, fragments, and headers.
     pub parts: RequestParts<'r>,
-    pub body: RequestBodyConnection<'r, R>,
+    /// The request body and underlying connection
+    pub body_connection: RequestBodyConnection<'r, R>,
 }
 
 #[derive(Debug)]
+/// Errors arising while reading a HTTP Request
 pub enum ReadError<E> {
+    /// The request line is invalid
     BadRequestLine,
+    /// EndOfFile before the end of the request line or headers
     UnexpectedEof,
-    Other(E),
+    /// IO Error
+    IO(E),
 }
 
 pub(crate) struct Reader<'b, R: Read> {
@@ -500,7 +539,7 @@ impl<'b, R: Read> Reader<'b, R> {
                 .reader
                 .read(&mut self.buffer[self.buffer_usage..])
                 .await
-                .map_err(ReadError::Other)?;
+                .map_err(ReadError::IO)?;
 
             if read_size == 0 {
                 return Err(ReadError::UnexpectedEof);
@@ -636,7 +675,7 @@ impl<'b, R: Read> Reader<'b, R> {
                 http_version,
                 headers,
             },
-            body: RequestBodyConnection {
+            body_connection: RequestBodyConnection {
                 content_length,
                 reader: &mut self.reader,
                 read_position: 0,

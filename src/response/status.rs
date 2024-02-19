@@ -1,33 +1,41 @@
 //! HTTP status codes
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// A HTTP response status code
 pub struct StatusCode(u16);
 
 impl StatusCode {
+    /// Create a status code with the given numerical value.
     pub fn new(status_code: u16) -> Self {
         Self(status_code)
     }
 
+    /// Convert a status code into the underlying numerical value.
     pub fn as_u16(self) -> u16 {
         self.0
     }
 
+    /// Is the status code with the 1xx range
     pub fn is_informational(&self) -> bool {
         200 > self.0 && self.0 >= 100
     }
 
+    /// Is the status code with the 2xx range
     pub fn is_success(&self) -> bool {
         300 > self.0 && self.0 >= 200
     }
 
+    /// Is the status code with the 3xx range
     pub fn is_redirection(&self) -> bool {
         400 > self.0 && self.0 >= 300
     }
 
+    /// Is the status code with the 4xx range
     pub fn is_client_error(&self) -> bool {
         500 > self.0 && self.0 >= 400
     }
 
+    /// Is the status code with the 5xx range
     pub fn is_server_error(&self) -> bool {
         600 > self.0 && self.0 >= 500
     }

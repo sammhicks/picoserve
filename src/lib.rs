@@ -35,9 +35,13 @@ pub struct ResponseSent(());
 /// Errors arising while handling a request.
 #[derive(Debug)]
 pub enum Error<E: embedded_io_async::Error> {
-    ReadTimeout,
+    /// [request::ReadError] while reading from the socket.
     Read(request::ReadError<E>),
+    /// Timeout while reading from the socket.
+    ReadTimeout,
+    /// Error while writing to the socket.
     Write(E),
+    /// Timeout while writing to the socket.
     WriteTimeout,
 }
 
@@ -49,7 +53,7 @@ impl<E: embedded_io_async::Error> embedded_io_async::Error for Error<E> {
             | Error::Read(request::ReadError::UnexpectedEof) => {
                 embedded_io_async::ErrorKind::InvalidData
             }
-            Error::Read(request::ReadError::Other(err)) | Error::Write(err) => err.kind(),
+            Error::Read(request::ReadError::IO(err)) | Error::Write(err) => err.kind(),
         }
     }
 }
@@ -58,8 +62,11 @@ impl<E: embedded_io_async::Error> embedded_io_async::Error for Error<E> {
 /// How long to wait before timing out for different operations.
 /// If set to None, the operation never times out.
 pub struct Timeouts<D> {
+    /// The duration of time to wait when starting to read a new request before the connection is closed due to inactivity.
     pub start_read_request: Option<D>,
+    /// The duration of time to wait when partway reading a request before the connection is aborted and closed.
     pub read_request: Option<D>,
+    /// The duration of time to wait when writing the response before the connection is aborted and closed.
     pub write: Option<D>,
 }
 
@@ -113,7 +120,9 @@ impl KeepAlive {
 /// Server Configuration.
 #[derive(Debug, Clone)]
 pub struct Config<D> {
+    /// The timeout information
     pub timeouts: Timeouts<D>,
+    /// Whether to close the connection after handling a request or keeping it open to allow further requests on the same connection.
     pub connection: KeepAlive,
 }
 
@@ -157,7 +166,7 @@ impl<R: embedded_io_async::Read> embedded_io_async::Read for MapReadErrorReader<
         self.0
             .read(buf)
             .await
-            .map_err(|err| Error::Read(request::ReadError::Other(err)))
+            .map_err(|err| Error::Read(request::ReadError::IO(err)))
     }
 
     async fn read_exact(
@@ -169,9 +178,7 @@ impl<R: embedded_io_async::Read> embedded_io_async::Read for MapReadErrorReader<
                 embedded_io_async::ReadExactError::UnexpectedEof
             }
             embedded_io_async::ReadExactError::Other(err) => {
-                embedded_io_async::ReadExactError::Other(Error::Read(request::ReadError::Other(
-                    err,
-                )))
+                embedded_io_async::ReadExactError::Other(Error::Read(request::ReadError::IO(err)))
             }
         })
     }
@@ -244,7 +251,7 @@ async fn serve_and_shutdown<State, T: Timer, P: routing::PathRouter<State>, S: i
                         request::ReadError::UnexpectedEof => {
                             Error::Read(request::ReadError::UnexpectedEof)
                         }
-                        request::ReadError::Other(err) => err,
+                        request::ReadError::IO(err) => err,
                     })
                 }
                 Err(..) => return Err(Error::ReadTimeout),

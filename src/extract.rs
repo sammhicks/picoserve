@@ -1,6 +1,6 @@
 //! Types and traits for extracting data from requests.
 //!
-//! A handler function is an async function that takes any number of "extractors" as arguments. An extractor is a type that implements [FromRequest].
+//! A handler function is an async function that takes any number of "extractors" as arguments. All arguments must implement [FromRequestParts], and the final extractory may optionally implement [FromRequest].
 //!
 //! For example:
 //!
@@ -21,9 +21,12 @@ mod private {
     pub struct ViaParts;
 }
 
+/// Types that can be created from requests parts (everything except the request body).
 pub trait FromRequestParts<State>: Sized {
+    /// If the extractor fails this “rejection” type is returned, which converted into a response and returned.
     type Rejection: IntoResponse;
 
+    /// Attempt to extract from the request parts.
     async fn from_request_parts(
         state: &State,
         request_parts: &RequestParts<'_>,
@@ -32,8 +35,10 @@ pub trait FromRequestParts<State>: Sized {
 
 /// Types that can be created from requests.
 pub trait FromRequest<State, M = private::ViaRequest>: Sized {
+    /// If the extractor fails this “rejection” type is returned, which converted into a response and returned.
     type Rejection: IntoResponse;
 
+    /// Attempt to extract from the request.
     async fn from_request<R: Read>(
         state: &State,
         request_parts: RequestParts<'_>,
@@ -94,7 +99,7 @@ impl<State, T: serde::de::DeserializeOwned> FromRequestParts<State> for Query<T>
     ) -> Result<Self, Self::Rejection> {
         super::url_encoded::deserialize_form(request_parts.query().unwrap_or_default())
             .map(Self)
-            .map_err(|super::url_encoded::BadUrlEncodedForm| QueryRejection)
+            .map_err(|super::url_encoded::FormDeserializationError| QueryRejection)
     }
 }
 
@@ -117,7 +122,9 @@ impl<T: serde::de::DeserializeOwned> core::ops::DerefMut for Form<T> {
 
 /// Rejection used for [Form].
 pub enum FormRejection {
+    /// Error decoding the body as UTF-8
     BodyIsNotUtf8,
+    /// Error deserializing Form
     BadForm,
 }
 
@@ -157,12 +164,13 @@ impl<State, T: serde::de::DeserializeOwned> FromRequest<State> for Form<T> {
             .map_err(|core::str::Utf8Error { .. }| FormRejection::BodyIsNotUtf8)?,
         ))
         .map(Self)
-        .map_err(|super::url_encoded::BadUrlEncodedForm| FormRejection::BadForm)
+        .map_err(|super::url_encoded::FormDeserializationError| FormRejection::BadForm)
     }
 }
 
 /// Used to do reference to value conversions, mainly used with the [State] extractor to extract parts of the application state.
 pub trait FromRef<T> {
+    /// Perform the reference to value conversion
     fn from_ref(input: &T) -> Self;
 }
 
@@ -192,9 +200,10 @@ impl<S, T: FromRef<S>> FromRequestParts<S> for State<T> {
 }
 
 #[derive(Debug)]
-pub struct NoUpgradeHeader;
+/// The Connection could not be upgraded because the "Upgrade" headed was missing
+pub struct NoUpgradeHeaderError;
 
-impl IntoResponse for NoUpgradeHeader {
+impl IntoResponse for NoUpgradeHeaderError {
     async fn write_to<R: Read, W: crate::response::ResponseWriter<Error = R::Error>>(
         self,
         connection: crate::response::Connection<'_, R>,
@@ -214,7 +223,7 @@ impl IntoResponse for NoUpgradeHeader {
 pub struct UpgradeToken(());
 
 impl<State> FromRequestParts<State> for UpgradeToken {
-    type Rejection = NoUpgradeHeader;
+    type Rejection = NoUpgradeHeaderError;
 
     async fn from_request_parts(
         _state: &State,
@@ -224,7 +233,7 @@ impl<State> FromRequestParts<State> for UpgradeToken {
             .headers()
             .get("upgrade")
             .map(|_| Self(()))
-            .ok_or(NoUpgradeHeader)
+            .ok_or(NoUpgradeHeaderError)
     }
 }
 

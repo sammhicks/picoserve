@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use picoserve::{
     response::IntoResponse,
-    routing::{get, parse_path_segment},
+    routing::{get, get_service, parse_path_segment},
     ResponseSent,
 };
 
@@ -62,12 +62,35 @@ impl IntoResponse for InfixOperation {
     }
 }
 
+struct MyService;
+
+impl<State> picoserve::routing::RequestHandlerService<State, (f32,)> for MyService {
+    async fn call_request_handler_service<
+        R: picoserve::io::Read,
+        W: picoserve::response::ResponseWriter<Error = R::Error>,
+    >(
+        &self,
+        _state: &State,
+        (n,): (f32,),
+        request: picoserve::request::Request<'_, R>,
+        response_writer: W,
+    ) -> Result<ResponseSent, W::Error> {
+        picoserve::response::DebugValue(("n", n))
+            .write_to(request.body_connection.finalize().await?, response_writer)
+            .await
+    }
+}
+
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> anyhow::Result<()> {
     let port = 8000;
 
     let app = std::rc::Rc::new(
         picoserve::Router::new()
+            .route(
+                ("/foo", parse_path_segment::<f32>()),
+                get_service(MyService),
+            )
             .route(
                 ("/neg", parse_path_segment::<f32>()),
                 get(|input| async move {

@@ -1,9 +1,13 @@
 //! [Timer] for creating timeouts during request parsing and request handling.
 
+/// A timer which can be used to abort futures if they take to long to resolve.
 pub trait Timer {
+    /// The measure of time duration for this timer.
     type Duration: Clone;
+    /// The error returned if a future fails to resolve in time.
     type TimeoutError;
 
+    /// Drive the future, failing if it takes to long to resolve.
     async fn run_with_timeout<F: core::future::Future>(
         &mut self,
         duration: Self::Duration,
@@ -28,7 +32,7 @@ pub(crate) trait TimerExt: Timer {
 impl<T: Timer> TimerExt for T {}
 
 #[cfg(any(feature = "tokio", test))]
-pub struct TokioTimer;
+pub(crate) struct TokioTimer;
 
 #[cfg(any(feature = "tokio", test))]
 impl Timer for TokioTimer {
@@ -45,7 +49,7 @@ impl Timer for TokioTimer {
 }
 
 #[cfg(feature = "embassy")]
-pub struct EmbassyTimer;
+pub(crate) struct EmbassyTimer;
 
 #[cfg(feature = "embassy")]
 impl Timer for EmbassyTimer {

@@ -4,10 +4,11 @@ use crate::{
     ResponseSent,
 };
 
-use super::{MethodHandler, PathRouter, ResponseWriter};
+use super::{sealed::Sealed, MethodHandler, PathRouter, ResponseWriter};
 
 /// The remainer of a middleware stack, including the handler.
-pub trait Next<R: Read, State, PathParameters> {
+pub trait Next<R: Read, State, PathParameters>: Sealed {
+    /// Run the next layer, writing the final response to the [ResponseWriter]
     async fn run<W: ResponseWriter<Error = R::Error>>(
         self,
         state: &State,
@@ -29,10 +30,12 @@ pub trait Next<R: Read, State, PathParameters> {
 /// To modify the response, create a struct that implements [ResponseWriter] and wraps `response_writer`,
 /// and pass an instance of that struct to `next`
 pub trait Layer<State, PathParameters> {
-    /// The state passed to the
+    /// The state passed to the next layer
     type NextState;
+    /// The parameters passed to the next layer
     type NextPathParameters;
 
+    /// Call the current layer, passing inner layers
     async fn call_layer<
         R: Read,
         NextLayer: Next<R, Self::NextState, Self::NextPathParameters>,
@@ -51,6 +54,8 @@ struct NextMethodRouterLayer<'a, R: Read, N> {
     next: &'a N,
     request: Request<'a, R>,
 }
+
+impl<'a, R: Read, N> Sealed for NextMethodRouterLayer<'a, R, N> {}
 
 impl<'a, R: Read, State, PathParameters, N: MethodHandler<State, PathParameters>>
     Next<R, State, PathParameters> for NextMethodRouterLayer<'a, R, N>
@@ -71,6 +76,8 @@ pub(crate) struct MethodRouterLayer<L, I> {
     pub(crate) layer: L,
     pub(crate) inner: I,
 }
+
+impl<L, I> Sealed for MethodRouterLayer<L, I> {}
 
 impl<
         L: Layer<State, PathParameters>,
@@ -109,6 +116,8 @@ struct NextPathRouterLayer<'a, R: Read, N> {
     request: Request<'a, R>,
 }
 
+impl<'a, R: Read, N> Sealed for NextPathRouterLayer<'a, R, N> {}
+
 impl<'a, R: Read, State, CurrentPathParameters, N: PathRouter<State, CurrentPathParameters>>
     Next<R, State, CurrentPathParameters> for NextPathRouterLayer<'a, R, N>
 {
@@ -134,6 +143,8 @@ pub(crate) struct PathRouterLayer<L, I> {
     pub(crate) layer: L,
     pub(crate) inner: I,
 }
+
+impl<L, I> Sealed for PathRouterLayer<L, I> {}
 
 impl<
         L: Layer<State, CurrentPathParameters>,

@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+### Breaking
+
+- Several public types have changed name to improve name consistency.
+- Sealed [RequestHandler](https://docs.rs/picoserve/latest/picoserve/routing/trait.RequestHandler.html), [MethodHandler]((https://docs.rs/picoserve/latest/picoserve/routing/trait.MethodHandler.html)), and [PathRouter](https://docs.rs/picoserve/latest/picoserve/routing/trait.PathRouter.html), and added [RequestHandlerService](https://docs.rs/picoserve/latest/picoserve/routing/trait.RequestHandlerService.html) and [PathRouterService](https://docs.rs/picoserve/latest/picoserve/routing/trait.PathRouterService.html) which have better ergonomics.
+  - A service with no path parameters now has path parameters of `()` not `NoPathParameters`.
+  - A service with a single path parameter now has path parameters of `(T,)`, not `OnePathParameter`.
+  - A service with multiple path parameters now has a tuple of path parameters, not `ManyPathParameters`.
+
 ## [0.9.1] - 2024-02-12
 
 ### Added

@@ -59,6 +59,7 @@ impl super::IntoResponse for WebSocketUpgradeRejection {
 
 /// Types which can represent either a specified web socket protocol, or an unspecified web socket protocol.
 pub trait WebSocketProtocol {
+    /// Return the name of the protocol, or None if unspecified.
     fn name(&self) -> Option<&str>;
 }
 
@@ -111,7 +112,7 @@ impl<State> crate::extract::FromRequest<State> for WebSocketUpgrade {
 
         let upgrade_token = crate::extract::UpgradeToken::from_request_parts(state, &request_parts)
             .await
-            .map_err(|crate::extract::NoUpgradeHeader| {
+            .map_err(|crate::extract::NoUpgradeHeaderError| {
                 WebSocketUpgradeRejection::InvalidUpgradeHeader
             })?;
 
@@ -164,25 +165,35 @@ impl<State> crate::extract::FromRequest<State> for WebSocketUpgrade {
 /// A web socket message opcode.
 #[derive(Debug)]
 pub enum Opcode {
+    /// "Data", e.g. text or binary.
     Data(Data),
+    /// "Control" information, such as Close, Ping, and Pong.
     Control(Control),
 }
 
 /// A web socket message data opcode.
 #[derive(Debug)]
 pub enum Data {
+    /// This frame continues from the previous frame.
     Continue,
+    /// This frame starts a UTF-8 text string.
     Text,
+    /// This frame starts a binary blob.
     Binary,
+    /// This frame uses a reserved opcode.
     Reserved(u8),
 }
 
 /// A web socket message control opcode.
 #[derive(Debug)]
 pub enum Control {
+    /// The connection should be closed.
     Close,
+    /// A ping message, which should be replied with a "pong" message containing the same data.
     Ping,
+    /// The response to a "ping" message
     Pong,
+    /// This frame uses a reserved opcode.
     Reserved(u8),
 }
 
@@ -268,10 +279,15 @@ enum MessageOpcode {
 /// Message Types.
 #[derive(Debug)]
 pub enum Message<'a> {
+    /// A UTF-8 encoded string.
     Text(&'a str),
+    /// A blob of (possibly structured) binary data.
     Binary(&'a [u8]),
+    /// A request to close the connection.
     Close(Option<(u16, &'a str)>),
+    /// A ping message, which should be replied with a "pong" message containing the same data.
     Ping(&'a [u8]),
+    /// The response to a "ping" message
     Pong(&'a [u8]),
 }
 
@@ -548,6 +564,7 @@ impl<'w, W: Write> Write for JsonWriter<'w, W> {
 
 /// Implement [WebSocketCallback] to handle and sent web socket messages.
 pub trait WebSocketCallback {
+    /// Run the WebSocket connection, reading and writing to the socket.
     async fn run<R: Read, W: Write<Error = R::Error>>(
         self,
         rx: SocketRx<R>,

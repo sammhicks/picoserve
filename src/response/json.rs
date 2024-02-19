@@ -1,3 +1,5 @@
+//! Support for serializing and deserializing JSON structures
+
 use core::fmt;
 
 use serde::Serialize;
