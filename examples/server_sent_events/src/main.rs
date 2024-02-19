@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use picoserve::{
-    response::{self, status},
+    response::{self, StatusCode},
     routing::{get, post},
     ResponseSent,
 };
@@ -19,13 +19,13 @@ impl response::IntoResponse for NewMessageRejection {
     ) -> Result<ResponseSent, W::Error> {
         match self {
             NewMessageRejection::ReadError => {
-                (status::BAD_REQUEST, "Read Error")
+                (StatusCode::BAD_REQUEST, "Read Error")
                     .write_to(connection, response_writer)
                     .await
             }
             NewMessageRejection::NotUtf8(err) => {
                 (
-                    status::BAD_REQUEST,
+                    StatusCode::BAD_REQUEST,
                     format_args!("Body is not UTF-8: {err}\n"),
                 )
                     .write_to(connection, response_writer)
@@ -83,56 +83,55 @@ async fn main() -> anyhow::Result<()> {
 
     let (messages_tx, messages_rx) = tokio::sync::watch::channel(String::new());
 
-    let app = std::rc::Rc::new(
-        picoserve::Router::new()
-            .route(
-                "/",
-                get(|| response::File::html(include_str!("index.html"))),
-            )
-            .route(
-                "/set_message",
-                post(move |NewMessage(message)| {
-                    std::future::ready(
-                        messages_tx
-                            .send(message)
-                            .map_err(|_| (status::INTERNAL_SERVER_ERROR, "Failed to send message")),
-                    )
-                }),
-            )
-            .route(
-                "/events",
-                get(move || response::EventStream(Events(messages_rx.clone()))),
-            )
-            .nest_service("/static", {
-                const STATIC_FILES: response::Directory = response::Directory {
-                    files: &[],
-                    sub_directories: &[
-                        (
-                            "styles",
-                            response::Directory {
-                                files: &[(
-                                    "index.css",
-                                    response::File::css(include_str!("index.css")),
-                                )],
-                                sub_directories: &[],
-                            },
-                        ),
-                        (
-                            "scripts",
-                            response::Directory {
-                                files: &[(
-                                    "index.js",
-                                    response::File::css(include_str!("index.js")),
-                                )],
-                                sub_directories: &[],
-                            },
-                        ),
-                    ],
-                };
+    let app =
+        std::rc::Rc::new(
+            picoserve::Router::new()
+                .route(
+                    "/",
+                    get(|| response::File::html(include_str!("index.html"))),
+                )
+                .route(
+                    "/set_message",
+                    post(move |NewMessage(message)| {
+                        std::future::ready(messages_tx.send(message).map_err(|_| {
+                            (StatusCode::INTERNAL_SERVER_ERROR, "Failed to send message")
+                        }))
+                    }),
+                )
+                .route(
+                    "/events",
+                    get(move || response::EventStream(Events(messages_rx.clone()))),
+                )
+                .nest_service("/static", {
+                    const STATIC_FILES: response::Directory = response::Directory {
+                        files: &[],
+                        sub_directories: &[
+                            (
+                                "styles",
+                                response::Directory {
+                                    files: &[(
+                                        "index.css",
+                                        response::File::css(include_str!("index.css")),
+                                    )],
+                                    sub_directories: &[],
+                                },
+                            ),
+                            (
+                                "scripts",
+                                response::Directory {
+                                    files: &[(
+                                        "index.js",
+                                        response::File::css(include_str!("index.js")),
+                                    )],
+                                    sub_directories: &[],
+                                },
+                            ),
+                        ],
+                    };
 
-                STATIC_FILES
-            }),
-    );
+                    STATIC_FILES
+                }),
+        );
 
     let config = picoserve::Config::new(picoserve::Timeouts {
         start_read_request: Some(Duration::from_secs(5)),

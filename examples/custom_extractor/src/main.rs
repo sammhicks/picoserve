@@ -30,7 +30,7 @@ impl IntoResponse for BadRequest {
         match self {
             BadRequest::ReadError => {
                 (
-                    picoserve::response::status::BAD_REQUEST,
+                    picoserve::response::StatusCode::BAD_REQUEST,
                     format_args!("Read Error"),
                 )
                     .write_to(connection, response_writer)
@@ -38,7 +38,7 @@ impl IntoResponse for BadRequest {
             }
             BadRequest::NotUtf8(err) => {
                 (
-                    picoserve::response::status::BAD_REQUEST,
+                    picoserve::response::StatusCode::BAD_REQUEST,
                     format_args!("Request Body is not UTF-8: {err}"),
                 )
                     .write_to(connection, response_writer)
@@ -46,7 +46,7 @@ impl IntoResponse for BadRequest {
             }
             BadRequest::BadNumber(err) => {
                 (
-                    picoserve::response::status::BAD_REQUEST,
+                    picoserve::response::StatusCode::BAD_REQUEST,
                     format_args!("Request Body is not a valid integer: {err}"),
                 )
                     .write_to(connection, response_writer)

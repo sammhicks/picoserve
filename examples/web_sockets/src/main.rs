@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use picoserve::{
-    response::{self, status, ws},
+    response::{self, ws, StatusCode},
     routing::get,
     ResponseSent,
 };
@@ -19,13 +19,13 @@ impl response::IntoResponse for NewMessageRejection {
     ) -> Result<ResponseSent, W::Error> {
         match self {
             NewMessageRejection::ReadError => {
-                (status::BAD_REQUEST, "Read Error")
+                (StatusCode::BAD_REQUEST, "Read Error")
                     .write_to(connection, response_writer)
                     .await
             }
             NewMessageRejection::NotUtf8(err) => {
                 (
-                    status::BAD_REQUEST,
+                    StatusCode::BAD_REQUEST,
                     format_args!("Body is not UTF-8: {err}\n"),
                 )
                     .write_to(connection, response_writer)

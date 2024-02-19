@@ -568,7 +568,7 @@ async fn upgrade_with_request_body() {
 
             let connection = request.body_connection.finalize().await?;
 
-            response::Response::new(response::status::OK, UpgradeCheck { upgrade_token })
+            response::Response::new(response::StatusCode::OK, UpgradeCheck { upgrade_token })
                 .write_to(connection, response_writer)
                 .await
         }

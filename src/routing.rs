@@ -8,7 +8,7 @@ use crate::{
     extract::{FromRequest, FromRequestParts},
     io::Read,
     request::{Path, Request},
-    response::{status, IntoResponse, ResponseWriter},
+    response::{IntoResponse, ResponseWriter, StatusCode},
     ResponseSent,
 };
 
@@ -353,7 +353,7 @@ impl<State, PathParameters> RequestHandler<State, PathParameters> for MethodNotA
         response_writer: W,
     ) -> Result<ResponseSent, W::Error> {
         (
-            status::METHOD_NOT_ALLOWED,
+            StatusCode::METHOD_NOT_ALLOWED,
             format_args!(
                 "Method {} not allowed for {}\r\n",
                 request.parts.method(),
@@ -646,7 +646,7 @@ impl<State, CurrentPathParameters> PathRouter<State, CurrentPathParameters> for 
         response_writer: W,
     ) -> Result<ResponseSent, W::Error> {
         (
-            status::NOT_FOUND,
+            StatusCode::NOT_FOUND,
             format_args!("{} not found\r\n", request.parts.path()),
         )
             .write_to(request.body_connection.finalize().await?, response_writer)

@@ -12,7 +12,7 @@
 use crate::{
     io::Read,
     request::{RequestBody, RequestParts},
-    response::{status, IntoResponse},
+    response::{IntoResponse, StatusCode},
     ResponseSent,
 };
 
@@ -84,7 +84,7 @@ impl IntoResponse for QueryRejection {
         connection: crate::response::Connection<'_, R>,
         response_writer: W,
     ) -> Result<ResponseSent, W::Error> {
-        (status::BAD_REQUEST, "Bad Query\n")
+        (StatusCode::BAD_REQUEST, "Bad Query\n")
             .write_to(connection, response_writer)
             .await
     }
@@ -135,7 +135,7 @@ impl IntoResponse for FormRejection {
         response_writer: W,
     ) -> Result<ResponseSent, W::Error> {
         (
-            status::BAD_REQUEST,
+            StatusCode::BAD_REQUEST,
             match self {
                 Self::BodyIsNotUtf8 => "Body is not UTF-8\n",
                 Self::BadForm => "Bad Form\n",
@@ -210,7 +210,7 @@ impl IntoResponse for NoUpgradeHeaderError {
         response_writer: W,
     ) -> Result<ResponseSent, W::Error> {
         (
-            status::BAD_REQUEST,
+            StatusCode::BAD_REQUEST,
             "Connection header did not include `upgrade`\n",
         )
             .write_to(connection, response_writer)

@@ -11,7 +11,7 @@
 //! + `([StatusCode], impl Content)`
 //! + `([StatusCode], ("HeaderName", "HeaderValue"), impl Content)`
 //! + Tuples consisting of:
-//!     1. Optionally, a status code. If not provided, a status code of [status::OK] is used
+//!     1. Optionally, a status code. If not provided, a status code of [StatusCode::OK] is used
 //!     2. A number of values which implement [HeadersIter], such as:
 //!         + `(&str, impl Display)`
 //!         + `Option<impl HeadersIter>`
@@ -397,7 +397,7 @@ impl<B: Content> Response<BodyHeaders, ContentBody<B>> {
 
     /// A response with a status of 200 "OK".
     pub fn ok(body: B) -> Self {
-        Self::new(status::OK, body)
+        Self::new(StatusCode::OK, body)
     }
 }
 
@@ -657,7 +657,7 @@ macro_rules! declare_tuple_into_response {
 
                     response_writer.write_response(
                         connection,
-                        Response::new(status::OK, body)
+                        Response::new(StatusCode::OK, body)
                         $(.with_headers($name,))*
                     ).await
                 }
@@ -720,7 +720,7 @@ impl Redirect {
     /// Create a new [Redirect] that uses a 303 "See Other" status code.
     pub fn to(location: &'static str) -> Self {
         Self {
-            status_code: status::SEE_OTHER,
+            status_code: StatusCode::SEE_OTHER,
             location,
         }
     }

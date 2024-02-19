@@ -9,7 +9,7 @@ use crate::{
     ResponseSent,
 };
 
-use super::{status, IntoResponse};
+use super::{IntoResponse, StatusCode};
 
 #[derive(Clone, PartialEq, Eq)]
 struct ETag([u8; 20]);
@@ -144,7 +144,7 @@ impl<State, PathParameters> crate::routing::RequestHandlerService<State, PathPar
                     .write_response(
                         request.body_connection.finalize().await?,
                         super::Response {
-                            status_code: status::NOT_MODIFIED,
+                            status_code: StatusCode::NOT_MODIFIED,
                             headers: self.etag.clone(),
                             body: super::NoBody,
                         },

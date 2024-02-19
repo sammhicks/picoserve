@@ -5,7 +5,7 @@ use crate::{
     io::{Read, Write},
 };
 
-use super::status;
+use super::StatusCode;
 
 /// Indicates that the websocket failed to be upgraded.
 pub enum WebSocketUpgradeRejection {
@@ -28,11 +28,11 @@ impl super::IntoResponse for WebSocketUpgradeRejection {
         response_writer: W,
     ) -> Result<crate::ResponseSent, W::Error> {
         (
-            status::BAD_REQUEST,
+            StatusCode::BAD_REQUEST,
             match self {
                 WebSocketUpgradeRejection::MethodNotGet => {
                     return (
-                        status::METHOD_NOT_ALLOWED,
+                        StatusCode::METHOD_NOT_ALLOWED,
                         "Websocket upgrades must use the `GET` method\n",
                     )
                         .write_to(connection, response_writer)
@@ -665,7 +665,7 @@ impl<P: WebSocketProtocol, C: WebSocketCallback> super::IntoResponse for Upgrade
             .write_response(
                 connection,
                 super::Response {
-                    status_code: status::SWITCHING_PROTOCOLS,
+                    status_code: StatusCode::SWITCHING_PROTOCOLS,
                     headers: [
                         ("Upgrade", "websocket"),
                         ("Connection", "upgrade"),

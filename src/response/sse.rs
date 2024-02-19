@@ -4,7 +4,7 @@ use core::future::Future;
 
 use crate::io::{Read, Write};
 
-use super::status;
+use super::StatusCode;
 
 /// Types which can be used as the data of an event.
 pub trait EventData {
@@ -70,7 +70,7 @@ impl<S: EventSource> EventStream<S> {
     /// Convert SSE stream into a [super::Response] with a status code of "OK"
     pub fn into_response(self) -> super::Response<impl super::HeadersIter, impl super::Body> {
         super::Response {
-            status_code: status::OK,
+            status_code: StatusCode::OK,
             headers: [
                 ("Cache-Control", "no-cache"),
                 ("Content-Type", "text/event-stream"),

@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - A service with no path parameters now has path parameters of `()` not `NoPathParameters`.
   - A service with a single path parameter now has path parameters of `(T,)`, not `OnePathParameter`.
   - A service with multiple path parameters now has a tuple of path parameters, not `ManyPathParameters`.
+- Moved Status Code constants to inside [StatusCode](https://docs.rs/picoserve/latest/picoserve/response/status/struct.StatusCode.html).
 
 ## [0.9.1] - 2024-02-12
 
