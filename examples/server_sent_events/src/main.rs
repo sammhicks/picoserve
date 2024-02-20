@@ -37,13 +37,13 @@ impl response::IntoResponse for NewMessageRejection {
 
 struct NewMessage(String);
 
-impl<State> picoserve::extract::FromRequest<State> for NewMessage {
+impl<'r, State> picoserve::extract::FromRequest<'r, State> for NewMessage {
     type Rejection = NewMessageRejection;
 
     async fn from_request<R: picoserve::io::Read>(
-        _state: &State,
-        _request_parts: picoserve::request::RequestParts<'_>,
-        request_body: picoserve::request::RequestBody<'_, R>,
+        _state: &'r State,
+        _request_parts: picoserve::request::RequestParts<'r>,
+        request_body: picoserve::request::RequestBody<'r, R>,
     ) -> Result<Self, Self::Rejection> {
         core::str::from_utf8(
             request_body

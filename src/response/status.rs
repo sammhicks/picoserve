@@ -47,6 +47,18 @@ impl core::fmt::Display for StatusCode {
     }
 }
 
+impl super::IntoResponse for StatusCode {
+    async fn write_to<R: embedded_io_async::Read, W: super::ResponseWriter<Error = R::Error>>(
+        self,
+        connection: super::Connection<'_, R>,
+        response_writer: W,
+    ) -> Result<crate::ResponseSent, W::Error> {
+        super::Response::new(self, format_args!("Error {}", self.0))
+            .write_to(connection, response_writer)
+            .await
+    }
+}
+
 impl StatusCode {
     pub const CONTINUE: StatusCode = StatusCode(100);
     pub const SWITCHING_PROTOCOLS: StatusCode = StatusCode(101);

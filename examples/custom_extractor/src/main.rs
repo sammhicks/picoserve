@@ -56,13 +56,13 @@ impl IntoResponse for BadRequest {
     }
 }
 
-impl<State> FromRequest<State> for Number {
+impl<'r, State> FromRequest<'r, State> for Number {
     type Rejection = BadRequest;
 
     async fn from_request<R: picoserve::io::Read>(
-        _state: &State,
-        _request_parts: picoserve::request::RequestParts<'_>,
-        request_body: picoserve::request::RequestBody<'_, R>,
+        _state: &'r State,
+        _request_parts: picoserve::request::RequestParts<'r>,
+        request_body: picoserve::request::RequestBody<'r, R>,
     ) -> Result<Self, Self::Rejection> {
         Ok(Number {
             value: core::str::from_utf8(

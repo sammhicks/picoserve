@@ -346,6 +346,16 @@ impl<'r, R: Read> RequestBody<'r, R> {
         self.content_length
     }
 
+    /// The size of the buffer used to read the body into
+    pub fn buffer_length(&self) -> usize {
+        self.buffer.len()
+    }
+
+    /// Does the entire body fit into the buffer?
+    pub fn entire_body_fits_into_buffer(&self) -> bool {
+        self.content_length() <= self.buffer_length()
+    }
+
     /// Read the entire body into the HTTP buffer.
     pub async fn read_all(self) -> Result<&'r mut [u8], ReadAllBodyError<R::Error>> {
         let buffer = self

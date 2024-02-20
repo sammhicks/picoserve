@@ -142,7 +142,7 @@ where
 macro_rules! declare_handler_func {
     ($($($name:ident)*;)*) => {
         $(
-            impl<State, FunctionReturn: IntoFuture, $($name: FromRequestParts<State>,)* M, E: FromRequest<State, M>, H: Fn($($name,)* E,) -> FunctionReturn>
+            impl<State, FunctionReturn: IntoFuture, $($name: for<'a> FromRequestParts<'a, State>,)* M, E: for<'a> FromRequest<'a, State, M>, H: Fn($($name,)* E,) -> FunctionReturn>
                 RequestHandlerFunction<State, NoPathParameters, (M, $($name,)* E, FunctionReturn,)> for H
             where
                 FunctionReturn::Output: IntoResponse,
@@ -170,7 +170,7 @@ macro_rules! declare_handler_func {
                 }
             }
 
-            impl<State, PathParameter, FunctionReturn: IntoFuture, $($name: FromRequestParts<State>,)* M, E: FromRequest<State, M>, H: Fn(PathParameter, $($name,)* E,) -> FunctionReturn>
+            impl<State, PathParameter, FunctionReturn: IntoFuture, $($name: for<'a> FromRequestParts<'a, State>,)* M, E: for<'a> FromRequest<'a, State, M>, H: Fn(PathParameter, $($name,)* E,) -> FunctionReturn>
                 RequestHandlerFunction<State, OnePathParameter<PathParameter>, (M, $($name,)* E, FunctionReturn,)> for H
             where
                 FunctionReturn::Output: IntoResponse,
@@ -200,7 +200,7 @@ macro_rules! declare_handler_func {
                 }
             }
 
-            impl<State, PathParameters, FunctionReturn: IntoFuture, $($name: FromRequestParts<State>,)* M, E: FromRequest<State, M>, H: Fn(PathParameters, $($name,)* E,) -> FunctionReturn>
+            impl<State, PathParameters, FunctionReturn: IntoFuture, $($name: for<'a> FromRequestParts<'a, State>,)* M, E: for<'a> FromRequest<'a, State, M>, H: Fn(PathParameters, $($name,)* E,) -> FunctionReturn>
                 RequestHandlerFunction<State, ManyPathParameters<PathParameters>, (M, $($name,)* E, FunctionReturn)> for H
             where
                 FunctionReturn::Output: IntoResponse,
