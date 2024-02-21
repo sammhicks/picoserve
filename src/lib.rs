@@ -35,8 +35,8 @@ pub struct ResponseSent(());
 /// Errors arising while handling a request.
 #[derive(Debug)]
 pub enum Error<E: embedded_io_async::Error> {
-    /// [request::ReadError] while reading from the socket.
-    Read(request::ReadError<E>),
+    /// Error while reading from the socket.
+    Read(E),
     /// Timeout while reading from the socket.
     ReadTimeout,
     /// Error while writing to the socket.
@@ -49,11 +49,7 @@ impl<E: embedded_io_async::Error> embedded_io_async::Error for Error<E> {
     fn kind(&self) -> embedded_io_async::ErrorKind {
         match self {
             Error::ReadTimeout | Error::WriteTimeout => embedded_io_async::ErrorKind::TimedOut,
-            Error::Read(request::ReadError::BadRequestLine)
-            | Error::Read(request::ReadError::UnexpectedEof) => {
-                embedded_io_async::ErrorKind::InvalidData
-            }
-            Error::Read(request::ReadError::IO(err)) | Error::Write(err) => err.kind(),
+            Error::Read(err) | Error::Write(err) => err.kind(),
         }
     }
 }
@@ -163,10 +159,7 @@ impl<R: embedded_io_async::Read> embedded_io_async::ErrorType for MapReadErrorRe
 
 impl<R: embedded_io_async::Read> embedded_io_async::Read for MapReadErrorReader<R> {
     async fn read(&mut self, buf: &mut [u8]) -> Result<usize, Self::Error> {
-        self.0
-            .read(buf)
-            .await
-            .map_err(|err| Error::Read(request::ReadError::IO(err)))
+        self.0.read(buf).await.map_err(Error::Read)
     }
 
     async fn read_exact(
@@ -178,7 +171,7 @@ impl<R: embedded_io_async::Read> embedded_io_async::Read for MapReadErrorReader<
                 embedded_io_async::ReadExactError::UnexpectedEof
             }
             embedded_io_async::ReadExactError::Other(err) => {
-                embedded_io_async::ReadExactError::Other(Error::Read(request::ReadError::IO(err)))
+                embedded_io_async::ReadExactError::Other(Error::Read(err))
             }
         })
     }
@@ -229,7 +222,7 @@ async fn serve_and_shutdown<State, T: Timer, P: routing::PathRouter<State>, S: i
                         timeout_duration: config.timeouts.write.clone(),
                     };
 
-                    router
+                    let ResponseSent(()) = router
                         .call_path_router(
                             state,
                             routing::NoPathParameters,
@@ -244,15 +237,34 @@ async fn serve_and_shutdown<State, T: Timer, P: routing::PathRouter<State>, S: i
                     }
                 }
                 Ok(Err(err)) => {
-                    return Err(match err {
-                        request::ReadError::BadRequestLine => {
-                            Error::Read(request::ReadError::BadRequestLine)
+                    use response::IntoResponse;
+
+                    let message = match err {
+                        request::ReadError::BadRequestLine => "Bad Request Line",
+                        request::ReadError::HeaderDoesNotContainColon => {
+                            "Invalid Header line: No ':' character"
                         }
-                        request::ReadError::UnexpectedEof => {
-                            Error::Read(request::ReadError::UnexpectedEof)
+                        request::ReadError::InvalidByteInHeader => "Invalid Byte in Header",
+                        request::ReadError::InvalidEscapedCharInHeader => {
+                            "Invalid Escape Character in Header"
                         }
-                        request::ReadError::IO(err) => err,
-                    })
+                        request::ReadError::UnexpectedEof => "Unexpected EOF while reading request",
+                        request::ReadError::IO(err) => return Err(err),
+                    };
+
+                    let ResponseSent(()) = timer
+                        .run_with_maybe_timeout(
+                            config.timeouts.write.clone(),
+                            (response::StatusCode::BAD_REQUEST, message).write_to(
+                                response::Connection::empty(&mut false),
+                                response::ResponseStream::new(writer, KeepAlive::Close),
+                            ),
+                        )
+                        .await
+                        .map_err(|_| Error::WriteTimeout)?
+                        .map_err(Error::Write)?;
+
+                    return Ok(request_count + 1);
                 }
                 Err(..) => return Err(Error::ReadTimeout),
             }

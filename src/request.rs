@@ -99,35 +99,41 @@ impl<'a> Iterator for HeadersTryIter<'a> {
     }
 }
 
-pub struct HeadersIter<'a>(HeadersTryIter<'a>);
+pub struct HeadersIter<'a>(core::str::Lines<'a>);
 
 impl<'a> Iterator for HeadersIter<'a> {
     type Item = (&'a str, &'a str);
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.0.by_ref().find_map(Result::ok)
+        let name = self.0.next()?;
+        let value = self.0.next()?;
+        Some((name.trim(), value.trim()))
     }
 }
 
 #[derive(Clone, Copy)]
 /// The Request Headers.
-pub struct Headers<'a>(&'a [u8]);
+pub struct Headers<'a>(&'a str);
 
 impl<'a> Headers<'a> {
-    /// Attempt to iterator over all headers which are valid UTF-8.
-    fn try_iter(&self) -> HeadersTryIter<'a> {
-        HeadersTryIter(self.0.split_inclusive(|&b| b == b'\n'))
-    }
-
-    /// Iterator over all headers which are valid UTF-8. Will skip invalid headers.
+    /// Iterator over all headers.
     pub fn iter(&self) -> HeadersIter<'a> {
-        HeadersIter(self.try_iter())
+        HeadersIter(self.0.lines())
     }
 
     /// Get a header with a name which matches (ignoring ASCII case) the given name
     pub fn get(&self, name: &str) -> Option<&'a str> {
         self.iter()
             .find_map(|(header_key, value)| name.eq_ignore_ascii_case(header_key).then_some(value))
+    }
+}
+
+impl<'a> IntoIterator for Headers<'a> {
+    type Item = (&'a str, &'a str);
+    type IntoIter = HeadersIter<'a>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
     }
 }
 
@@ -142,7 +148,7 @@ impl<'a, 'b> IntoIterator for &'b Headers<'a> {
 
 impl<'a> fmt::Debug for Headers<'a> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_list().entries(self.try_iter()).finish()
+        f.debug_list().entries(self.iter()).finish()
     }
 }
 
@@ -482,11 +488,16 @@ pub struct Request<'r, R: Read> {
     pub body_connection: RequestBodyConnection<'r, R>,
 }
 
-#[derive(Debug)]
 /// Errors arising while reading a HTTP Request
-pub enum ReadError<E> {
+pub(crate) enum ReadError<E> {
     /// The request line is invalid
     BadRequestLine,
+    /// A Header line does not contain a ':'
+    HeaderDoesNotContainColon,
+    /// A Header line contains an invalid byte
+    InvalidByteInHeader,
+    /// A Header line contains an invalid escaped character
+    InvalidEscapedCharInHeader,
     /// EndOfFile before the end of the request line or headers
     UnexpectedEof,
     /// IO Error
@@ -622,17 +633,118 @@ impl<'b, R: Read> Reader<'b, R> {
     async fn read_headers(&mut self) -> Result<Subslice, ReadError<R::Error>> {
         let start_index = self.read_position;
 
-        loop {
+        let mut end_index = loop {
+            // First read the line
             let line = self.read_line().await?;
 
+            // Then check that the line is not empty
             if line.as_ref().iter().all(u8::is_ascii_whitespace) {
-                let end_index = line.range.start;
-                return Ok(Subslice {
-                    buffer: self.used_buffer(),
-                    range: start_index..end_index,
-                });
+                break line.range.start;
+            }
+
+            // Then decode the header
+
+            let line_range = line.range.clone();
+
+            let line = &mut self.buffer[line_range];
+
+            let Some(colon_index) = line
+                .iter()
+                .copied()
+                .enumerate()
+                .find_map(|(index, b)| (b == b':').then_some(index))
+            else {
+                return Err(ReadError::HeaderDoesNotContainColon);
+            };
+
+            line[colon_index] = b'\n';
+
+            let (name, value) = line.split_at_mut(colon_index);
+
+            for s in [name, &mut value[1..]] {
+                let mut start_index = 0;
+                for b in s.iter_mut().take_while(|b| b.is_ascii_whitespace()) {
+                    *b = 0;
+                    start_index += 1;
+                }
+
+                let mut end_index = s.len();
+                for b in s.iter_mut().rev().take_while(|b| b.is_ascii_whitespace()) {
+                    *b = 0;
+                    end_index -= 1;
+                }
+                let s = &mut s[start_index..end_index];
+
+                let mut read_indexes = 0..s.len();
+                let mut write_index = 0;
+
+                while let Some(read_index) = read_indexes.next() {
+                    match s[read_index] {
+                        b'%' => {
+                            let first_index = read_indexes.next();
+                            let second_index = read_indexes.next();
+                            let decoded = first_index
+                                .zip(second_index)
+                                .and_then(|(first_index, second_index)| {
+                                    let first_nibble = s
+                                        .get(first_index)
+                                        .copied()
+                                        .filter(u8::is_ascii_hexdigit)?
+                                        .to_ascii_uppercase()
+                                        - b'A';
+                                    let second_nibble = s
+                                        .get(second_index)
+                                        .copied()
+                                        .filter(u8::is_ascii_hexdigit)?
+                                        .to_ascii_uppercase()
+                                        - b'A';
+
+                                    Some((first_nibble << 4) + second_nibble)
+                                })
+                                .ok_or(ReadError::InvalidEscapedCharInHeader)?;
+
+                            if !b" !\"#$%&'()*+,/:;=?@[]".contains(&decoded) {
+                                return Err(ReadError::InvalidEscapedCharInHeader);
+                            }
+
+                            s[write_index] = decoded;
+                            write_index += 1;
+                            s[write_index] = 0;
+                            write_index += 1;
+                            s[write_index] = 0;
+                        }
+                        b'\r' => {
+                            s[write_index] = 0;
+                        }
+                        b if b.is_ascii_alphanumeric()
+                            | b.is_ascii_whitespace()
+                            | b"-_.~!#$&'()*+,/:;=?@[]".contains(&b) => {}
+                        _ => return Err(ReadError::InvalidByteInHeader),
+                    }
+
+                    write_index += 1;
+                }
+            }
+        };
+
+        let headers = &mut self.buffer[start_index..end_index];
+
+        for index in 0..headers.len() {
+            if headers[index] == 0 {
+                if headers[index..].iter().all(|&b| b == 0) {
+                    break;
+                }
+
+                headers[index..].rotate_left(1);
+
+                end_index -= 1;
             }
         }
+
+        Ok(Subslice {
+            buffer: self.buffer,
+            range: start_index..end_index,
+        })
     }
 
     pub async fn read(&mut self) -> Result<Request<'_, R>, ReadError<R::Error>> {
@@ -644,10 +756,13 @@ impl<'b, R: Read> Reader<'b, R> {
 
         let headers = self.read_headers().await?;
 
-        let content_length = Headers(headers.as_ref())
-            .get("content-length")
-            .and_then(|value| value.parse::<usize>().ok())
-            .unwrap_or(0);
+        let content_length = Headers(
+            // SAFETY: The headers have already been verified as being UTF-8
+            unsafe { core::str::from_utf8_unchecked(headers.as_ref()) },
+        )
+        .get("content-length")
+        .and_then(|value| value.parse::<usize>().ok())
+        .unwrap_or(0);
 
         let headers = headers.range;
 
@@ -674,7 +789,10 @@ impl<'b, R: Read> Reader<'b, R> {
                 (Path(UrlEncodedString(path)), Some(UrlEncodedString(query)))
             });
 
-        let headers = Headers(&parts_buffer[headers]);
+        let headers = Headers(
+            // SAFETY: The headers have already been verified as being UTF-8
+            unsafe { core::str::from_utf8_unchecked(&parts_buffer[headers]) },
+        );
 
         let request = Request {
             parts: RequestParts {

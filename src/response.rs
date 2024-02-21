@@ -113,6 +113,32 @@ impl<'r, R: Read> Connection<'r, R> {
     }
 }
 
+pub(crate) struct EmptyReader<E: crate::io::Error>(core::marker::PhantomData<E>);
+
+impl<E: crate::io::Error> crate::io::ErrorType for EmptyReader<E> {
+    type Error = E;
+}
+
+impl<E: crate::io::Error> crate::io::Read for EmptyReader<E> {
+    async fn read(&mut self, _buf: &mut [u8]) -> Result<usize, Self::Error> {
+        Ok(0)
+    }
+}
+
+impl<'r, E: crate::io::Error> Connection<'r, EmptyReader<E>> {
+    pub(crate) fn empty(has_been_upgraded: &'r mut bool) -> Self {
+        Self {
+            reader: BufferedReader {
+                reader: EmptyReader(core::marker::PhantomData),
+                buffer: &mut [],
+                read_position: 0,
+                buffer_usage: 0,
+            },
+            has_been_upgraded,
+        }
+    }
+}
+
 #[doc(hidden)]
 pub trait ForEachHeader {
     type Output;

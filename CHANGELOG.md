@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Added [from_request](https://docs.rs/picoserve/latest/picoserve/macro.from_request.html) and [from_request_parts](https://docs.rs/picoserve/latest/picoserve/macro.from_request.html) as convenience for [PathRouters](https://docs.rs/picoserve/latest/picoserve/routing/trait.PathRouter.html), and added [RequestHandlerServices](https://docs.rs/picoserve/latest/picoserve/routing/trait.RequestHandlerService.html) which borrow from Requests, which is now permitted.
+- Added support for percent-encoding in headers.
 
 ## [0.9.1] - 2024-02-12
 
