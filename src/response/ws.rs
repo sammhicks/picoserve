@@ -162,8 +162,9 @@ impl<'r, State> crate::extract::FromRequest<'r, State> for WebSocketUpgrade {
     }
 }
 
-/// A web socket message opcode.
 #[derive(Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+/// A web socket message opcode.
 pub enum Opcode {
     /// "Data", e.g. text or binary.
     Data(Data),
@@ -173,6 +174,7 @@ pub enum Opcode {
 
 /// A web socket message data opcode.
 #[derive(Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum Data {
     /// This frame continues from the previous frame.
     Continue,
@@ -186,6 +188,7 @@ pub enum Data {
 
 /// A web socket message control opcode.
 #[derive(Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum Control {
     /// The connection should be closed.
     Close,
@@ -214,6 +217,7 @@ impl From<u8> for Opcode {
 
 /// A single Web Socket frame.
 #[derive(Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct Frame {
     /// If true, this frame is the final frame of the message.
     pub is_final: bool,
@@ -225,6 +229,7 @@ pub struct Frame {
 
 /// Errors arising when reading a frame.
 #[derive(Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum ReadFrameError<E> {
     /// IO Error while reading.
     Io(E),
@@ -247,6 +252,7 @@ impl<E> From<embedded_io_async::ReadExactError<E>> for ReadFrameError<E> {
 
 /// Errors arising when reading a message.
 #[derive(Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum ReadMessageError<E> {
     /// IO Error while reading.
     Io(E),
@@ -278,6 +284,7 @@ enum MessageOpcode {
 
 /// Message Types.
 #[derive(Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum Message<'a> {
     /// A UTF-8 encoded string.
     Text(&'a str),

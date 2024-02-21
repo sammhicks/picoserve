@@ -2,9 +2,9 @@ name: Rust
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "main", "development" ]
   pull_request:
-    branches: [ "main" ]
+    branches: [ "main", "development" ]
   workflow_dispatch:
 
 env:
@@ -18,6 +18,12 @@ jobs:
     steps:
     - uses: actions/checkout@v3
     - name: Build
+      run: cargo build --verbose
+    - name: Build embassy examples
+      working-directory: ./examples/embassy
+      run: cargo build --verbose
+    - name: Build embassy defmt example
+      working-directory: ./examples/embassy/hello_world_defmt
       run: cargo build --verbose
     - name: Run tests
       run: cargo test --verbose

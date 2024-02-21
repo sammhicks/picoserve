@@ -89,6 +89,7 @@ macro_rules! from_request {
 }
 
 #[derive(Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 /// Errors arising while reading the entire body
 pub enum FailedToExtractEntireBodyError {
     BufferIsTooSmall {
@@ -147,7 +148,10 @@ impl<'r, State> FromRequest<'r, State> for &'r mut [u8] {
         }
 
         request_body.read_all().await.map_err(|err| {
-            log::error!("Failed to read body: {err:?}");
+            log_error!(
+                "Failed to read body: {}",
+                crate::logging::Debug2Format(&err)
+            );
             FailedToExtractEntireBodyError::IoError
         })
     }
@@ -192,7 +196,7 @@ impl<'r, State> FromRequest<'r, State> for alloc::vec::Vec<u8> {
             .read_exact(buffer.as_mut_slice())
             .await
             .map_err(|err| {
-                log::error!("Failed to read body: {err:?}");
+                log_error!("Failed to read body: {:?}", err);
                 FailedToExtractEntireBodyError::IoError
             })?;
 
@@ -222,10 +226,11 @@ impl<'r, State> FromRequest<'r, State> for alloc::borrow::Cow<'r, [u8]> {
 }
 
 #[derive(Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 /// Errors arising while reading the entire body as a UTF-8 String
 pub enum FailedToExtractEntireBodyAsStringError {
     FailedToExtractEntireBody(FailedToExtractEntireBodyError),
-    StringIsNotUtf8(core::str::Utf8Error),
+    StringIsNotUtf8(#[cfg_attr(feature = "defmt", defmt(Debug2Format))] core::str::Utf8Error),
 }
 
 impl IntoResponse for FailedToExtractEntireBodyAsStringError {
@@ -477,6 +482,7 @@ impl<'r, S, T: FromRef<S>> FromRequestParts<'r, S> for State<T> {
 }
 
 #[derive(Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 /// The Connection could not be upgraded because the "Upgrade" headed was missing
 pub struct NoUpgradeHeaderError;
 
@@ -495,8 +501,9 @@ impl IntoResponse for NoUpgradeHeaderError {
     }
 }
 
-/// A token which allows a connection to be upgraded. Verifies that the "Upgrade" header has been set
 #[derive(Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+/// A token which allows a connection to be upgraded. Verifies that the "Upgrade" header has been set
 pub struct UpgradeToken(());
 
 impl<'r, State> FromRequestParts<'r, State> for UpgradeToken {

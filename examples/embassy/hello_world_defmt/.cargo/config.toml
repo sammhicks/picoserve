@@ -1,0 +1,8 @@
+# Target specific options
+[target.thumbv6m-none-eabi]
+rustflags = [
+    "-C", "link-arg=-Tdefmt.x",
+]
+
+# This runner will transfer and run the binary using the connected debug probe 
+runner = "probe-rs run --chip RP2040"

@@ -218,7 +218,7 @@ impl<'s> Socket for embassy_net::tcp::TcpSocket<'s> {
             .run_with_maybe_timeout(timeouts.read_request.clone(), self.read(&mut buffer))
             .await
             .map_err(|_err| crate::Error::ReadTimeout)?
-            .map_err(|err| crate::Error::Read(crate::request::ReadError::IO(err)))?
+            .map_err(crate::Error::Read)?
             > 0
         {}
 

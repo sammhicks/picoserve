@@ -17,7 +17,6 @@ impl<'a> Subslice<'a> {
     }
 }
 
-#[derive(Debug)]
 struct RequestLine<S> {
     method: S,
     url: S,
@@ -76,26 +75,6 @@ impl RequestLine<Range<usize>> {
                 range: http_version.clone(),
             },
         }
-    }
-}
-
-#[derive(Debug)]
-pub struct HeaderLineDecodeError<'a>(&'a [u8]);
-
-pub struct HeadersTryIter<'a>(core::slice::SplitInclusive<'a, u8, fn(&u8) -> bool>);
-
-impl<'a> Iterator for HeadersTryIter<'a> {
-    type Item = Result<(&'a str, &'a str), HeaderLineDecodeError<'a>>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        fn split_line(line: &[u8]) -> Option<(&str, &str)> {
-            let (name, value) = core::str::from_utf8(line).ok()?.split_once(':')?;
-            Some((name.trim(), value.trim()))
-        }
-
-        self.0
-            .next()
-            .map(|line| split_line(line).ok_or(HeaderLineDecodeError(line)))
     }
 }
 
@@ -326,6 +305,7 @@ impl<'r, R: Read> Read for RequestBodyReader<'r, R> {
 }
 
 #[derive(Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 /// Errors arising when reading the entire body
 pub enum ReadAllBodyError<E> {
     /// The body does not fit into the remaining request buffer.
@@ -337,6 +317,7 @@ pub enum ReadAllBodyError<E> {
 }
 
 #[derive(Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 /// The body of the request, which may not have yet been buffered.
 pub struct RequestBody<'r, R: Read> {
     content_length: usize,

@@ -13,6 +13,9 @@ compile_error!("You cannot enable both tokio and embassy support");
 #[cfg(feature = "alloc")]
 extern crate alloc;
 
+#[macro_use]
+mod logging;
+
 pub mod extract;
 pub mod io;
 pub mod request;
@@ -24,6 +27,7 @@ pub mod url_encoded;
 #[cfg(test)]
 mod tests;
 
+pub use logging::LogDisplay;
 pub use routing::Router;
 pub use time::Timer;
 
@@ -34,6 +38,7 @@ pub struct ResponseSent(());
 
 /// Errors arising while handling a request.
 #[derive(Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum Error<E: embedded_io_async::Error> {
     /// Error while reading from the socket.
     Read(E),
@@ -333,7 +338,7 @@ pub async fn serve_with_state<State, P: routing::PathRouter<State>>(
 /// Serve `app` with incoming requests. App has a no state.
 /// `task_id` is printed in log messages.
 pub async fn listen_and_serve<P: routing::PathRouter<()>>(
-    task_id: impl core::fmt::Display,
+    task_id: impl LogDisplay,
     app: &Router<P, ()>,
     config: &Config<embassy_time::Duration>,
     stack: &embassy_net::Stack<impl embassy_net::driver::Driver>,
@@ -360,7 +365,7 @@ pub async fn listen_and_serve<P: routing::PathRouter<()>>(
 /// Serve `app` with incoming requests. App has a state of `State`.
 /// `task_id` is printed in log messages.
 pub async fn listen_and_serve_with_state<State, P: routing::PathRouter<State>>(
-    task_id: impl core::fmt::Display,
+    task_id: impl LogDisplay,
     app: &Router<P, State>,
     config: &Config<embassy_time::Duration>,
     stack: &embassy_net::Stack<impl embassy_net::driver::Driver>,
@@ -373,22 +378,30 @@ pub async fn listen_and_serve_with_state<State, P: routing::PathRouter<State>>(
     loop {
         let mut socket = embassy_net::tcp::TcpSocket::new(stack, tcp_rx_buffer, tcp_tx_buffer);
 
-        log::info!("{task_id}: Listening on TCP:{port}...");
+        log_info!("{}: Listening on TCP:{}...", task_id, port);
 
-        if let Err(e) = socket.accept(port).await {
-            log::warn!("{task_id}: accept error: {:?}", e);
+        if let Err(err) = socket.accept(port).await {
+            log_warn!("{}: accept error: {:?}", task_id, err);
             continue;
         }
 
         let remote_endpoint = socket.remote_endpoint();
 
-        log::info!("{task_id}: Received connection from {remote_endpoint:?}",);
+        log_info!(
+            "{}: Received connection from {:?}",
+            task_id,
+            remote_endpoint
+        );
 
         match serve_with_state(app, config, http_buffer, socket, state).await {
             Ok(handled_requests_count) => {
-                log::info!("{handled_requests_count} requests handled from {remote_endpoint:?}",);
+                log_info!(
+                    "{} requests handled from {:?}",
+                    handled_requests_count,
+                    remote_endpoint
+                );
             }
-            Err(err) => log::error!("{err:?}"),
+            Err(err) => log_error!("{}", crate::logging::Debug2Format(&err)),
         }
     }
 }

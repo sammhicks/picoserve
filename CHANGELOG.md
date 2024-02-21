@@ -16,11 +16,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - A service with multiple path parameters now has a tuple of path parameters, not `ManyPathParameters`.
 - Moved Status Code constants to inside [StatusCode](https://docs.rs/picoserve/latest/picoserve/response/status/struct.StatusCode.html).
 - [FromRequest](https://docs.rs/picoserve/latest/picoserve/extract/trait.FromRequest.html) and [FromRequestParts](https://docs.rs/picoserve/latest/picoserve/extract/trait.FromRequestParts.html) are now generic over the lifetime of the request, allowing them to borrow from the request.
+- Logging using the `log` crate is only enabled if the `log` feature is enabled
 
 ### Added
 
 - Added [from_request](https://docs.rs/picoserve/latest/picoserve/macro.from_request.html) and [from_request_parts](https://docs.rs/picoserve/latest/picoserve/macro.from_request.html) as convenience for [PathRouters](https://docs.rs/picoserve/latest/picoserve/routing/trait.PathRouter.html), and added [RequestHandlerServices](https://docs.rs/picoserve/latest/picoserve/routing/trait.RequestHandlerService.html) which borrow from Requests, which is now permitted.
 - Added support for percent-encoding in headers.
+- If the `defmt` feature is enabled:
+  - All public type which implement `Debug` also implement `defmt::Format`
+  - Logging is done using `defmt`
 
 ## [0.9.1] - 2024-02-12
 
