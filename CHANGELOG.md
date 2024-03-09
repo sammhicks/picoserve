@@ -26,6 +26,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - All public type which implement `Debug` also implement `defmt::Format`
   - Logging is done using `defmt`
 
+### Changed
+
+- Changed shutdown of [`embassy_net::tcp::TcpSocket`](https://docs.rs/embassy-net/0.4.0/embassy_net/tcp/struct.TcpSocket.html) to use RST instead of FIN handshake.
+
 ## [0.9.1] - 2024-02-12
 
 ### Added

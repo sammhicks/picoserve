@@ -202,25 +202,40 @@ impl<'s> Socket for embassy_net::tcp::TcpSocket<'s> {
         timeouts: &crate::Timeouts<Timer::Duration>,
         timer: &mut Timer,
     ) -> Result<(), crate::Error<Self::Error>> {
-        self.close();
+        // This method takes ownership of the `Socket`. Thus, we know that nobody else is going to
+        // read from it or write to it again.
+        //
+        // We do not call `self.close()` because that would trigger a FIN handshake process (where
+        // the remote host may still send us messages until it itself closes its connection end by
+        // sending a FIN message to us). Instead, we use `self.abort()`, which sends a RST message
+        // and terminates the connection immediately.
+        //
+        // Since we will never process messages from the remote host anyway, the immediate closing
+        // of the socket with RST is appropriate and confers the intended meaning. In addition, it
+        // does not require a (potentially) lengthy handshake process, letting us reuse the socket
+        // much sooner which is important when there are only a limited number of sockets handling
+        // incoming HTTP connections.
 
         use crate::time::TimerExt;
 
+        // Send data that has been written to the socket before and not yet sent or not yet ACKed.
         timer
             .run_with_maybe_timeout(timeouts.write.clone(), self.flush())
             .await
             .map_err(|_err| crate::Error::WriteTimeout)?
             .map_err(crate::Error::Write)?;
 
-        let mut buffer = [0; 128];
+        // Forcibly close the socket, instantly closing both read and write halves.
+        self.abort();
 
-        while timer
-            .run_with_maybe_timeout(timeouts.read_request.clone(), self.read(&mut buffer))
+        // `abort()` does not send the TCP RST packet immediately. To let the remote host know the
+        // connection has been closed, we wait for a `flush()` call to complete before dropping or
+        // reusing the socket.
+        timer
+            .run_with_maybe_timeout(timeouts.write.clone(), self.flush())
             .await
-            .map_err(|_err| crate::Error::ReadTimeout)?
-            .map_err(crate::Error::Read)?
-            > 0
-        {}
+            .map_err(|_err| crate::Error::WriteTimeout)?
+            .map_err(crate::Error::Write)?;
 
         Ok(())
     }
