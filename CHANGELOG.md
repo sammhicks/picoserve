@@ -5,22 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## Unreleased
+## [0.10.0] - 2024-03-10
 
 ### Breaking
 
 - Several public types have changed name to improve name consistency.
-- Sealed [RequestHandler](https://docs.rs/picoserve/latest/picoserve/routing/trait.RequestHandler.html), [MethodHandler]((https://docs.rs/picoserve/latest/picoserve/routing/trait.MethodHandler.html)), and [PathRouter](https://docs.rs/picoserve/latest/picoserve/routing/trait.PathRouter.html), and added [RequestHandlerService](https://docs.rs/picoserve/latest/picoserve/routing/trait.RequestHandlerService.html) and [PathRouterService](https://docs.rs/picoserve/latest/picoserve/routing/trait.PathRouterService.html) which have better ergonomics.
+- Sealed [RequestHandler](https://docs.rs/picoserve/0.10.0/picoserve/routing/trait.RequestHandler.html), [MethodHandler]((https://docs.rs/picoserve/0.10.0/picoserve/routing/trait.MethodHandler.html)), and [PathRouter](https://docs.rs/picoserve/0.10.0/picoserve/routing/trait.PathRouter.html), and added [RequestHandlerService](https://docs.rs/picoserve/0.10.0/picoserve/routing/trait.RequestHandlerService.html) and [PathRouterService](https://docs.rs/picoserve/0.10.0/picoserve/routing/trait.PathRouterService.html) which have better ergonomics.
   - A service with no path parameters now has path parameters of `()` not `NoPathParameters`.
   - A service with a single path parameter now has path parameters of `(T,)`, not `OnePathParameter`.
   - A service with multiple path parameters now has a tuple of path parameters, not `ManyPathParameters`.
-- Moved Status Code constants to inside [StatusCode](https://docs.rs/picoserve/latest/picoserve/response/status/struct.StatusCode.html).
-- [FromRequest](https://docs.rs/picoserve/latest/picoserve/extract/trait.FromRequest.html) and [FromRequestParts](https://docs.rs/picoserve/latest/picoserve/extract/trait.FromRequestParts.html) are now generic over the lifetime of the request, allowing them to borrow from the request.
+- Moved Status Code constants to inside [StatusCode](https://docs.rs/picoserve/0.10.0/picoserve/response/status/struct.StatusCode.html).
+- [FromRequest](https://docs.rs/picoserve/0.10.0/picoserve/extract/trait.FromRequest.html) and [FromRequestParts](https://docs.rs/picoserve/0.10.0/picoserve/extract/trait.FromRequestParts.html) are now generic over the lifetime of the request, allowing them to borrow from the request.
 - Logging using the `log` crate is only enabled if the `log` feature is enabled
 
 ### Added
 
-- Added [from_request](https://docs.rs/picoserve/latest/picoserve/macro.from_request.html) and [from_request_parts](https://docs.rs/picoserve/latest/picoserve/macro.from_request.html) as convenience for [PathRouters](https://docs.rs/picoserve/latest/picoserve/routing/trait.PathRouter.html), and added [RequestHandlerServices](https://docs.rs/picoserve/latest/picoserve/routing/trait.RequestHandlerService.html) which borrow from Requests, which is now permitted.
+- Added [from_request](https://docs.rs/picoserve/0.10.0/picoserve/macro.from_request.html) and [from_request_parts](https://docs.rs/picoserve/0.10.0/picoserve/macro.from_request.html) as convenience for [PathRouters](https://docs.rs/picoserve/0.10.0/picoserve/routing/trait.PathRouter.html), and added [RequestHandlerServices](https://docs.rs/picoserve/0.10.0/picoserve/routing/trait.RequestHandlerService.html) which borrow from Requests, which is now permitted.
 - Added support for percent-encoding in headers.
 - If the `defmt` feature is enabled:
   - All public type which implement `Debug` also implement `defmt::Format`
@@ -102,7 +102,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - If the "Connection" header is a comma separated list and one of the entries is "upgrade", such as a websocket upgrade, close the connection after handling the response. Either the handler will handle the upgrade, setting the "Connection" header, in which case it will not also be automatically sent, or something has gone wrong, and the connection should be closed. Also, an upgraded connection, which is thus no longer HTTP, should be closed after completion, not reused.
       - Note that the connection is closed after the "response" has been sent. In the case of websockets, sending the "response" includes sending messages to the client and also parsing incoming messages, so this is fine.
 - The title of the web_sockets example has been changed from "Server-Sent Events" to "Websockets"
-- Frame, Control, Data, and Message in [`response::ws`](https://docs.rs/picoserve/latest/picoserve/response/ws/index.html) now implement Debug
+- Frame, Control, Data, and Message in [`response::ws`](https://docs.rs/picoserve/0.7.0/picoserve/response/ws/index.html) now implement Debug
 
 ## [0.6.0] - 2024-01-02
 
