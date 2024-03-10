@@ -22,9 +22,11 @@ impl fmt::Debug for ETag {
 
 impl fmt::Display for ETag {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "\"")?;
         for b in self.0 {
             write!(f, "{b:02x}")?;
         }
+        write!(f, "\"")?;
 
         Ok(())
     }
