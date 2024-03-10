@@ -59,9 +59,10 @@ impl<E: embedded_io_async::Error> embedded_io_async::Error for Error<E> {
     }
 }
 
-#[derive(Debug, Clone)]
 /// How long to wait before timing out for different operations.
 /// If set to None, the operation never times out.
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct Timeouts<D> {
     /// The duration of time to wait when starting to read a new request before the connection is closed due to inactivity.
     pub start_read_request: Option<D>,
@@ -72,6 +73,7 @@ pub struct Timeouts<D> {
 }
 
 #[derive(Debug, Clone, Copy)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 /// After the response has been sent, should the connection be kept open to allow the client to make further requests on the same TCP connection?
 pub enum KeepAlive {
     /// Close the connection after the response has been sent, i.e. each TCP connection serves a single request.
@@ -118,6 +120,16 @@ impl KeepAlive {
     }
 }
 
+/// Whether to perform a graceful shutdown or abort the connection after all requests have been handled.
+#[derive(Debug, Clone, Copy)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub enum ShutdownMethod {
+    /// Perform a graceful shutdown, waiting for the client to acknowledge the closure
+    Shutdown,
+    /// Abort the connection
+    Abort,
+}
+
 /// Server Configuration.
 #[derive(Debug, Clone)]
 pub struct Config<D> {
@@ -125,6 +137,8 @@ pub struct Config<D> {
     pub timeouts: Timeouts<D>,
     /// Whether to close the connection after handling a request or keeping it open to allow further requests on the same connection.
     pub connection: KeepAlive,
+    /// Whether to perform a graceful shutdown or abort the connection after all requests have been handled.
+    pub shutdown_method: ShutdownMethod,
 }
 
 impl<D> Config<D> {
@@ -134,6 +148,7 @@ impl<D> Config<D> {
         Self {
             timeouts,
             connection: KeepAlive::Close,
+            shutdown_method: ShutdownMethod::Shutdown,
         }
     }
 
@@ -150,6 +165,20 @@ impl<D> Config<D> {
     /// This is the default, but allows the configuration to be more explicit.
     pub fn close_connection_after_response(mut self) -> Self {
         self.connection = KeepAlive::Close;
+
+        self
+    }
+
+    /// Perform a graceful shutdown after handling all requests, waiting for the client to acknowledge the closure
+    pub fn shutdown_connection_on_close(mut self) -> Self {
+        self.shutdown_method = ShutdownMethod::Shutdown;
+
+        self
+    }
+
+    /// Abort the connection after handling all requests, without waiting for the client to acknowledge the closure
+    pub fn abort_connection_on_close(mut self) -> Self {
+        self.shutdown_method = ShutdownMethod::Abort;
 
         self
     }
@@ -279,7 +308,10 @@ async fn serve_and_shutdown<State, T: Timer, P: routing::PathRouter<State>, S: i
     }
     .await;
 
-    let shutdown_result = socket.shutdown(&config.timeouts, &mut timer).await;
+    let shutdown_result = match config.shutdown_method {
+        ShutdownMethod::Shutdown => socket.shutdown(&config.timeouts, &mut timer).await,
+        ShutdownMethod::Abort => socket.abort(&config.timeouts, &mut timer).await,
+    };
 
     let request_count = result?;
 
