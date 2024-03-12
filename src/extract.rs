@@ -196,7 +196,10 @@ impl<'r, State> FromRequest<'r, State> for alloc::vec::Vec<u8> {
             .read_exact(buffer.as_mut_slice())
             .await
             .map_err(|err| {
-                log_error!("Failed to read body: {:?}", err);
+                log_error!(
+                    "Failed to read body: {:?}",
+                    crate::logging::Debug2Format(&err)
+                );
                 FailedToExtractEntireBodyError::IoError
             })?;
 
