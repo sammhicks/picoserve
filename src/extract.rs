@@ -451,7 +451,7 @@ impl<'r, State, T: serde::de::DeserializeOwned> FromRequest<'r, State> for Form<
 }
 
 /// Json body extractor
-pub(super) struct JsonBody<T: serde::de::DeserializeOwned>(pub T);
+pub struct JsonBody<T: serde::de::DeserializeOwned>(pub T);
 
 impl<T: serde::de::DeserializeOwned> core::ops::Deref for JsonBody<T> {
     type Target = T;
@@ -467,7 +467,7 @@ impl<T: serde::de::DeserializeOwned> core::ops::DerefMut for JsonBody<T> {
     }
 }
 
-pub(super) enum JsonBodyRejection {
+pub enum JsonBodyRejection {
     ReadError,
     JsonDeserealize(serde_json_core::de::Error),
 }
@@ -512,7 +512,7 @@ where
             .await
             .map_err(|_| JsonBodyRejection::ReadError)?;
         let (inner, _): (T, usize) = serde_json_core::from_slice(body)
-            .map_err(|err| JsonBodyRejection::JsonDeserealize(err))?;
+            .map_err(JsonBodyRejection::JsonDeserealize)?;
         Ok(JsonBody(inner))
     }
 }
