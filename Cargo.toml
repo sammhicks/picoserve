@@ -44,6 +44,7 @@ lhash = { version = "1.0.1", features = ["sha1"] }
 log = { version = "0.4.19", optional = true, default-features = false }
 ryu = "1.0.14"
 serde = { version = "1.0.171", default-features = false, features = ["derive"] }
+serde-json-core = "0.5"
 tokio = { version = "1.32.0", optional = true, features = ["io-util", "net", "time"] }
 
 [features]

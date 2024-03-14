@@ -450,6 +450,73 @@ impl<'r, State, T: serde::de::DeserializeOwned> FromRequest<'r, State> for Form<
     }
 }
 
+/// Json body extractor
+pub(super) struct JsonBody<T: serde::de::DeserializeOwned>(pub T);
+
+impl<T: serde::de::DeserializeOwned> core::ops::Deref for JsonBody<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl<T: serde::de::DeserializeOwned> core::ops::DerefMut for JsonBody<T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+pub(super) enum JsonBodyRejection {
+    ReadError,
+    JsonDeserealize(serde_json_core::de::Error),
+}
+
+impl IntoResponse for JsonBodyRejection {
+    async fn write_to<R: Read, W: crate::response::ResponseWriter<Error = R::Error>>(
+        self,
+        connection: crate::response::Connection<'_, R>,
+        response_writer: W,
+    ) -> Result<ResponseSent, W::Error> {
+        match self {
+            JsonBodyRejection::ReadError => {
+                (StatusCode::new(400), format_args!("Read Error"))
+                    .write_to(connection, response_writer)
+                    .await
+            }
+            JsonBodyRejection::JsonDeserealize(err) => {
+                (
+                    StatusCode::new(400),
+                    format_args!("Json deserialize: {err}"),
+                )
+                    .write_to(connection, response_writer)
+                    .await
+            }
+        }
+    }
+}
+
+impl<'r, State, T> FromRequest<'r, State> for JsonBody<T>
+where
+    T: serde::de::DeserializeOwned,
+{
+    type Rejection = JsonBodyRejection;
+
+    async fn from_request<R: Read>(
+        _state: &'r State,
+        _request_parts: RequestParts<'r>,
+        request_body: RequestBody<'r, R>,
+    ) -> Result<Self, Self::Rejection> {
+        let body = request_body
+            .read_all()
+            .await
+            .map_err(|_| JsonBodyRejection::ReadError)?;
+        let (inner, _): (T, usize) = serde_json_core::from_slice(body)
+            .map_err(|err| JsonBodyRejection::JsonDeserealize(err))?;
+        Ok(JsonBody(inner))
+    }
+}
+
 /// Used to do reference to value conversions, mainly used with the [State] extractor to extract parts of the application state.
 pub trait FromRef<T> {
     /// Perform the reference to value conversion
