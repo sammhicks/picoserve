@@ -18,7 +18,7 @@ exclude = [
 
 [package]
 name = "picoserve"
-version = "0.10.0"
+version = "0.10.1"
 authors = ["Samuel Hicks"]
 edition = "2021"
 rust-version = "1.75"
