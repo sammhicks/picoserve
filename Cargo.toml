@@ -19,7 +19,7 @@ exclude = [
 
 [package]
 name = "picoserve"
-version = "0.10.0"
+version = "0.10.2"
 authors = ["Samuel Hicks"]
 edition = "2021"
 rust-version = "1.75"
@@ -55,7 +55,7 @@ alloc = []
 tokio = ["dep:tokio", "std", "serde/std"]
 embassy = ["dep:embassy-time", "dep:embassy-net"]
 
-defmt = ["dep:defmt"]
+defmt = ["dep:defmt", "embassy-net?/defmt"]
 log = ["dep:log"]
 
 [dev-dependencies]

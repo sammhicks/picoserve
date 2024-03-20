@@ -101,6 +101,13 @@ pub trait Socket: Sized {
     /// Split the socket into its "read" and "write" half
     fn split(&mut self) -> (Self::ReadHalf<'_>, Self::WriteHalf<'_>);
 
+    /// Forcibly close the socket
+    async fn abort<Timer: crate::Timer>(
+        self,
+        timeouts: &crate::Timeouts<Timer::Duration>,
+        timer: &mut Timer,
+    ) -> Result<(), super::Error<Self::Error>>;
+
     /// Perform a graceful shutdown
     async fn shutdown<Timer: crate::Timer>(
         self,
@@ -153,6 +160,14 @@ pub(crate) mod tokio_support {
             (TokioIo(read_half), TokioIo(write_half))
         }
 
+        async fn abort<Timer: crate::Timer>(
+            self,
+            _timeouts: &crate::Timeouts<Timer::Duration>,
+            _timer: &mut Timer,
+        ) -> Result<(), crate::Error<Self::Error>> {
+            Ok(())
+        }
+
         async fn shutdown<Timer: crate::Timer>(
             mut self,
             timeouts: &crate::Timeouts<Timer::Duration>,
@@ -195,6 +210,34 @@ impl<'s> Socket for embassy_net::tcp::TcpSocket<'s> {
 
     fn split(&mut self) -> (Self::ReadHalf<'_>, Self::WriteHalf<'_>) {
         embassy_net::tcp::TcpSocket::split(self)
+    }
+
+    async fn abort<Timer: crate::Timer>(
+        mut self,
+        timeouts: &crate::Timeouts<Timer::Duration>,
+        timer: &mut Timer,
+    ) -> Result<(), crate::Error<Self::Error>> {
+        use crate::time::TimerExt;
+
+        // Send data that has been written to the socket before and not yet sent or not yet ACKed.
+        timer
+            .run_with_maybe_timeout(timeouts.write.clone(), self.flush())
+            .await
+            .map_err(|_err| crate::Error::WriteTimeout)?
+            .map_err(crate::Error::Write)?;
+
+        Self::abort(&mut self);
+
+        // `abort()` does not send the TCP RST packet immediately. To let the remote host know the
+        // connection has been closed, we wait for a `flush()` call to complete before dropping or
+        // reusing the socket.
+        timer
+            .run_with_maybe_timeout(timeouts.write.clone(), self.flush())
+            .await
+            .map_err(|_err| crate::Error::WriteTimeout)?
+            .map_err(crate::Error::Write)?;
+
+        Ok(())
     }
 
     async fn shutdown<Timer: crate::Timer>(
