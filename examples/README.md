@@ -6,6 +6,7 @@
 | ------------------------------------------------------------------ | ------------------------------------------------------------------------------ |
 | [`hello_world`](../examples/hello_world/src/main.rs)               | A minimal example showing how to set up a Router                               |
 | [`form`](../examples/form/src/main.rs)                             | GET and POST Methods, and serving File                                         |
+| [`jsonbody`](../examples/jsonbody/src/main.rs)                     | Extract Json data from request body                                            |
 | [`path_parameters`](../examples/path_parameters/src/main.rs)       | Extracing data from path segments                                              |
 | [`state`](../examples/state/src/main.rs)                           | Stateful Applications                                                          |
 | [`server_sent_events`](../examples/server_sent_events/src/main.rs) | A long-lived connection generating Server-Sent Events with Keep-Alive messages |
