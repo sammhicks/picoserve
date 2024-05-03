@@ -216,14 +216,6 @@ impl<T: HeadersIter> HeadersIter for Option<T> {
     }
 }
 
-struct NoHeaders;
-
-impl HeadersIter for NoHeaders {
-    async fn for_each_header<F: ForEachHeader>(self, f: F) -> Result<F::Output, F::Error> {
-        f.finalize().await
-    }
-}
-
 struct HeadersChain<A: HeadersIter, B: HeadersIter>(A, B);
 
 impl<A: HeadersIter, B: HeadersIter> HeadersIter for HeadersChain<A, B> {

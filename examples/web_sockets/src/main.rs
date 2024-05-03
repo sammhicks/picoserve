@@ -1,60 +1,6 @@
 use std::time::Duration;
 
-use picoserve::{
-    response::{self, ws, StatusCode},
-    routing::get,
-    ResponseSent,
-};
-
-enum NewMessageRejection {
-    ReadError,
-    NotUtf8(std::str::Utf8Error),
-}
-
-impl response::IntoResponse for NewMessageRejection {
-    async fn write_to<R: picoserve::io::Read, W: response::ResponseWriter<Error = R::Error>>(
-        self,
-        connection: response::Connection<'_, R>,
-        response_writer: W,
-    ) -> Result<ResponseSent, W::Error> {
-        match self {
-            NewMessageRejection::ReadError => {
-                (StatusCode::BAD_REQUEST, "Read Error")
-                    .write_to(connection, response_writer)
-                    .await
-            }
-            NewMessageRejection::NotUtf8(err) => {
-                (
-                    StatusCode::BAD_REQUEST,
-                    format_args!("Body is not UTF-8: {err}\n"),
-                )
-                    .write_to(connection, response_writer)
-                    .await
-            }
-        }
-    }
-}
-
-struct NewMessage(String);
-
-impl<'r, State> picoserve::extract::FromRequest<'r, State> for NewMessage {
-    type Rejection = NewMessageRejection;
-
-    async fn from_request<R: picoserve::io::Read>(
-        _state: &'r State,
-        _request_parts: picoserve::request::RequestParts<'r>,
-        request_body: picoserve::request::RequestBody<'r, R>,
-    ) -> Result<Self, Self::Rejection> {
-        core::str::from_utf8(
-            request_body
-                .read_all()
-                .await
-                .map_err(|_err| NewMessageRejection::ReadError)?,
-        )
-        .map(|message| NewMessage(message.into()))
-        .map_err(NewMessageRejection::NotUtf8)
-    }
-}
+use picoserve::{response::ws, routing::get};
 
 struct WebsocketHandler {
     tx: std::rc::Rc<tokio::sync::broadcast::Sender<String>>,
