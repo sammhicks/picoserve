@@ -470,6 +470,7 @@ pub struct Request<'r, R: Read> {
 }
 
 /// Errors arising while reading a HTTP Request
+#[derive(Debug)]
 pub(crate) enum ReadError<E> {
     /// The request line is invalid
     BadRequestLine,
@@ -799,5 +800,77 @@ impl<'b, R: Read> Reader<'b, R> {
         self.buffer_usage = self.buffer_usage.max(self.read_position);
 
         Ok(request)
+    }
+}
+
+#[cfg(test)]
+mod headers_tests {
+    use super::*;
+
+    #[derive(Debug)]
+    pub struct TestError;
+
+    impl embedded_io_async::Error for TestError {
+        fn kind(&self) -> embedded_io_async::ErrorKind {
+            embedded_io_async::ErrorKind::Other
+        }
+    }
+
+    struct TestData<'a> {
+        buf: &'a [u8],
+        offset: usize,
+    }
+
+    impl<'a> TestData<'a> {
+        fn new(buf: &'a [u8]) -> Self {
+            Self { buf, offset: 0 }
+        }
+
+        fn from_str(s: &'a str) -> Self {
+            Self::new(s.as_bytes())
+        }
+    }
+
+    impl<'a> embedded_io_async::ErrorType for TestData<'a> {
+        type Error = TestError;
+    }
+
+    impl<'a> embedded_io_async::Read for TestData<'a> {
+        async fn read(&mut self, buf: &mut [u8]) -> Result<usize, Self::Error> {
+            let bytes_left = self.buf.len() - self.offset;
+            let read_len = buf.len().min(bytes_left);
+            buf[0..read_len].copy_from_slice(&self.buf[self.offset..(self.offset + read_len)]);
+            self.offset += read_len;
+            Ok(read_len)
+        }
+    }
+
+    #[tokio::test]
+    async fn basic() -> Result<(), ReadError<TestError>> {
+        let input = TestData::from_str("Host: example.com\r\nX-Foobar: baz\r\n\r\n");
+        let mut buffer = [0; 2048];
+        let mut reader = Reader::new(input, &mut buffer);
+        let header_subslice = reader.read_headers().await?;
+        let headers = Headers(core::str::from_utf8(header_subslice.as_ref()).unwrap());
+        assert_eq!(headers.get("Host"), Some("example.com"));
+        assert_eq!(headers.get("X-Foobar"), Some("baz"));
+        assert_eq!(headers.get("X-Test"), None);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn percent_encoded_parameter() -> Result<(), ReadError<TestError>> {
+        let input = TestData::from_str(
+            "Content-Disposition: form-data; name=\"firmware\"; filename=\"foo%22bar\"\r\n\r\n",
+        );
+        let mut buffer = [0; 2048];
+        let mut reader = Reader::new(input, &mut buffer);
+        let header_subslice = reader.read_headers().await?;
+        let headers = Headers(core::str::from_utf8(header_subslice.as_ref()).unwrap());
+        assert_eq!(
+            headers.get("Content-Disposition"),
+            Some("form-data; name=\"firmware\"; filename=\"foo%22bar\"")
+        );
+        Ok(())
     }
 }
