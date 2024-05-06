@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.3] - 2024-05-06
+
+### Added
+
+- Added [Router::from_service](https://docs.rs/picoserve/0.10.3/picoserve/routing/struct.Router.html#method.from_service) which creates a Router from a [PathRouterService](https://docs.rs/picoserve/0.10.3/picoserve/routing/trait.PathRouterService.html), allowing a custom fallback service should routing fail to find a suitable handler or service. Added `routing_fallback` example to demonstrate this.
+
 ## [0.10.2] - 2024-03-19
 
 ### Fixed

@@ -8,6 +8,7 @@ members = [
     "examples/huge_requests",
     "examples/layers",
     "examples/path_parameters",
+    "examples/routing_fallback",
     "examples/server_sent_events",
     "examples/state",
     "examples/web_sockets"
@@ -18,7 +19,7 @@ exclude = [
 
 [package]
 name = "picoserve"
-version = "0.10.2"
+version = "0.10.3"
 authors = ["Samuel Hicks"]
 edition = "2021"
 rust-version = "1.75"

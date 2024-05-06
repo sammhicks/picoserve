@@ -1084,6 +1084,39 @@ where
     }
 }
 
+/// A [PathRouter] which forwards all requests to the provided [PathRouterService]
+pub struct ServicePathRouter<Service> {
+    service: Service,
+}
+
+impl<Service> Sealed for ServicePathRouter<Service> {}
+
+impl<
+        State,
+        CurrentPathParameters: IntoPathParameterList,
+        Service: PathRouterService<State, <CurrentPathParameters as IntoPathParameterList>::ParameterList>,
+    > PathRouter<State, CurrentPathParameters> for ServicePathRouter<Service>
+{
+    async fn call_path_router<R: Read, W: ResponseWriter<Error = R::Error>>(
+        &self,
+        state: &State,
+        current_path_parameters: CurrentPathParameters,
+        path: Path<'_>,
+        request: Request<'_, R>,
+        response_writer: W,
+    ) -> Result<ResponseSent, W::Error> {
+        self.service
+            .call_request_handler_service(
+                state,
+                current_path_parameters.into_path_parameter_list(),
+                path,
+                request,
+                response_writer,
+            )
+            .await
+    }
+}
+
 /// A [PathRouter] which routes requests to a [MethodHandler].
 pub struct Router<RouterInner, State = (), CurrentPathParameters = NoPathParameters> {
     pub(crate) router: RouterInner,
@@ -1101,6 +1134,21 @@ impl<State, CurrentPathParameters> Default for Router<NotFound, State, CurrentPa
     fn default() -> Self {
         Self {
             router: NotFound,
+            _data: PhantomData,
+        }
+    }
+}
+
+impl<
+        State,
+        CurrentPathParameters: IntoPathParameterList,
+        Service: PathRouterService<State, <CurrentPathParameters as IntoPathParameterList>::ParameterList>,
+    > Router<ServicePathRouter<Service>, State, CurrentPathParameters>
+{
+    /// Create a [Router] which forwards all requests to the provided [PathRouterService].
+    pub fn from_service(service: Service) -> Self {
+        Self {
+            router: ServicePathRouter { service },
             _data: PhantomData,
         }
     }
