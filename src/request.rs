@@ -411,6 +411,8 @@ pub(crate) enum ReadError<E: embedded_io_async::Error> {
     UnexpectedEof,
     /// The request headers are too large to fit in the read buffer
     BufferFull,
+    /// The request requires functionality not currently implemented by the server
+    NotImplemented,
     /// IO Error
     IO(E),
 }
@@ -483,6 +485,12 @@ impl<'b, R: Read> Reader<'b, R> {
             .get("content-length")
             .and_then(|value| value.parse::<usize>().ok())
             .unwrap_or(0);
+        if let Some(transfer_encoding) = headers.get("transfer-encoding") {
+            if transfer_encoding == "chunked" {
+                // We do not currently support Transfer-encoding: chunked
+                return Err(ReadError::NotImplemented);
+            }
+        }
 
         let (url, fragments) = request_line
             .path
@@ -1003,6 +1011,29 @@ mod tests {
             request.parts.headers.get("Accept-Encoding"),
             Some("gzip, deflate, br")
         );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn chunked_post() -> Result<(), ReadError<TestIoError>> {
+        let input = TestData::from_str(concat!(
+            "POST /upload HTTP/1.1\r\n",
+            "Host: example.com\r\n",
+            "Transfer-Encoding: chunked\r\n",
+            "\r\n",
+            "10\r\n",
+            "0123456789abcdef\r\n",
+            "4\r\n",
+            "abcd\r\n",
+            "0\r\n",
+            "\r\n",
+        ));
+        let mut buffer = [0; 1024];
+        let mut reader = Reader::new(TestDataReader(&input.inner), &mut buffer);
+        let result = reader.read().await;
+        // We don't currently support chunked encoding, so we expect this to fail with a
+        // NotImplemented error.
+        assert_eq!(result.map(|_| ()).unwrap_err(), ReadError::NotImplemented);
         Ok(())
     }
 }

@@ -281,12 +281,14 @@ async fn serve_and_shutdown<State, T: Timer, P: routing::PathRouter<State>, S: i
                         request::ReadError::InvalidByteInHeader => "Invalid Byte in Header",
                         request::ReadError::UnexpectedEof => "Unexpected EOF while reading request",
                         request::ReadError::BufferFull => "Request Header Fields Too Large",
+                        request::ReadError::NotImplemented => "Not Implemented",
                         request::ReadError::IO(err) => return Err(err),
                     };
                     let code = match err {
                         request::ReadError::BufferFull => {
                             response::StatusCode::REQUEST_HEADER_FIELDS_TOO_LARGE
                         }
+                        request::ReadError::NotImplemented => response::StatusCode::NOT_IMPLEMENTED,
                         _ => response::StatusCode::BAD_REQUEST,
                     };
 
