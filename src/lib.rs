@@ -279,9 +279,6 @@ async fn serve_and_shutdown<State, T: Timer, P: routing::PathRouter<State>, S: i
                             "Invalid Header line: No ':' character"
                         }
                         request::ReadError::InvalidByteInHeader => "Invalid Byte in Header",
-                        request::ReadError::InvalidEscapedCharInHeader => {
-                            "Invalid Escape Character in Header"
-                        }
                         request::ReadError::UnexpectedEof => "Unexpected EOF while reading request",
                         request::ReadError::BufferFull => "Request Header Fields Too Large",
                         request::ReadError::IO(err) => return Err(err),

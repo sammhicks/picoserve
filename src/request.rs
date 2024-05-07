@@ -1,82 +1,10 @@
 //! HTTP request types.
 
-use core::{fmt, ops::Range};
+use core::fmt;
 
 use embedded_io_async::Read;
 
 use super::url_encoded::UrlEncodedString;
-
-struct Subslice<'a> {
-    buffer: &'a [u8],
-    range: Range<usize>,
-}
-
-impl<'a> Subslice<'a> {
-    fn as_ref(&self) -> &'a [u8] {
-        &self.buffer[self.range.clone()]
-    }
-}
-
-struct RequestLine<S> {
-    method: S,
-    url: S,
-    http_version: S,
-}
-
-impl<'a> RequestLine<Subslice<'a>> {
-    fn range(&self) -> RequestLine<Range<usize>> {
-        let RequestLine {
-            method,
-            url,
-            http_version,
-        } = self;
-
-        RequestLine {
-            method: method.range.clone(),
-            url: url.range.clone(),
-            http_version: http_version.range.clone(),
-        }
-    }
-
-    fn as_str(&self) -> Result<RequestLine<&'a str>, core::str::Utf8Error> {
-        let RequestLine {
-            method,
-            url,
-            http_version,
-        } = self;
-
-        Ok(RequestLine {
-            method: core::str::from_utf8(method.as_ref())?,
-            url: core::str::from_utf8(url.as_ref())?,
-            http_version: core::str::from_utf8(http_version.as_ref())?,
-        })
-    }
-}
-
-impl RequestLine<Range<usize>> {
-    fn index_buffer<'a>(&self, buffer: &'a [u8]) -> RequestLine<Subslice<'a>> {
-        let RequestLine {
-            method,
-            url,
-            http_version,
-        } = self;
-
-        RequestLine {
-            method: Subslice {
-                buffer,
-                range: method.clone(),
-            },
-            url: Subslice {
-                buffer,
-                range: url.clone(),
-            },
-            http_version: Subslice {
-                buffer,
-                range: http_version.clone(),
-            },
-        }
-    }
-}
 
 pub struct HeadersIter<'a>(core::str::Lines<'a>);
 
@@ -86,7 +14,8 @@ impl<'a> Iterator for HeadersIter<'a> {
     fn next(&mut self) -> Option<Self::Item> {
         let name = self.0.next()?;
         let value = self.0.next()?;
-        Some((name.trim(), value.trim()))
+        // We ensure that name does not have any surrounding whitespace when parsing the headers.
+        Some((name, value.trim()))
     }
 }
 
@@ -471,21 +400,25 @@ pub struct Request<'r, R: Read> {
 
 /// Errors arising while reading a HTTP Request
 #[derive(Debug, PartialEq, Eq)]
-pub(crate) enum ReadError<E> {
+pub(crate) enum ReadError<E: embedded_io_async::Error> {
     /// The request line is invalid
     BadRequestLine,
     /// A Header line does not contain a ':'
     HeaderDoesNotContainColon,
     /// A Header line contains an invalid byte
     InvalidByteInHeader,
-    /// A Header line contains an invalid escaped character
-    InvalidEscapedCharInHeader,
     /// EndOfFile before the end of the request line or headers
     UnexpectedEof,
     /// The request headers are too large to fit in the read buffer
     BufferFull,
     /// IO Error
     IO(E),
+}
+
+impl<E: embedded_io_async::Error> From<E> for ReadError<E> {
+    fn from(err: E) -> Self {
+        Self::IO(err)
+    }
 }
 
 pub(crate) struct Reader<'b, R: Read> {
@@ -508,268 +441,55 @@ impl<'b, R: Read> Reader<'b, R> {
     }
 
     fn wind_buffer_to_start(&mut self) {
-        if let Some(used_buffer) = self.buffer.get_mut(..self.buffer_usage) {
-            used_buffer.rotate_left(self.read_position);
-
+        if self.buffer_usage > 0 {
+            if self.read_position < self.buffer_usage {
+                self.buffer
+                    .copy_within(self.read_position..self.buffer_usage, 0);
+            }
             self.buffer_usage -= self.read_position;
-        } else {
-            self.buffer_usage = 0;
+            self.read_position = 0;
         }
-
-        self.read_position = 0;
     }
 
     pub async fn request_is_pending(&mut self) -> Result<bool, R::Error> {
         if self.has_been_upgraded {
             Ok(false)
         } else {
-            self.wind_buffer_to_start();
-
-            if self.buffer_usage > 0 {
-                Ok(true)
-            } else {
-                self.buffer_usage = self.reader.read(self.buffer).await?;
-                Ok(self.buffer_usage > 0)
+            if self.read_position == self.buffer_usage {
+                self.read_position = 0;
+                self.buffer_usage = self.reader.read(&mut self.buffer).await?;
             }
+            Ok(self.buffer_usage > self.read_position)
         }
-    }
-
-    fn used_buffer(&self) -> &[u8] {
-        &self.buffer[..self.buffer_usage]
-    }
-
-    async fn next_byte(&mut self) -> Result<u8, ReadError<R::Error>> {
-        if self.read_position == self.buffer_usage {
-            if self.buffer_usage == self.buffer.len() {
-                return Err(ReadError::BufferFull);
-            }
-
-            let read_size = self
-                .reader
-                .read(&mut self.buffer[self.buffer_usage..])
-                .await
-                .map_err(ReadError::IO)?;
-
-            if read_size == 0 {
-                return Err(ReadError::UnexpectedEof);
-            }
-
-            self.buffer_usage += read_size;
-        }
-
-        let b = self.used_buffer()[self.read_position];
-        self.read_position += 1;
-
-        Ok(b)
-    }
-
-    async fn read_line(&mut self) -> Result<Subslice, ReadError<R::Error>> {
-        let start_index = self.read_position;
-
-        loop {
-            let end_index = self.read_position;
-            break if self.next_byte().await? == b'\n' {
-                let slice = Subslice {
-                    buffer: self.used_buffer(),
-                    range: start_index..end_index,
-                };
-
-                // log::info!("{}: Line: {:?}", self.id, slice.as_ref());
-
-                Ok(slice)
-            } else {
-                continue;
-            };
-        }
-    }
-
-    async fn read_request_line(&mut self) -> Result<RequestLine<Subslice>, ReadError<R::Error>> {
-        fn slice_from_str<'a>(slice: &Subslice<'a>, s: &str) -> Subslice<'a> {
-            let Range { start, end } = s.as_bytes().as_ptr_range();
-
-            let start_index = start as usize - slice.buffer.as_ptr() as usize;
-            let end_index = end as usize - slice.buffer.as_ptr() as usize;
-
-            Subslice {
-                buffer: slice.buffer,
-                range: start_index..end_index,
-            }
-        }
-
-        let line = self.read_line().await?;
-
-        let mut words = core::str::from_utf8(line.as_ref())
-            .map_err(|_| ReadError::BadRequestLine)?
-            .split_whitespace()
-            .map(str::trim);
-
-        let method = words.next().ok_or(ReadError::BadRequestLine)?;
-        let path = words.next().ok_or(ReadError::BadRequestLine)?;
-        let http_version = words.next().ok_or(ReadError::BadRequestLine)?;
-
-        if words.next().is_some() {
-            return Err(ReadError::BadRequestLine);
-        }
-
-        Ok(RequestLine {
-            method: slice_from_str(&line, method),
-            url: slice_from_str(&line, path),
-            http_version: slice_from_str(&line, http_version),
-        })
-    }
-
-    async fn read_headers(&mut self) -> Result<Subslice, ReadError<R::Error>> {
-        let start_index = self.read_position;
-
-        let mut end_index = loop {
-            // First read the line
-            let line = self.read_line().await?;
-
-            // Then check that the line is not empty
-            if line.as_ref().iter().all(u8::is_ascii_whitespace) {
-                break line.range.start;
-            }
-
-            // Then decode the header
-
-            let line_range = line.range.clone();
-
-            let line = &mut self.buffer[line_range];
-
-            let Some(colon_index) = line
-                .iter()
-                .copied()
-                .enumerate()
-                .find_map(|(index, b)| (b == b':').then_some(index))
-            else {
-                return Err(ReadError::HeaderDoesNotContainColon);
-            };
-
-            line[colon_index] = b'\n';
-
-            let (name, value) = line.split_at_mut(colon_index);
-
-            for s in [name, &mut value[1..]] {
-                let mut start_index = 0;
-                for b in s.iter_mut().take_while(|b| b.is_ascii_whitespace()) {
-                    *b = 0;
-                    start_index += 1;
-                }
-
-                let mut end_index = s.len();
-                for b in s.iter_mut().rev().take_while(|b| b.is_ascii_whitespace()) {
-                    *b = 0;
-                    end_index -= 1;
-                }
-                let s = &mut s[start_index..end_index];
-
-                let mut read_indexes = 0..s.len();
-                let mut write_index = 0;
-
-                while let Some(read_index) = read_indexes.next() {
-                    match s[read_index] {
-                        b'%' => {
-                            let first_index = read_indexes.next();
-                            let second_index = read_indexes.next();
-                            let decoded = first_index
-                                .zip(second_index)
-                                .and_then(|(first_index, second_index)| {
-                                    let first_nibble = s
-                                        .get(first_index)
-                                        .copied()
-                                        .filter(u8::is_ascii_hexdigit)?
-                                        .to_ascii_uppercase()
-                                        - b'A';
-                                    let second_nibble = s
-                                        .get(second_index)
-                                        .copied()
-                                        .filter(u8::is_ascii_hexdigit)?
-                                        .to_ascii_uppercase()
-                                        - b'A';
-
-                                    Some((first_nibble << 4) + second_nibble)
-                                })
-                                .ok_or(ReadError::InvalidEscapedCharInHeader)?;
-
-                            if !b" !\"#$%&'()*+,/:;=?@[]".contains(&decoded) {
-                                return Err(ReadError::InvalidEscapedCharInHeader);
-                            }
-
-                            s[write_index] = decoded;
-                            write_index += 1;
-                            s[write_index] = 0;
-                            write_index += 1;
-                            s[write_index] = 0;
-                        }
-                        b'\r' => {
-                            s[write_index] = 0;
-                        }
-                        b if b.is_ascii_alphanumeric()
-                            | b.is_ascii_whitespace()
-                            | b"-_.~!\"#$&'()*+,/:;=?@[]".contains(&b) => {}
-                        _ => return Err(ReadError::InvalidByteInHeader),
-                    }
-
-                    write_index += 1;
-                }
-            }
-        };
-
-        let headers = &mut self.buffer[start_index..end_index];
-
-        for index in 0..headers.len() {
-            if headers[index] == 0 {
-                if headers[index..].iter().all(|&b| b == 0) {
-                    break;
-                }
-
-                headers[index..].rotate_left(1);
-
-                end_index -= 1;
-            }
-        }
-
-        Ok(Subslice {
-            buffer: self.buffer,
-            range: start_index..end_index,
-        })
     }
 
     pub async fn read(&mut self) -> Result<Request<'_, R>, ReadError<R::Error>> {
         self.wind_buffer_to_start();
 
-        let request_line = self.read_request_line().await?;
+        let buf_start = self.buffer.as_ptr();
+        let helper = ReadHelper {
+            reader: &mut self.reader,
+            buffer: &mut self.buffer,
+            buffer_usage: self.buffer_usage,
+        };
 
-        let request_line = request_line.range();
+        let (request_line, helper) = helper.read_request_line().await?;
+        let (headers, body) = helper.read_headers().await?;
+        // safety: the body buffer is guaranteed to point into our read buffer.
+        self.read_position = unsafe { body.buffer.as_ptr().offset_from(buf_start) as usize };
+        self.buffer_usage = self.read_position + body.buffer_usage;
 
-        let headers = self.read_headers().await?;
+        let content_length = headers
+            .get("content-length")
+            .and_then(|value| value.parse::<usize>().ok())
+            .unwrap_or(0);
 
-        let content_length = Headers(
-            // SAFETY: The headers have already been verified as being UTF-8
-            unsafe { core::str::from_utf8_unchecked(headers.as_ref()) },
-        )
-        .get("content-length")
-        .and_then(|value| value.parse::<usize>().ok())
-        .unwrap_or(0);
-
-        let headers = headers.range;
-
-        let parts_length = self.read_position;
-
-        let (parts_buffer, body_buffer) = self.buffer.split_at_mut(parts_length);
-
-        let RequestLine {
-            method,
-            url,
-            http_version,
-        } = request_line
-            .index_buffer(parts_buffer)
-            .as_str()
-            .map_err(|_| ReadError::BadRequestLine)?;
-
-        let (url, fragments) = url.split_once('#').map_or((url, None), |(url, fragments)| {
-            (url, Some(UrlEncodedString(fragments)))
-        });
+        let (url, fragments) = request_line
+            .path
+            .split_once('#')
+            .map_or((request_line.path, None), |(url, fragments)| {
+                (url, Some(UrlEncodedString(fragments)))
+            });
 
         let (path, query) = url
             .split_once('?')
@@ -777,26 +497,21 @@ impl<'b, R: Read> Reader<'b, R> {
                 (Path(UrlEncodedString(path)), Some(UrlEncodedString(query)))
             });
 
-        let headers = Headers(
-            // SAFETY: The headers have already been verified as being UTF-8
-            unsafe { core::str::from_utf8_unchecked(&parts_buffer[headers]) },
-        );
-
         let request = Request {
             parts: RequestParts {
-                method,
+                method: request_line.method,
                 path,
                 query,
                 fragments,
-                http_version,
+                http_version: request_line.http_version,
                 headers,
             },
             body_connection: RequestBodyConnection {
                 content_length,
-                reader: &mut self.reader,
+                reader: body.reader,
                 read_position: 0,
-                buffer: body_buffer,
-                buffer_usage: self.buffer_usage - parts_length,
+                buffer: body.buffer,
+                buffer_usage: body.buffer_usage,
                 has_been_upgraded: &mut self.has_been_upgraded,
             },
         };
@@ -809,9 +524,248 @@ impl<'b, R: Read> Reader<'b, R> {
     }
 }
 
+/// A helper class for reading data into and consuming data out of the Reader buffer.
+///
+/// This provides APIs to consume and get a reference to data at the start of the buffer,
+/// and return a new ReadHelper object for continuing to read into and process the tail end of the
+/// buffer.
+pub(crate) struct ReadHelper<'b, R: Read> {
+    reader: &'b mut R,
+    buffer: &'b mut [u8],
+    buffer_usage: usize,
+}
+
+impl<'b, R: Read> ReadHelper<'b, R> {
+    /// Read more data into self.buffer, and advance self.buffer_usage
+    async fn read_more(&mut self) -> Result<usize, ReadError<R::Error>> {
+        if self.buffer_usage == self.buffer.len() {
+            return Err(ReadError::BufferFull);
+        }
+        let read_size = self
+            .reader
+            .read(&mut self.buffer[self.buffer_usage..])
+            .await?;
+        self.buffer_usage += read_size;
+        Ok(read_size)
+    }
+
+    /// Read the request line.
+    ///
+    /// Returns the parsed request line, and a new ReadHelper that contains the remainder of the
+    /// buffer.
+    pub(crate) async fn read_request_line(
+        self,
+    ) -> Result<(RequestLine<'b>, ReadHelper<'b, R>), ReadError<R::Error>> {
+        let mut remainder = self;
+        let line_end = loop {
+            let line_end = remainder.peek_until(b"\r\n", 0).await?;
+            if line_end == 0 {
+                // According to RFC 9112 section 2.2, servers SHOULD ignore
+                // at least one empty line received prior to the request line.
+                remainder = remainder.advance(2);
+            } else {
+                break line_end;
+            }
+        };
+        let (request_line, remainder) = remainder.split_at(line_end);
+        Ok((RequestLine::parse(request_line)?, remainder.advance(2)))
+    }
+
+    /// Read request headers.
+    ///
+    /// Reads the headers up to the CRLFCRLF token.  Returns the headers and a ReadHelper
+    /// containing the remainder of the data.
+    pub(crate) async fn read_headers(
+        mut self,
+    ) -> Result<(Headers<'b>, ReadHelper<'b, R>), ReadError<R::Error>> {
+        let mut line_start = 0;
+        loop {
+            let line_end = self.peek_until(b"\r\n", line_start).await?;
+            if line_end == line_start {
+                // End of the headers.
+                let (headers_buffer, remainder) = self.split_at(line_end);
+                let headers = Headers(
+                    // safety: we have verified that all header bytes are ASCII
+                    unsafe { core::str::from_utf8_unchecked(headers_buffer) },
+                );
+                return Ok((headers, remainder.advance(2)));
+            } else {
+                let header_line = &mut self.buffer[line_start..line_end];
+                parse_header_line(header_line)?;
+                line_start = line_end + 2;
+            }
+        }
+    }
+
+    /// Read until the specified pattern is seen, and return the index to the pattern.
+    async fn peek_until(
+        &mut self,
+        pattern: &[u8],
+        offset: usize,
+    ) -> Result<usize, ReadError<R::Error>> {
+        let mut index = offset;
+        loop {
+            if let Some(relative_pos) = self.buffer[index..self.buffer_usage]
+                .iter()
+                .position(|&b| b == pattern[0])
+            {
+                let pos = relative_pos + index;
+                let remaining_len = self.buffer_usage - pos;
+                if remaining_len >= pattern.len() {
+                    if &self.buffer[pos..(pos + pattern.len())] == pattern {
+                        return Ok(pos);
+                    } else {
+                        // Not a match for the full pattern.
+                        // Advance past this location and continue searching from here.
+                        index = pos + 1;
+                        continue;
+                    }
+                }
+            }
+            // Didn't find the pattern in the data we have.  Read more data.
+            if self.read_more().await? == 0 {
+                return Err(ReadError::UnexpectedEof);
+            }
+        }
+    }
+
+    /// Split the buffer, returning the initial portion of the buffer and a new ReadHelper with the
+    /// remainder of the buffer.
+    fn split_at(self, offset: usize) -> (&'b mut [u8], ReadHelper<'b, R>) {
+        let (first, rest) = self.buffer.split_at_mut(offset);
+        (
+            first,
+            ReadHelper {
+                reader: self.reader,
+                buffer: rest,
+                buffer_usage: self.buffer_usage - offset,
+            },
+        )
+    }
+
+    fn advance(self, num_bytes: usize) -> ReadHelper<'b, R> {
+        ReadHelper {
+            reader: self.reader,
+            buffer: &mut self.buffer[num_bytes..],
+            buffer_usage: self.buffer_usage - num_bytes,
+        }
+    }
+}
+
+pub(crate) struct RequestLine<'a> {
+    method: &'a str,
+    path: &'a str,
+    http_version: &'a str,
+}
+
+impl<'a> RequestLine<'a> {
+    fn parse<E: embedded_io_async::Error>(line: &'a [u8]) -> Result<Self, ReadError<E>> {
+        let line = core::str::from_utf8(line).map_err(|_| ReadError::BadRequestLine)?;
+        let mut words = line.split(|c: char| c == ' ');
+        let method = words.next().ok_or(ReadError::BadRequestLine)?;
+        let path = words.next().ok_or(ReadError::BadRequestLine)?;
+        let http_version = words.next().ok_or(ReadError::BadRequestLine)?;
+        if words.next().is_some() {
+            return Err(ReadError::BadRequestLine);
+        }
+        if http_version.len() < 5 || &http_version[0..5] != "HTTP/" {
+            return Err(ReadError::BadRequestLine);
+        }
+        Ok(Self {
+            method,
+            path,
+            http_version,
+        })
+    }
+}
+
+/// Parse a single header line.
+///
+/// This checks that the header is valid, and replaces the colon separating the header name from
+/// the value with a newline, so that HeadersIter can process it using core::str::Lines.
+fn parse_header_line<E: embedded_io_async::Error>(buffer: &mut [u8]) -> Result<(), ReadError<E>> {
+    let mut index = 0;
+
+    if buffer.len() == 0 {
+        // This shouldn't really happen.  An empty line indicates the end of the headers,
+        // and our caller should have already checked for this.
+        return Err(ReadError::HeaderDoesNotContainColon);
+    }
+
+    // Process the header name
+    //
+    // Note: a leading space or tab at the start of the line indicates a header continuation line.
+    // Continuation lines are now obsolete, and RFC 9112 allows servers to reject them.
+    // We currently just reject this as part of the is_tchar() check.
+    // That said, it would be slightly nicer to return a custom error code indicating that the
+    // error is due to obsolete line folding.  RFC 9112 indicates that we should ideally indicate
+    // this in the error message we return to the client.
+    loop {
+        if !is_tchar(buffer[index]) {
+            return Err(ReadError::InvalidByteInHeader);
+        }
+        index += 1;
+        if index >= buffer.len() {
+            return Err(ReadError::HeaderDoesNotContainColon);
+        }
+        if buffer[index] == b':' {
+            buffer[index] = b'\n';
+            index += 1;
+            break;
+        }
+    }
+
+    // Process the header value
+    while index < buffer.len() {
+        if !is_field_content_char(buffer[index]) {
+            return Err(ReadError::InvalidByteInHeader);
+        }
+        index += 1;
+    }
+
+    Ok(())
+}
+
+/// Checks if a character is valid token character
+fn is_tchar(b: u8) -> bool {
+    // From RFC 9110:
+    // field-name = token
+    // token = 1*tchar
+    // tchar = "!" / "#" / "$" / "%" / "&" / "'" / "*" / "+" / "-" / "." /
+    //     "^" / "_" / "`" / "|" / "~" / DIGIT / ALPHA
+    if (b >= b'A' && b <= b'Z') || (b >= b'a' && b <= b'z') || (b >= b'0' && b <= b'9') {
+        true
+    } else {
+        match b {
+            b'!' | b'#' | b'$' | b'%' | b'&' | b'\'' | b'*' | b'+' | b'-' | b'.' | b'^' | b'_'
+            | b'`' | b'|' | b'~' => true,
+            _ => false,
+        }
+    }
+}
+
+fn is_field_content_char(b: u8) -> bool {
+    // From RFC 7230:
+    // - field-value    = *( field-content / obs-fold )
+    // - field-content  = field-vchar [ 1*( SP / HTAB ) field-vchar ]
+    // - field-vchar    = VCHAR / obs-text
+    // - obs-text       = %x80-FF ; non-ASCII characters
+    // - VCHAR: any visible US ASCII character
+
+    if b >= b' ' && b < 127 {
+        // Visible ASCII characters, plus space
+        true
+    } else if b == b'\t' {
+        true
+    } else {
+        false
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::cell::RefCell;
 
     #[derive(Debug, PartialEq, Eq)]
     pub struct TestIoError;
@@ -822,45 +776,72 @@ mod tests {
         }
     }
 
-    struct TestData<'a> {
-        buf: &'a [u8],
+    struct TestDataInner {
+        buf: Vec<u8>,
         offset: usize,
+        /// max_read_at_once controls how many bytes read() will return at a time.
+        /// This allows testing behavior when headers and other data spans multiple read() calls.
+        max_read_at_once: usize,
     }
 
-    impl<'a> TestData<'a> {
-        fn new(buf: &'a [u8]) -> Self {
-            Self { buf, offset: 0 }
+    struct TestData {
+        inner: RefCell<TestDataInner>,
+    }
+
+    impl TestData {
+        fn new(buf: &[u8]) -> Self {
+            Self {
+                inner: RefCell::new(TestDataInner {
+                    buf: buf.to_vec(),
+                    offset: 0,
+                    max_read_at_once: usize::MAX,
+                }),
+            }
         }
 
-        fn from_str(s: &'a str) -> Self {
+        fn from_str(s: &str) -> Self {
             Self::new(s.as_bytes())
         }
+
+        fn set_max_read_at_once(&self, max_read_at_once: usize) {
+            self.inner.borrow_mut().max_read_at_once = max_read_at_once
+        }
+
+        fn append(&self, data: &str) {
+            self.inner
+                .borrow_mut()
+                .buf
+                .extend_from_slice(data.as_bytes());
+        }
     }
 
-    impl<'a> embedded_io_async::ErrorType for TestData<'a> {
+    struct TestDataReader<'a>(&'a RefCell<TestDataInner>);
+
+    impl<'a> embedded_io_async::ErrorType for TestDataReader<'a> {
         type Error = TestIoError;
     }
 
-    impl<'a> embedded_io_async::Read for TestData<'a> {
+    impl<'a> embedded_io_async::Read for TestDataReader<'a> {
         async fn read(&mut self, buf: &mut [u8]) -> Result<usize, Self::Error> {
-            let bytes_left = self.buf.len() - self.offset;
-            let read_len = buf.len().min(bytes_left);
-            buf[0..read_len].copy_from_slice(&self.buf[self.offset..(self.offset + read_len)]);
-            self.offset += read_len;
+            let mut inner = self.0.borrow_mut();
+            let bytes_left = inner.buf.len() - inner.offset;
+            let read_len = buf.len().min(bytes_left).min(inner.max_read_at_once);
+            buf[0..read_len].copy_from_slice(&inner.buf[inner.offset..(inner.offset + read_len)]);
+            inner.offset += read_len;
             Ok(read_len)
         }
     }
 
-    #[tokio::test]
-    async fn basic() -> Result<(), ReadError<TestIoError>> {
+    async fn test_basic(max_read_size: usize) -> Result<(), ReadError<TestIoError>> {
         let input = TestData::from_str(concat!(
             "GET /some_path HTTP/1.1\r\n",
             "Host: example.com\r\n",
             "Accept-Encoding: gzip, deflate, br\r\n",
             "\r\n"
         ));
-        let mut buffer = [0; 2048];
-        let mut reader = Reader::new(input, &mut buffer);
+        input.set_max_read_at_once(max_read_size);
+        let mut buffer = [0; 1024];
+        let mut reader = Reader::new(TestDataReader(&input.inner), &mut buffer);
         let request = reader.read().await?;
         assert_eq!(request.parts.method(), "GET");
         assert_eq!(request.parts.path(), "/some_path");
@@ -874,6 +855,17 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn basic() -> Result<(), ReadError<TestIoError>> {
+        test_basic(1024).await
+    }
+
+    #[tokio::test]
+    async fn byte_at_a_time() -> Result<(), ReadError<TestIoError>> {
+        // Same as the basic() test, but each read() call only returns a single byte.
+        test_basic(1).await
+    }
+
+    #[tokio::test]
     async fn buffer_overflow() -> Result<(), ReadError<TestIoError>> {
         let input = TestData::from_str(concat!(
             "GET /some_path HTTP/1.1\r\n",
@@ -882,9 +874,135 @@ mod tests {
             "\r\n"
         ));
         let mut buffer = [0; 64];
-        let mut reader = Reader::new(input, &mut buffer);
+        let mut reader = Reader::new(TestDataReader(&input.inner), &mut buffer);
         let result = reader.read().await;
         assert_eq!(result.map(|_| ()).unwrap_err(), ReadError::BufferFull);
+        Ok(())
+    }
+
+    async fn check_bad_request(
+        data: &str,
+        expected_err: ReadError<TestIoError>,
+    ) -> Result<(), ReadError<TestIoError>> {
+        let input = TestData::from_str(data);
+        let mut buffer = [0; 1024];
+        let mut reader = Reader::new(TestDataReader(&input.inner), &mut buffer);
+        let result = reader.read().await;
+        assert_eq!(result.map(|_| ()).unwrap_err(), expected_err);
+        Ok(())
+    }
+
+    async fn check_bad_request_line(data: &str) -> Result<(), ReadError<TestIoError>> {
+        check_bad_request(data, ReadError::BadRequestLine).await
+    }
+
+    #[tokio::test]
+    async fn bad_request_line() -> Result<(), ReadError<TestIoError>> {
+        check_bad_request_line("GET /some_path SNTP/1.1\r\nHost: example.com\r\n\r\n").await?;
+        check_bad_request_line("GET /some_path\r\nHost: example.com\r\n\r\n").await?;
+        check_bad_request_line("GET /some_path HTTP/1.1 foobar\r\nHost: example.com\r\n\r\n")
+            .await?;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn bad_headers() -> Result<(), ReadError<TestIoError>> {
+        check_bad_request(
+            "GET /some_path HTTP/1.1\r\nHost : example.com\r\n\r\n",
+            ReadError::InvalidByteInHeader,
+        )
+        .await?;
+        check_bad_request(
+            "GET /some_path HTTP/1.1\r\nHost: exa\x02mple.com\r\n\r\n",
+            ReadError::InvalidByteInHeader,
+        )
+        .await?;
+        check_bad_request(
+            "GET /some_path HTTP/1.1\r\nHost\r\n\r\n",
+            ReadError::HeaderDoesNotContainColon,
+        )
+        .await?;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn unexpected_eof() -> Result<(), ReadError<TestIoError>> {
+        let input = TestData::from_str(concat!(
+            "POST /upload HTTP/1.1\r\n",
+            "Host: example.com\r\n",
+            "Content-L",
+        ));
+        let mut buffer = [0; 1024];
+        let mut reader = Reader::new(TestDataReader(&input.inner), &mut buffer);
+        let result = reader.read().await;
+        assert_eq!(result.map(|_| ()).unwrap_err(), ReadError::UnexpectedEof);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn pipelined_requests() -> Result<(), ReadError<TestIoError>> {
+        let input = TestData::from_str(concat!(
+            "POST /upload HTTP/1.1\r\n",
+            "Host: example.com\r\n",
+            "Content-Length: 8\r\n",
+            "\r\n",
+            "12345678",
+            "GET /some_path HTTP/1.1\r\n",
+            "Host: example.com\r\n",
+            "Accept-Encoding: gzip, deflate, br\r\n",
+            "\r\n"
+        ));
+        let mut buffer = [0; 1024];
+        let mut reader = Reader::new(TestDataReader(&input.inner), &mut buffer);
+        let request = reader.read().await?;
+        assert_eq!(request.parts.method(), "POST");
+        assert_eq!(request.parts.path(), "/upload");
+        assert_eq!(request.parts.headers.get("Host"), Some("example.com"));
+        request.body_connection.finalize().await?;
+
+        let request = reader.read().await?;
+        assert_eq!(request.parts.method(), "GET");
+        assert_eq!(request.parts.path(), "/some_path");
+        assert_eq!(request.parts.headers.get("Host"), Some("example.com"));
+        assert_eq!(
+            request.parts.headers.get("Accept-Encoding"),
+            Some("gzip, deflate, br")
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn partial_pipeline() -> Result<(), ReadError<TestIoError>> {
+        let input = TestData::from_str(concat!(
+            "POST /upload HTTP/1.1\r\n",
+            "Host: example.com\r\n",
+            "Content-Length: 8\r\n",
+            "\r\n",
+            "12345678",
+            "GET /some_pa",
+        ));
+        let mut buffer = [0; 1024];
+        let mut reader = Reader::new(TestDataReader(&input.inner), &mut buffer);
+        let request = reader.read().await?;
+        assert_eq!(request.parts.method(), "POST");
+        assert_eq!(request.parts.path(), "/upload");
+        assert_eq!(request.parts.headers.get("Host"), Some("example.com"));
+        request.body_connection.finalize().await?;
+
+        input.append(concat!(
+            "th HTTP/1.1\r\n",
+            "Host: example.com\r\n",
+            "Accept-Encoding: gzip, deflate, br\r\n",
+            "\r\n"
+        ));
+        let request = reader.read().await?;
+        assert_eq!(request.parts.method(), "GET");
+        assert_eq!(request.parts.path(), "/some_path");
+        assert_eq!(request.parts.headers.get("Host"), Some("example.com"));
+        assert_eq!(
+            request.parts.headers.get("Accept-Encoding"),
+            Some("gzip, deflate, br")
+        );
         Ok(())
     }
 }
