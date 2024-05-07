@@ -470,7 +470,7 @@ pub struct Request<'r, R: Read> {
 }
 
 /// Errors arising while reading a HTTP Request
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub(crate) enum ReadError<E> {
     /// The request line is invalid
     BadRequestLine,
@@ -482,6 +482,8 @@ pub(crate) enum ReadError<E> {
     InvalidEscapedCharInHeader,
     /// EndOfFile before the end of the request line or headers
     UnexpectedEof,
+    /// The request headers are too large to fit in the read buffer
+    BufferFull,
     /// IO Error
     IO(E),
 }
@@ -538,6 +540,10 @@ impl<'b, R: Read> Reader<'b, R> {
 
     async fn next_byte(&mut self) -> Result<u8, ReadError<R::Error>> {
         if self.read_position == self.buffer_usage {
+            if self.buffer_usage == self.buffer.len() {
+                return Err(ReadError::BufferFull);
+            }
+
             let read_size = self
                 .reader
                 .read(&mut self.buffer[self.buffer_usage..])
@@ -804,13 +810,13 @@ impl<'b, R: Read> Reader<'b, R> {
 }
 
 #[cfg(test)]
-mod headers_tests {
+mod tests {
     use super::*;
 
-    #[derive(Debug)]
-    pub struct TestError;
+    #[derive(Debug, PartialEq, Eq)]
+    pub struct TestIoError;
 
-    impl embedded_io_async::Error for TestError {
+    impl embedded_io_async::Error for TestIoError {
         fn kind(&self) -> embedded_io_async::ErrorKind {
             embedded_io_async::ErrorKind::Other
         }
@@ -832,7 +838,7 @@ mod headers_tests {
     }
 
     impl<'a> embedded_io_async::ErrorType for TestData<'a> {
-        type Error = TestError;
+        type Error = TestIoError;
     }
 
     impl<'a> embedded_io_async::Read for TestData<'a> {
@@ -846,31 +852,39 @@ mod headers_tests {
     }
 
     #[tokio::test]
-    async fn basic() -> Result<(), ReadError<TestError>> {
-        let input = TestData::from_str("Host: example.com\r\nX-Foobar: baz\r\n\r\n");
+    async fn basic() -> Result<(), ReadError<TestIoError>> {
+        let input = TestData::from_str(concat!(
+            "GET /some_path HTTP/1.1\r\n",
+            "Host: example.com\r\n",
+            "Accept-Encoding: gzip, deflate, br\r\n",
+            "\r\n"
+        ));
         let mut buffer = [0; 2048];
         let mut reader = Reader::new(input, &mut buffer);
-        let header_subslice = reader.read_headers().await?;
-        let headers = Headers(core::str::from_utf8(header_subslice.as_ref()).unwrap());
-        assert_eq!(headers.get("Host"), Some("example.com"));
-        assert_eq!(headers.get("X-Foobar"), Some("baz"));
-        assert_eq!(headers.get("X-Test"), None);
+        let request = reader.read().await?;
+        assert_eq!(request.parts.method(), "GET");
+        assert_eq!(request.parts.path(), "/some_path");
+        assert_eq!(request.parts.headers.get("Host"), Some("example.com"));
+        assert_eq!(
+            request.parts.headers.get("Accept-Encoding"),
+            Some("gzip, deflate, br")
+        );
+        assert_eq!(request.parts.headers.get("Content-Length"), None);
         Ok(())
     }
 
     #[tokio::test]
-    async fn percent_encoded_parameter() -> Result<(), ReadError<TestError>> {
-        let input = TestData::from_str(
-            "Content-Disposition: form-data; name=\"firmware\"; filename=\"foo%22bar\"\r\n\r\n",
-        );
-        let mut buffer = [0; 2048];
+    async fn buffer_overflow() -> Result<(), ReadError<TestIoError>> {
+        let input = TestData::from_str(concat!(
+            "GET /some_path HTTP/1.1\r\n",
+            "Host: example.com\r\n",
+            "Accept-Encoding: gzip, deflate, br\r\n",
+            "\r\n"
+        ));
+        let mut buffer = [0; 64];
         let mut reader = Reader::new(input, &mut buffer);
-        let header_subslice = reader.read_headers().await?;
-        let headers = Headers(core::str::from_utf8(header_subslice.as_ref()).unwrap());
-        assert_eq!(
-            headers.get("Content-Disposition"),
-            Some("form-data; name=\"firmware\"; filename=\"foo%22bar\"")
-        );
+        let result = reader.read().await;
+        assert_eq!(result.map(|_| ()).unwrap_err(), ReadError::BufferFull);
         Ok(())
     }
 }

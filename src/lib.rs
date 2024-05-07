@@ -283,13 +283,20 @@ async fn serve_and_shutdown<State, T: Timer, P: routing::PathRouter<State>, S: i
                             "Invalid Escape Character in Header"
                         }
                         request::ReadError::UnexpectedEof => "Unexpected EOF while reading request",
+                        request::ReadError::BufferFull => "Request Header Fields Too Large",
                         request::ReadError::IO(err) => return Err(err),
+                    };
+                    let code = match err {
+                        request::ReadError::BufferFull => {
+                            response::StatusCode::REQUEST_HEADER_FIELDS_TOO_LARGE
+                        }
+                        _ => response::StatusCode::BAD_REQUEST,
                     };
 
                     let ResponseSent(()) = timer
                         .run_with_maybe_timeout(
                             config.timeouts.write.clone(),
-                            (response::StatusCode::BAD_REQUEST, message).write_to(
+                            (code, message).write_to(
                                 response::Connection::empty(&mut false),
                                 response::ResponseStream::new(writer, KeepAlive::Close),
                             ),
