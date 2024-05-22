@@ -699,7 +699,7 @@ impl<'b, R: Read> Reader<'b, R> {
                         }
                         b if b.is_ascii_alphanumeric()
                             | b.is_ascii_whitespace()
-                            | b"-_.~!\"#$&'()*+,/:;=?@[]".contains(&b) => {}
+                            | b"-_.~!\"#$&'()*+,/:;=?@[]{}".contains(&b) => {}
                         _ => return Err(ReadError::InvalidByteInHeader),
                     }
 
