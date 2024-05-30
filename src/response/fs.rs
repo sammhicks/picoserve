@@ -32,19 +32,24 @@ impl fmt::Display for ETag {
     }
 }
 
-impl<'a> PartialEq<&'a str> for ETag {
-    fn eq(&self, other: &&str) -> bool {
-        fn decode_hex_nibble(c: Option<char>) -> Option<u8> {
-            u8::from_str_radix(c?.encode_utf8(&mut [0; 4]), 16).ok()
+impl PartialEq<[u8]> for ETag {
+    fn eq(&self, other: &[u8]) -> bool {
+        fn decode_hex_nibble(c: Option<u8>) -> Option<u8> {
+            Some(match c? {
+                c @ b'0'..=b'9' => c - b'0',
+                c @ b'a'..=b'f' => 10 + c - b'a',
+                c @ b'A'..=b'F' => 10 + c - b'A',
+                _ => return None,
+            })
         }
 
-        let mut chars = other.chars();
+        let mut bytes = other.iter().copied();
 
         for b in self.0 {
-            let Some(c0) = decode_hex_nibble(chars.next()) else {
+            let Some(c0) = decode_hex_nibble(bytes.next()) else {
                 return false;
             };
-            let Some(c1) = decode_hex_nibble(chars.next()) else {
+            let Some(c1) = decode_hex_nibble(bytes.next()) else {
                 return false;
             };
 
@@ -56,6 +61,12 @@ impl<'a> PartialEq<&'a str> for ETag {
         }
 
         true
+    }
+}
+
+impl PartialEq<&[u8]> for ETag {
+    fn eq(&self, other: &&[u8]) -> bool {
+        *self == **other
     }
 }
 
@@ -138,9 +149,8 @@ impl<State, PathParameters> crate::routing::RequestHandlerService<State, PathPar
     ) -> Result<ResponseSent, W::Error> {
         if let Some(if_none_match) = request.parts.headers().get("If-None-Match") {
             if if_none_match
-                .split(',')
-                .map(str::trim)
-                .any(|etag| self.etag == etag)
+                .split(b',')
+                .any(|etag| self.etag == etag.as_raw())
             {
                 return response_writer
                     .write_response(

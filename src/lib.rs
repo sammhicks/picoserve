@@ -104,12 +104,11 @@ impl KeepAlive {
     fn from_request(http_version: &str, headers: request::Headers) -> Self {
         match headers.get("connection") {
             None => Self::default_for_http_version(http_version),
-            Some(close_header) if close_header.eq_ignore_ascii_case("close") => Self::Close,
+            Some(close_header) if close_header == "close" => Self::Close,
             Some(connection_headers) => {
                 if connection_headers
-                    .split(',')
-                    .map(str::trim)
-                    .any(|connection_header| connection_header.eq_ignore_ascii_case("upgrade"))
+                    .split(b',')
+                    .any(|connection_header| connection_header == "upgrade")
                 {
                     Self::Close
                 } else {
@@ -277,10 +276,6 @@ async fn serve_and_shutdown<State, T: Timer, P: routing::PathRouter<State>, S: i
                         request::ReadError::BadRequestLine => "Bad Request Line",
                         request::ReadError::HeaderDoesNotContainColon => {
                             "Invalid Header line: No ':' character"
-                        }
-                        request::ReadError::InvalidByteInHeader => "Invalid Byte in Header",
-                        request::ReadError::InvalidEscapedCharInHeader => {
-                            "Invalid Escape Character in Header"
                         }
                         request::ReadError::UnexpectedEof => "Unexpected EOF while reading request",
                         request::ReadError::IO(err) => return Err(err),

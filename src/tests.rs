@@ -452,6 +452,11 @@ async fn keep_alive() {
 ///    - Attempting to read more than the entire body, testing that the body reader stops reading at the end of the body
 ///    - Reading the entire body into the internal buffer
 async fn upgrade_with_request_body() {
+    const EXPECTED_BODY: &[u8] = b"BODY";
+    const EXPECTED_UPGRADE: &[u8] = b"UPGRADE";
+    const REQUEST_PAYLOAD: &[u8] =
+        b"POST / HTTP/1.1\r\nUpgrade: test\r\nContent-Length: 4\r\n\r\nBODYUPGRADE";
+
     struct VecSequence {
         current: VecRead,
         rest_reversed: Vec<Vec<u8>>,
@@ -495,14 +500,15 @@ async fn upgrade_with_request_body() {
             connection: response::Connection<'_, R>,
             _writer: W,
         ) -> Result<(), W::Error> {
-            const EXPECTED: &str = "UPGRADE";
-            let mut buffer = [0; EXPECTED.len()];
+            let mut actual = [0; EXPECTED_UPGRADE.len()];
 
             connection
                 .upgrade(self.upgrade_token)
-                .read(&mut buffer)
+                .read_exact(&mut actual)
                 .await
                 .unwrap();
+
+            assert_eq!(EXPECTED_UPGRADE, actual);
 
             Ok(())
         }
@@ -542,7 +548,7 @@ async fn upgrade_with_request_body() {
                 BodyReadType::ReadAll => {
                     let actual_body = request.body_connection.body().read_all().await.unwrap();
 
-                    assert_eq!(actual_body, "BODY".as_bytes());
+                    assert_eq!(actual_body, EXPECTED_BODY);
                 }
                 BodyReadType::ReadExternally { buffer_size } => {
                     let mut buffer = vec![0; buffer_size];
@@ -567,7 +573,7 @@ async fn upgrade_with_request_body() {
                         read_position += read_size;
                     }
 
-                    let expected_body = "BODY".as_bytes();
+                    let expected_body = EXPECTED_BODY;
                     let expected_body = &expected_body[..(buffer_size.min(expected_body.len()))];
 
                     assert_eq!(expected_body, &buffer[..read_position]);
@@ -590,11 +596,8 @@ async fn upgrade_with_request_body() {
 
     let mut http_buffer = [0; 2048];
 
-    let request =
-        "POST / HTTP/1.1\r\nUpgrade: test\r\nContent-Length: 4\r\n\r\nBODYUPGRADE".as_bytes();
-
-    for a in 0..request.len() {
-        for b in a..request.len() {
+    for a in 0..REQUEST_PAYLOAD.len() {
+        for b in a..REQUEST_PAYLOAD.len() {
             for read_body in [BodyReadType::DoNotRead, BodyReadType::ReadAll]
                 .into_iter()
                 .chain((1..=6).map(|buffer_size| BodyReadType::ReadExternally { buffer_size }))
@@ -609,11 +612,15 @@ async fn upgrade_with_request_body() {
                     TestSocket {
                         rx: VecSequence {
                             current: VecRead(Vec::new()),
-                            rest_reversed: [&request[b..], &request[a..b], &request[..a]]
-                                .into_iter()
-                                .filter(|s| !s.is_empty())
-                                .map(Vec::from)
-                                .collect(),
+                            rest_reversed: [
+                                &REQUEST_PAYLOAD[b..],
+                                &REQUEST_PAYLOAD[a..b],
+                                &REQUEST_PAYLOAD[..a],
+                            ]
+                            .into_iter()
+                            .filter(|s| !s.is_empty())
+                            .map(Vec::from)
+                            .collect(),
                         },
                         tx: Vec::new(),
                     },

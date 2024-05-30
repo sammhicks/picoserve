@@ -119,12 +119,16 @@ impl<'r, State> crate::extract::FromRequest<'r, State> for WebSocketUpgrade {
         if request_parts
             .headers()
             .get("upgrade")
-            .map_or(true, |upgrade| !upgrade.eq_ignore_ascii_case("websocket"))
+            .map_or(true, |upgrade| upgrade != "websocket")
         {
             return Err(WebSocketUpgradeRejection::InvalidUpgradeHeader);
         }
 
-        if request_parts.headers().get("sec-websocket-version") != Some("13") {
+        if !request_parts
+            .headers()
+            .get("sec-websocket-version")
+            .is_some_and(|version| version == "13")
+        {
             return Err(WebSocketUpgradeRejection::InvalidWebSocketVersionHeader);
         }
 
@@ -133,7 +137,7 @@ impl<'r, State> crate::extract::FromRequest<'r, State> for WebSocketUpgrade {
             .get("sec-websocket-key")
             .map(|key| {
                 let hash = lhash::Sha1::new()
-                    .const_update(key.as_bytes())
+                    .const_update(key.value)
                     .const_update(b"258EAFA5-E914-47DA-95CA-C5AB0DC85B11")
                     .const_result();
 
@@ -150,7 +154,7 @@ impl<'r, State> crate::extract::FromRequest<'r, State> for WebSocketUpgrade {
             .get("sec-websocket-protocol")
             .and_then(|protocol| {
                 let mut buffer = heapless::String::new();
-                buffer.push_str(protocol).ok()?;
+                buffer.push_str(protocol.as_str().ok()?).ok()?;
                 Some(buffer)
             });
 

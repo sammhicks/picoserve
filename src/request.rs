@@ -78,37 +78,196 @@ impl RequestLine<Range<usize>> {
     }
 }
 
-pub struct HeadersIter<'a>(core::str::Lines<'a>);
+fn trim(b: &[u8]) -> &[u8] {
+    fn trim_start(mut b: &[u8]) -> &[u8] {
+        loop {
+            break match b.split_first() {
+                Some((head, tail)) if head.is_ascii_whitespace() => {
+                    b = tail;
+                    continue;
+                }
+                _ => b,
+            };
+        }
+    }
+
+    fn trim_end(mut b: &[u8]) -> &[u8] {
+        loop {
+            break match b.split_last() {
+                Some((last, rest)) if last.is_ascii_whitespace() => {
+                    b = rest;
+                    continue;
+                }
+                _ => b,
+            };
+        }
+    }
+
+    trim_end(trim_start(b))
+}
+
+fn eq_ignore_ascii_case(lhs: &[u8], rhs: &[u8]) -> bool {
+    if lhs.len() != rhs.len() {
+        return false;
+    }
+
+    lhs.iter()
+        .zip(rhs.iter())
+        .all(|(lhs, rhs)| lhs.eq_ignore_ascii_case(rhs))
+}
+
+fn escape_debug(data: &[u8], f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    use fmt::Write;
+
+    data.iter().try_for_each(|&b| {
+        if b.is_ascii_graphic() {
+            f.write_char(b.into())
+        } else {
+            write!(f, "\\x{b:02x}")
+        }
+    })
+}
+
+#[derive(Clone, PartialEq, Eq)]
+pub struct HeaderName<'a> {
+    name: &'a [u8],
+}
+
+impl<'a> fmt::Debug for HeaderName<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        escape_debug(self.name, f)
+    }
+}
+
+impl<'a> HeaderName<'a> {
+    pub fn as_raw(&self) -> &'a [u8] {
+        self.name
+    }
+
+    pub fn as_str(&self) -> Result<&str, core::str::Utf8Error> {
+        core::str::from_utf8(self.name)
+    }
+}
+
+impl<'a> PartialEq<str> for HeaderName<'a> {
+    fn eq(&self, other: &str) -> bool {
+        eq_ignore_ascii_case(self.name, other.as_bytes())
+    }
+}
+
+impl<'a> PartialEq<&str> for HeaderName<'a> {
+    fn eq(&self, other: &&str) -> bool {
+        eq_ignore_ascii_case(self.name, other.as_bytes())
+    }
+}
+
+impl<'a> PartialEq<HeaderName<'a>> for str {
+    fn eq(&self, other: &HeaderName<'a>) -> bool {
+        *other == self
+    }
+}
+
+impl<'a> PartialEq<HeaderName<'a>> for &str {
+    fn eq(&self, other: &HeaderName<'a>) -> bool {
+        *other == *self
+    }
+}
+
+#[derive(Clone)]
+pub struct HeaderValue<'a> {
+    pub(crate) value: &'a [u8],
+}
+
+impl<'a> fmt::Debug for HeaderValue<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        escape_debug(self.value, f)
+    }
+}
+
+impl<'a> HeaderValue<'a> {
+    pub fn as_raw(&self) -> &'a [u8] {
+        self.value
+    }
+
+    pub fn as_str(&self) -> Result<&str, core::str::Utf8Error> {
+        core::str::from_utf8(self.value)
+    }
+
+    pub fn split(&self, b: u8) -> impl Iterator<Item = HeaderValue<'a>> {
+        self.value
+            .split(move |&bb| b == bb)
+            .map(trim)
+            .map(|value| HeaderValue { value })
+    }
+}
+
+impl<'a> PartialEq<str> for HeaderValue<'a> {
+    fn eq(&self, other: &str) -> bool {
+        eq_ignore_ascii_case(self.value, other.as_bytes())
+    }
+}
+
+impl<'a> PartialEq<&str> for HeaderValue<'a> {
+    fn eq(&self, other: &&str) -> bool {
+        eq_ignore_ascii_case(self.value, other.as_bytes())
+    }
+}
+
+impl<'a> PartialEq<HeaderValue<'a>> for str {
+    fn eq(&self, other: &HeaderValue<'a>) -> bool {
+        *other == self
+    }
+}
+
+impl<'a> PartialEq<HeaderValue<'a>> for &str {
+    fn eq(&self, other: &HeaderValue<'a>) -> bool {
+        *other == *self
+    }
+}
+
+pub struct HeadersIter<'a>(&'a [u8]);
 
 impl<'a> Iterator for HeadersIter<'a> {
-    type Item = (&'a str, &'a str);
+    type Item = (HeaderName<'a>, HeaderValue<'a>);
 
     fn next(&mut self) -> Option<Self::Item> {
-        let name = self.0.next()?;
-        let value = self.0.next()?;
-        Some((name.trim(), value.trim()))
+        let line = self.0.split_inclusive(|&b| b == b'\n').next()?;
+
+        self.0 = &self.0[line.len()..];
+
+        let colon_position = line
+            .iter()
+            .copied()
+            .enumerate()
+            .find_map(|(i, b)| (b == b':').then_some(i))?;
+
+        let name = trim(&line[..colon_position]);
+
+        let value = trim(&line[(colon_position + 1)..]);
+
+        Some((HeaderName { name }, HeaderValue { value }))
     }
 }
 
 #[derive(Clone, Copy)]
 /// The Request Headers.
-pub struct Headers<'a>(&'a str);
+pub struct Headers<'a>(&'a [u8]);
 
 impl<'a> Headers<'a> {
     /// Iterator over all headers.
     pub fn iter(&self) -> HeadersIter<'a> {
-        HeadersIter(self.0.lines())
+        HeadersIter(self.0)
     }
 
     /// Get a header with a name which matches (ignoring ASCII case) the given name
-    pub fn get(&self, name: &str) -> Option<&'a str> {
+    pub fn get(&self, name: &str) -> Option<HeaderValue<'a>> {
         self.iter()
-            .find_map(|(header_key, value)| name.eq_ignore_ascii_case(header_key).then_some(value))
+            .find_map(|(header_name, value)| (name == header_name).then_some(value))
     }
 }
 
 impl<'a> IntoIterator for Headers<'a> {
-    type Item = (&'a str, &'a str);
+    type Item = (HeaderName<'a>, HeaderValue<'a>);
     type IntoIter = HeadersIter<'a>;
 
     fn into_iter(self) -> Self::IntoIter {
@@ -117,7 +276,7 @@ impl<'a> IntoIterator for Headers<'a> {
 }
 
 impl<'a, 'b> IntoIterator for &'b Headers<'a> {
-    type Item = (&'a str, &'a str);
+    type Item = (HeaderName<'a>, HeaderValue<'a>);
     type IntoIter = HeadersIter<'a>;
 
     fn into_iter(self) -> Self::IntoIter {
@@ -475,10 +634,6 @@ pub(crate) enum ReadError<E> {
     BadRequestLine,
     /// A Header line does not contain a ':'
     HeaderDoesNotContainColon,
-    /// A Header line contains an invalid byte
-    InvalidByteInHeader,
-    /// A Header line contains an invalid escaped character
-    InvalidEscapedCharInHeader,
     /// EndOfFile before the end of the request line or headers
     UnexpectedEof,
     /// IO Error
@@ -623,88 +778,10 @@ impl<'b, R: Read> Reader<'b, R> {
                 break line.range.start;
             }
 
-            // Then decode the header
-
-            let line_range = line.range.clone();
-
-            let line = &mut self.buffer[line_range];
-
-            let Some(colon_index) = line
-                .iter()
-                .copied()
-                .enumerate()
-                .find_map(|(index, b)| (b == b':').then_some(index))
-            else {
+            // Then verify that the header is valid
+            // TODO - more thorough verification
+            if !line.as_ref().contains(&b':') {
                 return Err(ReadError::HeaderDoesNotContainColon);
-            };
-
-            line[colon_index] = b'\n';
-
-            let (name, value) = line.split_at_mut(colon_index);
-
-            for s in [name, &mut value[1..]] {
-                let mut start_index = 0;
-                for b in s.iter_mut().take_while(|b| b.is_ascii_whitespace()) {
-                    *b = 0;
-                    start_index += 1;
-                }
-
-                let mut end_index = s.len();
-                for b in s.iter_mut().rev().take_while(|b| b.is_ascii_whitespace()) {
-                    *b = 0;
-                    end_index -= 1;
-                }
-                let s = &mut s[start_index..end_index];
-
-                let mut read_indexes = 0..s.len();
-                let mut write_index = 0;
-
-                while let Some(read_index) = read_indexes.next() {
-                    match s[read_index] {
-                        b'%' => {
-                            let first_index = read_indexes.next();
-                            let second_index = read_indexes.next();
-                            let decoded = first_index
-                                .zip(second_index)
-                                .and_then(|(first_index, second_index)| {
-                                    let first_nibble = s
-                                        .get(first_index)
-                                        .copied()
-                                        .filter(u8::is_ascii_hexdigit)?
-                                        .to_ascii_uppercase()
-                                        - b'A';
-                                    let second_nibble = s
-                                        .get(second_index)
-                                        .copied()
-                                        .filter(u8::is_ascii_hexdigit)?
-                                        .to_ascii_uppercase()
-                                        - b'A';
-
-                                    Some((first_nibble << 4) + second_nibble)
-                                })
-                                .ok_or(ReadError::InvalidEscapedCharInHeader)?;
-
-                            if !b" !\"#$%&'()*+,/:;=?@[]".contains(&decoded) {
-                                return Err(ReadError::InvalidEscapedCharInHeader);
-                            }
-
-                            s[write_index] = decoded;
-                            write_index += 1;
-                            s[write_index] = 0;
-                            write_index += 1;
-                            s[write_index] = 0;
-                        }
-                        b'\r' => {
-                            s[write_index] = 0;
-                        }
-                        b if b.is_ascii_alphanumeric()
-                            | b.is_ascii_whitespace()
-                            | b"-_.~!\"#$&'()*+,/:;=?@[]".contains(&b) => {}
-                        _ => return Err(ReadError::InvalidByteInHeader),
-                    }
-
-                    write_index += 1;
-                }
             }
         };
 
@@ -737,13 +814,10 @@ impl<'b, R: Read> Reader<'b, R> {
 
         let headers = self.read_headers().await?;
 
-        let content_length = Headers(
-            // SAFETY: The headers have already been verified as being UTF-8
-            unsafe { core::str::from_utf8_unchecked(headers.as_ref()) },
-        )
-        .get("content-length")
-        .and_then(|value| value.parse::<usize>().ok())
-        .unwrap_or(0);
+        let content_length = Headers(headers.as_ref())
+            .get("content-length")
+            .and_then(|value| value.as_str().ok()?.parse::<usize>().ok())
+            .unwrap_or(0);
 
         let headers = headers.range;
 
@@ -770,10 +844,7 @@ impl<'b, R: Read> Reader<'b, R> {
                 (Path(UrlEncodedString(path)), Some(UrlEncodedString(query)))
             });
 
-        let headers = Headers(
-            // SAFETY: The headers have already been verified as being UTF-8
-            unsafe { core::str::from_utf8_unchecked(&parts_buffer[headers]) },
-        );
+        let headers = Headers(&parts_buffer[headers]);
 
         let request = Request {
             parts: RequestParts {
