@@ -15,6 +15,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Headers are `[u8]` not `str`, to allow header names and values that are not UTF-8.
 
+### Added 
+
+- SSE Data can now contain newlines.
+- SSE Data can now be a `core::fmt::Arguments`, as produced by `format_args!`.
+
 ## [0.10.3] - 2024-05-06
 
 ### Added

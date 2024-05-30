@@ -2,7 +2,7 @@
 
 use core::future::Future;
 
-use crate::io::{Read, Write};
+use crate::io::{Read, Write, WriteExt};
 
 use super::StatusCode;
 
@@ -12,7 +12,13 @@ pub trait EventData {
     async fn write_to<W: Write>(self, writer: &mut W) -> Result<(), W::Error>;
 }
 
-impl<'a> EventData for &'a str {
+impl<'a> EventData for core::fmt::Arguments<'a> {
+    async fn write_to<W: Write>(self, writer: &mut W) -> Result<(), W::Error> {
+        writer.write_fmt(self).await
+    }
+}
+
+impl EventData for &str {
     async fn write_to<W: Write>(self, writer: &mut W) -> Result<(), W::Error> {
         writer.write_all(self.as_bytes()).await
     }
@@ -43,13 +49,39 @@ impl<W: Write> EventWriter<W> {
         event: &str,
         data: T,
     ) -> Result<(), W::Error> {
+        pub struct DataWriter<W: Write> {
+            writer: W,
+        }
+
+        impl<W: Write> embedded_io_async::ErrorType for DataWriter<W> {
+            type Error = W::Error;
+        }
+
+        impl<W: Write> Write for DataWriter<W> {
+            async fn write(&mut self, buf: &[u8]) -> Result<usize, Self::Error> {
+                for line in buf.split_inclusive(|&b| b == b'\n') {
+                    self.writer.write_all(b"data:").await?;
+                    self.writer.write_all(line).await?;
+                }
+
+                self.writer.write_all(b"\n").await?;
+
+                Ok(buf.len())
+            }
+
+            async fn flush(&mut self) -> Result<(), Self::Error> {
+                self.writer.flush().await
+            }
+        }
+
         self.writer.write_all(b"event:").await?;
         self.writer.write_all(event.as_bytes()).await?;
         self.writer.write_all(b"\n").await?;
 
-        self.writer.write_all(b"data:").await?;
-        data.write_to(&mut self.writer).await?;
-        self.writer.write_all(b"\n").await?;
+        data.write_to(&mut DataWriter {
+            writer: &mut self.writer,
+        })
+        .await?;
 
         self.writer.write_all(b"\n").await?;
 
