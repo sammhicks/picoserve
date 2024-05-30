@@ -2,7 +2,7 @@
 
 use crate::{
     extract::FromRequestParts,
-    io::{Read, Write},
+    io::{Read, Write, WriteExt},
 };
 
 use super::StatusCode;
@@ -504,17 +504,25 @@ impl<W: Write> SocketTx<W> {
         self.flush().await
     }
 
+    /// Send the given value as UTF-8 text using its [Display](core::fmt::Display) implementation.
+    /// If the message is long, the message will be sent as several frames, [Display::fmt](core::fmt::Display::fmt) will be repeatedly called
+    /// so must produce the same output each time.
+    pub async fn send_display(&mut self, data: impl core::fmt::Display) -> Result<(), W::Error> {
+        let opcode = &mut 1;
+        write!(FrameWriter { opcode, tx: self }, "{data}").await?;
+        self.write_frame(true, *opcode, &[]).await?;
+        self.flush().await
+    }
+
     /// Send the given value as a JSON encoded text message.
     /// If the message is long, the message will be sent as several frames, and the value will be repeatedly serialized,
     /// so it must serialize to the same value each time.
     pub async fn send_json(&mut self, value: impl serde::Serialize) -> Result<(), W::Error> {
+        let opcode = &mut 1;
         super::json::Json(value)
-            .do_write_to(&mut JsonWriter {
-                is_first: true,
-                tx: self,
-            })
+            .do_write_to(&mut FrameWriter { opcode, tx: self })
             .await?;
-        self.write_frame(true, 0, &[]).await?;
+        self.write_frame(true, *opcode, &[]).await?;
         self.flush().await
     }
 
@@ -546,28 +554,19 @@ impl<W: Write> SocketTx<W> {
     }
 }
 
-struct JsonWriter<'w, W: Write> {
-    is_first: bool,
+struct FrameWriter<'w, W: Write> {
+    opcode: &'w mut u8,
     tx: &'w mut SocketTx<W>,
 }
 
-impl<'w, W: Write> embedded_io_async::ErrorType for JsonWriter<'w, W> {
+impl<'w, W: Write> embedded_io_async::ErrorType for FrameWriter<'w, W> {
     type Error = W::Error;
 }
 
-impl<'w, W: Write> Write for JsonWriter<'w, W> {
+impl<'w, W: Write> Write for FrameWriter<'w, W> {
     async fn write(&mut self, data: &[u8]) -> Result<usize, W::Error> {
         self.tx
-            .write_frame(
-                false,
-                if self.is_first {
-                    self.is_first = false;
-                    1
-                } else {
-                    0
-                },
-                data,
-            )
+            .write_frame(false, core::mem::replace(self.opcode, 0), data)
             .await
             .map(|_| data.len())
     }

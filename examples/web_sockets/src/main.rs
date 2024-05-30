@@ -20,8 +20,8 @@ impl ws::WebSocketCallback for WebsocketHandler {
         let close_reason = loop {
             tokio::select! {
                 message_changed = self.rx.recv() => match message_changed {
-                    Ok(message) => tx.send_text(&message).await?,
-                    Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => tx.send_text(&format!("missed {n} messages")).await?,
+                    Ok(message) => tx.send_display(format_args!("Message: {message}")).await?,
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => tx.send_display(format_args!("Missed {n} messages")).await?,
                     Err(tokio::sync::broadcast::error::RecvError::Closed) => break None,
                 },
                 new_message = rx.next_message(&mut message_buffer) => match new_message {
