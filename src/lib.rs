@@ -154,7 +154,7 @@ impl<D> Config<D> {
     /// Keep the connection alive after the response has been sent, allowing the client to make further requests on the same TCP connection.
     /// This should only be called if multiple sockets are handling HTTP connections to avoid a single client hogging the connection
     /// and preventing other clients from making requests.
-    pub fn keep_connection_alive(mut self) -> Self {
+    pub const fn keep_connection_alive(mut self) -> Self {
         self.connection = KeepAlive::KeepAlive;
 
         self
@@ -162,21 +162,21 @@ impl<D> Config<D> {
 
     /// Close the connection after the response has been sent, i.e. each TCP connection serves a single request.
     /// This is the default, but allows the configuration to be more explicit.
-    pub fn close_connection_after_response(mut self) -> Self {
+    pub const fn close_connection_after_response(mut self) -> Self {
         self.connection = KeepAlive::Close;
 
         self
     }
 
     /// Perform a graceful shutdown after handling all requests, waiting for the client to acknowledge the closure
-    pub fn shutdown_connection_on_close(mut self) -> Self {
+    pub const fn shutdown_connection_on_close(mut self) -> Self {
         self.shutdown_method = ShutdownMethod::Shutdown;
 
         self
     }
 
     /// Abort the connection after handling all requests, without waiting for the client to acknowledge the closure
-    pub fn abort_connection_on_close(mut self) -> Self {
+    pub const fn abort_connection_on_close(mut self) -> Self {
         self.shutdown_method = ShutdownMethod::Abort;
 
         self

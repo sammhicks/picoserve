@@ -41,7 +41,7 @@ pub enum UrlDecodedCharacter {
 
 impl UrlDecodedCharacter {
     /// Convert into a [char], ignoring whether the character was present in the encoded string or percent-encoded.
-    pub fn into_char(self) -> char {
+    pub const fn into_char(self) -> char {
         match self {
             UrlDecodedCharacter::Literal(c) | UrlDecodedCharacter::Encoded(c) => c,
         }
@@ -276,7 +276,7 @@ impl<'a> UrlEncodedString<'a> {
     }
 
     /// Returns true if the string has a length of 0.
-    pub fn is_empty(self) -> bool {
+    pub const fn is_empty(self) -> bool {
         self.0.is_empty()
     }
 

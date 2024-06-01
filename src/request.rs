@@ -387,32 +387,32 @@ pub struct RequestParts<'r> {
 
 impl<'r> RequestParts<'r> {
     /// Return the method as sent by the client
-    pub fn method(&self) -> &'r str {
+    pub const fn method(&self) -> &'r str {
         self.method
     }
 
     /// Return the request path, without the query or fragments
-    pub fn path(&self) -> Path<'r> {
+    pub const fn path(&self) -> Path<'r> {
         self.path
     }
 
     /// Return the query section of the request URL, i.e. everything after the "?"
-    pub fn query(&self) -> Option<UrlEncodedString<'r>> {
+    pub const fn query(&self) -> Option<UrlEncodedString<'r>> {
         self.query
     }
 
     /// Return the fragments of the request URL, i.e. everything after the "#"
-    pub fn fragments(&self) -> Option<UrlEncodedString<'r>> {
+    pub const fn fragments(&self) -> Option<UrlEncodedString<'r>> {
         self.fragments
     }
 
     /// Return the HTTP version as sent by the client
-    pub fn http_version(&self) -> &'r str {
+    pub const fn http_version(&self) -> &'r str {
         self.http_version
     }
 
     /// Return the request headers
-    pub fn headers(&self) -> Headers<'r> {
+    pub const fn headers(&self) -> Headers<'r> {
         self.headers
     }
 }
@@ -431,7 +431,7 @@ impl<'r, R: Read> crate::io::ErrorType for RequestBodyReader<'r, R> {
 
 impl<'r, R: Read> RequestBodyReader<'r, R> {
     /// Returns the total length of the body
-    pub fn content_length(&self) -> usize {
+    pub const fn content_length(&self) -> usize {
         self.content_length
     }
 }
@@ -488,17 +488,17 @@ pub struct RequestBody<'r, R: Read> {
 
 impl<'r, R: Read> RequestBody<'r, R> {
     /// The total length of the body
-    pub fn content_length(&self) -> usize {
+    pub const fn content_length(&self) -> usize {
         self.content_length
     }
 
     /// The size of the buffer used to read the body into
-    pub fn buffer_length(&self) -> usize {
+    pub const fn buffer_length(&self) -> usize {
         self.buffer.len()
     }
 
     /// Does the entire body fit into the buffer?
-    pub fn entire_body_fits_into_buffer(&self) -> bool {
+    pub const fn entire_body_fits_into_buffer(&self) -> bool {
         self.content_length() <= self.buffer_length()
     }
 
@@ -552,7 +552,7 @@ pub struct RequestBodyConnection<'r, R: Read> {
 
 impl<'r, R: Read> RequestBodyConnection<'r, R> {
     /// Return the total length of the body
-    pub fn content_length(&self) -> usize {
+    pub const fn content_length(&self) -> usize {
         self.content_length
     }
 
