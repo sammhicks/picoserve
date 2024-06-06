@@ -45,13 +45,10 @@ impl FormatBuffer {
     pub fn write(
         &mut self,
         value: impl fmt::Display,
-    ) -> Result<&str, FormatBufferWriteError<&[u8]>> {
+    ) -> Result<&[u8], FormatBufferWriteError<&[u8]>> {
         use fmt::Write;
         write!(self, "{value}")
-            .map(|()| {
-                // Safety: We've just written UTF8 data
-                unsafe { core::str::from_utf8_unchecked(self.data.as_slice()) }
-            })
+            .map(|()| self.data.as_slice())
             .map_err(|fmt::Error| match self.error_state {
                 FormatBufferWriteError::FormatError => FormatBufferWriteError::FormatError,
                 FormatBufferWriteError::OutOfSpace(()) => {
@@ -70,7 +67,7 @@ pub trait WriteExt: Write {
 
         loop {
             match FormatBuffer::new(ignore_count).write(args) {
-                Ok(data) => return self.write_all(data.as_bytes()).await,
+                Ok(data) => return self.write_all(data).await,
                 Err(FormatBufferWriteError::FormatError) => return Ok(()),
                 Err(FormatBufferWriteError::OutOfSpace(data)) => {
                     self.write_all(data).await?;

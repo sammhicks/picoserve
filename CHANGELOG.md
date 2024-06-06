@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - `FrameWriter` now implements flush, which just flushes its internal writer. Resolves potential future correctness issues.
+- Removed unnessessary `unsafe` code in `FormatBuffer`
 
 ## [0.11.0] - 2024-05-30
 
