@@ -570,6 +570,10 @@ impl<'w, W: Write> Write for FrameWriter<'w, W> {
             .await
             .map(|_| data.len())
     }
+
+    async fn flush(&mut self) -> Result<(), Self::Error> {
+        self.tx.flush().await
+    }
 }
 
 /// Implement [WebSocketCallback] to handle and sent web socket messages.
