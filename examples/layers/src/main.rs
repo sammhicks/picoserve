@@ -50,8 +50,9 @@ impl<State, PathParameters> picoserve::routing::Layer<State, PathParameters> for
     type NextPathParameters = PathParameters;
 
     async fn call_layer<
-        R: Read,
-        NextLayer: picoserve::routing::Next<R, Self::NextState, Self::NextPathParameters>,
+        'a,
+        R: Read + 'a,
+        NextLayer: picoserve::routing::Next<'a, R, Self::NextState, Self::NextPathParameters>,
         W: ResponseWriter<Error = R::Error>,
     >(
         &self,

@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+### Added
+
+- [Layers](https://docs.rs/picoserve/latest/picoserve/routing/trait.Layer.html) can take ownership of requests, allowing them to:
+  - Route requests to a different Router
+  - Not call the next layer, but return a response
+
+## [0.11.1] - 2024-06-06
+
 ### Fixed
 
 - `FrameWriter` now implements flush, which just flushes its internal writer. Resolves potential future correctness issues.

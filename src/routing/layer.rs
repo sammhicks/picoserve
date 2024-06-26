@@ -7,7 +7,7 @@ use crate::{
 use super::{sealed::Sealed, MethodHandler, PathRouter, ResponseWriter};
 
 /// The remainer of a middleware stack, including the handler.
-pub trait Next<R: Read, State, PathParameters>: Sealed {
+pub trait Next<'a, R: Read + 'a, State, PathParameters>: Sealed + Sized {
     /// Run the next layer, writing the final response to the [ResponseWriter]
     async fn run<W: ResponseWriter<Error = R::Error>>(
         self,
@@ -15,6 +15,14 @@ pub trait Next<R: Read, State, PathParameters>: Sealed {
         path_parameters: PathParameters,
         response_writer: W,
     ) -> Result<ResponseSent, W::Error>;
+
+    fn into_request(self) -> Request<'a, R>;
+
+    async fn into_connection(
+        self,
+    ) -> Result<crate::response::Connection<'a, impl Read<Error = R::Error>>, R::Error> {
+        self.into_request().body_connection.finalize().await
+    }
 }
 
 /// A middleware "layer", which can be used to inspect requests and transform responses.
@@ -37,8 +45,9 @@ pub trait Layer<State, PathParameters> {
 
     /// Call the current layer, passing inner layers
     async fn call_layer<
-        R: Read,
-        NextLayer: Next<R, Self::NextState, Self::NextPathParameters>,
+        'a,
+        R: Read + 'a,
+        NextLayer: Next<'a, R, Self::NextState, Self::NextPathParameters>,
         W: ResponseWriter<Error = R::Error>,
     >(
         &self,
@@ -58,7 +67,7 @@ struct NextMethodRouterLayer<'a, R: Read, N> {
 impl<'a, R: Read, N> Sealed for NextMethodRouterLayer<'a, R, N> {}
 
 impl<'a, R: Read, State, PathParameters, N: MethodHandler<State, PathParameters>>
-    Next<R, State, PathParameters> for NextMethodRouterLayer<'a, R, N>
+    Next<'a, R, State, PathParameters> for NextMethodRouterLayer<'a, R, N>
 {
     async fn run<W: ResponseWriter<Error = R::Error>>(
         self,
@@ -69,6 +78,10 @@ impl<'a, R: Read, State, PathParameters, N: MethodHandler<State, PathParameters>
         self.next
             .call_method_handler(state, path_parameters, self.request, response_writer)
             .await
+    }
+
+    fn into_request(self) -> Request<'a, R> {
+        self.request
     }
 }
 
@@ -119,7 +132,7 @@ struct NextPathRouterLayer<'a, R: Read, N> {
 impl<'a, R: Read, N> Sealed for NextPathRouterLayer<'a, R, N> {}
 
 impl<'a, R: Read, State, CurrentPathParameters, N: PathRouter<State, CurrentPathParameters>>
-    Next<R, State, CurrentPathParameters> for NextPathRouterLayer<'a, R, N>
+    Next<'a, R, State, CurrentPathParameters> for NextPathRouterLayer<'a, R, N>
 {
     async fn run<W: ResponseWriter<Error = R::Error>>(
         self,
@@ -136,6 +149,10 @@ impl<'a, R: Read, State, CurrentPathParameters, N: PathRouter<State, CurrentPath
                 response_writer,
             )
             .await
+    }
+
+    fn into_request(self) -> Request<'a, R> {
+        self.request
     }
 }
 

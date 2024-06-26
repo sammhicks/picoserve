@@ -139,6 +139,13 @@ impl<'a> fmt::Debug for HeaderName<'a> {
     }
 }
 
+#[cfg(feature = "defmt")]
+impl<'a> defmt::Format for HeaderName<'a> {
+    fn format(&self, fmt: defmt::Formatter) {
+        self.name.format(fmt)
+    }
+}
+
 impl<'a> HeaderName<'a> {
     pub fn as_raw(&self) -> &'a [u8] {
         self.name
@@ -181,6 +188,13 @@ pub struct HeaderValue<'a> {
 impl<'a> fmt::Debug for HeaderValue<'a> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         escape_debug(self.value, f)
+    }
+}
+
+#[cfg(feature = "defmt")]
+impl<'a> defmt::Format for HeaderValue<'a> {
+    fn format(&self, fmt: defmt::Formatter) {
+        self.value.format(fmt)
     }
 }
 

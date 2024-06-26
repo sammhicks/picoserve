@@ -1248,4 +1248,22 @@ impl<State, CurrentPathParameters, RouterInner: PathRouter<State, CurrentPathPar
             _data: PhantomData,
         }
     }
+
+    pub async fn handle_request<R: Read<Error = W::Error>, W: ResponseWriter>(
+        &self,
+        state: &State,
+        current_path_parameters: CurrentPathParameters,
+        request: Request<'_, R>,
+        response_writer: W,
+    ) -> Result<ResponseSent, W::Error> {
+        self.router
+            .call_path_router(
+                state,
+                current_path_parameters,
+                request.parts.path(),
+                request,
+                response_writer,
+            )
+            .await
+    }
 }
