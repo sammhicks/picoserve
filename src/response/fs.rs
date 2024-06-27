@@ -1,4 +1,4 @@
-//! Static files and directories
+//! Static files and directories.
 
 use core::fmt;
 

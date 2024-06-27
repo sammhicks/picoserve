@@ -27,6 +27,7 @@ use crate::{
     KeepAlive, ResponseSent,
 };
 
+pub mod chunked;
 pub mod fs;
 pub mod json;
 pub mod sse;

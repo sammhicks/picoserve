@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
+    "examples/chunked_response",
     "examples/custom_extractor",
     "examples/form",
     "examples/hello_world",
