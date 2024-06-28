@@ -9,7 +9,7 @@ pub struct ChunkWriter<W: crate::io::Write> {
 }
 
 impl<W: crate::io::Write> ChunkWriter<W> {
-    /// Write a chunk to the client
+    /// Write a chunk to the client.
     pub async fn write_chunk(&mut self, chunk: &[u8]) -> Result<(), W::Error> {
         use crate::io::WriteExt;
 
@@ -25,11 +25,36 @@ impl<W: crate::io::Write> ChunkWriter<W> {
         self.writer.flush().await
     }
 
-    /// Finish writing chunks
+    /// Finish writing chunks.
     pub async fn finalize(mut self) -> Result<ChunksWritten, W::Error> {
         self.writer.write_all(b"0\r\n\r\n").await?;
+        self.writer.flush().await?;
 
         Ok(ChunksWritten(()))
+    }
+
+    /// Write formatted text as a single chunk. This is typically called using the `write!` macro.
+    pub async fn write_fmt(&mut self, args: core::fmt::Arguments<'_>) -> Result<(), W::Error> {
+        use crate::io::WriteExt;
+        use core::fmt::Write;
+
+        let mut chunk_size = 0;
+
+        if super::MeasureFormatSize(&mut chunk_size)
+            .write_fmt(args)
+            .is_err()
+        {
+            log_warn!("Skipping writing chunk due to Format Error");
+
+            return Ok(());
+        }
+
+        if chunk_size == 0 {
+            return Ok(());
+        }
+
+        write!(&mut self.writer, "{chunk_size:x}\r\n{args}\r\n",).await?;
+        self.writer.flush().await
     }
 }
 
@@ -64,8 +89,8 @@ impl<C: Chunks> ChunkedResponse<C> {
 
         impl<C: Chunks> super::Body for Body<C> {
             async fn write_response_body<
-                R: embedded_io_async::Read,
-                W: embedded_io_async::Write<Error = R::Error>,
+                R: crate::io::Read,
+                W: crate::io::Write<Error = R::Error>,
             >(
                 self,
                 _connection: super::Connection<'_, R>,

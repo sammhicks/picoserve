@@ -40,11 +40,11 @@ pub use sse::EventStream;
 pub use status::StatusCode;
 pub use ws::WebSocketUpgrade;
 
-struct MeasureFormatSize(pub usize);
+struct MeasureFormatSize<'a>(&'a mut usize);
 
-impl fmt::Write for MeasureFormatSize {
+impl<'a> fmt::Write for MeasureFormatSize<'a> {
     fn write_str(&mut self, s: &str) -> fmt::Result {
-        self.0 += s.len();
+        *self.0 += s.len();
 
         Ok(())
     }
@@ -360,8 +360,8 @@ impl<'a> Content for fmt::Arguments<'a> {
 
     fn content_length(&self) -> usize {
         use fmt::Write;
-        let mut size = MeasureFormatSize(0);
-        write!(&mut size, "{self}").map_or(0, |()| size.0)
+        let mut size = 0;
+        write!(MeasureFormatSize(&mut size), "{self}").map_or(0, |()| size)
     }
 
     async fn write_content<R: Read, W: Write>(

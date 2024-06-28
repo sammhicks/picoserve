@@ -481,10 +481,12 @@ impl<T: serde::Serialize> super::Content for JsonBody<T> {
         match &self.0 {
             JsonStream::Short { buffer } => buffer.data.len(),
             JsonStream::Long { buffer: _, value } => {
-                let mut content_length = super::MeasureFormatSize(0);
+                let mut content_length = 0;
                 value
-                    .serialize(Serializer(&mut content_length))
-                    .map_or(0, |()| content_length.0)
+                    .serialize(Serializer(&mut super::MeasureFormatSize(
+                        &mut content_length,
+                    )))
+                    .map_or(0, |()| content_length)
             }
         }
     }

@@ -68,7 +68,10 @@ pub trait WriteExt: Write {
         loop {
             match FormatBuffer::new(ignore_count).write(args) {
                 Ok(data) => return self.write_all(data).await,
-                Err(FormatBufferWriteError::FormatError) => return Ok(()),
+                Err(FormatBufferWriteError::FormatError) => {
+                    log_warn!("Skipping writing due to Format Error");
+                    return Ok(());
+                }
                 Err(FormatBufferWriteError::OutOfSpace(data)) => {
                     self.write_all(data).await?;
                     ignore_count += data.len();
