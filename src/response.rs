@@ -28,6 +28,7 @@ use crate::{
 };
 
 pub mod chunked;
+pub mod custom;
 pub mod fs;
 pub mod json;
 pub mod sse;
@@ -259,11 +260,7 @@ pub trait Content {
     fn content_length(&self) -> usize;
 
     /// Write the content data.
-    async fn write_content<R: Read, W: Write<Error = R::Error>>(
-        self,
-        connection: Connection<'_, R>,
-        writer: W,
-    ) -> Result<(), W::Error>;
+    async fn write_content<W: Write>(self, writer: W) -> Result<(), W::Error>;
 }
 
 #[doc(hidden)]
@@ -272,10 +269,10 @@ pub struct ContentBody<C: Content>(C);
 impl<C: Content> Body for ContentBody<C> {
     async fn write_response_body<R: Read, W: Write<Error = R::Error>>(
         self,
-        connection: Connection<'_, R>,
+        _connection: Connection<'_, R>,
         writer: W,
     ) -> Result<(), W::Error> {
-        self.0.write_content(connection, writer).await
+        self.0.write_content(writer).await
     }
 }
 
@@ -288,11 +285,7 @@ impl<'a> Content for &'a [u8] {
         self.len()
     }
 
-    async fn write_content<R: Read, W: Write<Error = R::Error>>(
-        self,
-        _connection: Connection<'_, R>,
-        mut writer: W,
-    ) -> Result<(), W::Error> {
+    async fn write_content<W: Write>(self, mut writer: W) -> Result<(), W::Error> {
         writer.write_all(self).await
     }
 }
@@ -307,12 +300,8 @@ impl Content for alloc::vec::Vec<u8> {
         self.as_slice().content_length()
     }
 
-    async fn write_content<R: Read, W: Write<Error = R::Error>>(
-        self,
-        connection: Connection<'_, R>,
-        writer: W,
-    ) -> Result<(), W::Error> {
-        self.as_slice().write_content(connection, writer).await
+    async fn write_content<W: Write>(self, writer: W) -> Result<(), W::Error> {
+        self.as_slice().write_content(writer).await
     }
 }
 
@@ -325,12 +314,8 @@ impl<'a> Content for &'a str {
         self.len()
     }
 
-    async fn write_content<R: Read, W: Write<Error = R::Error>>(
-        self,
-        connection: Connection<'_, R>,
-        writer: W,
-    ) -> Result<(), W::Error> {
-        self.as_bytes().write_content(connection, writer).await
+    async fn write_content<W: Write>(self, writer: W) -> Result<(), W::Error> {
+        self.as_bytes().write_content(writer).await
     }
 }
 
@@ -344,12 +329,8 @@ impl Content for alloc::string::String {
         self.as_str().content_length()
     }
 
-    async fn write_content<R: Read, W: Write<Error = R::Error>>(
-        self,
-        connection: Connection<'_, R>,
-        writer: W,
-    ) -> Result<(), W::Error> {
-        self.as_str().write_content(connection, writer).await
+    async fn write_content<W: Write>(self, writer: W) -> Result<(), W::Error> {
+        self.as_str().write_content(writer).await
     }
 }
 
@@ -364,23 +345,19 @@ impl<'a> Content for fmt::Arguments<'a> {
         write!(MeasureFormatSize(&mut size), "{self}").map_or(0, |()| size)
     }
 
-    async fn write_content<R: Read, W: Write>(
-        self,
-        _connection: Connection<'_, R>,
-        mut writer: W,
-    ) -> Result<(), W::Error> {
+    async fn write_content<W: Write>(self, mut writer: W) -> Result<(), W::Error> {
         use crate::io::WriteExt;
         write!(writer, "{}", self).await
     }
 }
 
 #[doc(hidden)]
-pub struct BodyHeaders {
+pub struct ContentHeaders {
     content_type: &'static str,
     content_length: usize,
 }
 
-impl BodyHeaders {
+impl ContentHeaders {
     fn new(body: &impl Content) -> Self {
         Self {
             content_type: body.content_type(),
@@ -389,7 +366,7 @@ impl BodyHeaders {
     }
 }
 
-impl HeadersIter for BodyHeaders {
+impl HeadersIter for ContentHeaders {
     async fn for_each_header<F: ForEachHeader>(self, mut f: F) -> Result<F::Output, F::Error> {
         f.call("Content-Type", self.content_type).await?;
         f.call("Content-Length", self.content_length).await?;
@@ -404,12 +381,12 @@ pub struct Response<H: HeadersIter, B: Body> {
     pub(crate) body: B,
 }
 
-impl<B: Content> Response<BodyHeaders, ContentBody<B>> {
+impl<B: Content> Response<ContentHeaders, ContentBody<B>> {
     /// Creates a response from a HTTP status code and body with content. The Content-Type and Content-Length headers are generated from the values returned by the Body.
     pub fn new(status_code: StatusCode, body: B) -> Self {
         Self {
             status_code,
-            headers: BodyHeaders::new(&body),
+            headers: ContentHeaders::new(&body),
             body: ContentBody(body),
         }
     }

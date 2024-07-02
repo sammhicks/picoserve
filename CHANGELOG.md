@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Route requests to a different Router
   - Not call the next layer, but return a response
 - Implemented [Chunked](https://docs.rs/picoserve/latest/picoserve/response/chunked/struct.ChunkedResponse.html) Transfer Encoding
+- Added [CustomResponse](https://docs.rs/picoserve/latest/picoserve/response/custom/index.html), allowing for responses with a body that doesn’t match a regular HTTP response.
 
 ## [0.11.1] - 2024-06-06
 

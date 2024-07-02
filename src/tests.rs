@@ -483,19 +483,8 @@ async fn upgrade_with_request_body() {
         upgrade_token: extract::UpgradeToken,
     }
 
-    impl response::Content for UpgradeCheck {
-        fn content_type(&self) -> &'static str {
-            "text/plain"
-        }
-
-        fn content_length(&self) -> usize {
-            0
-        }
-
-        async fn write_content<
-            R: embedded_io_async::Read,
-            W: embedded_io_async::Write<Error = R::Error>,
-        >(
+    impl response::Body for UpgradeCheck {
+        async fn write_response_body<R: io::Read, W: io::Write<Error = R::Error>>(
             self,
             connection: response::Connection<'_, R>,
             _writer: W,
@@ -582,9 +571,13 @@ async fn upgrade_with_request_body() {
 
             let connection = request.body_connection.finalize().await?;
 
-            response::Response::new(response::StatusCode::OK, UpgradeCheck { upgrade_token })
-                .write_to(connection, response_writer)
-                .await
+            response::Response {
+                status_code: response::StatusCode::OK,
+                headers: [("Content-Type", "text/plain"), ("Content-Length", "0")],
+                body: UpgradeCheck { upgrade_token },
+            }
+            .write_to(connection, response_writer)
+            .await
         }
     }
 

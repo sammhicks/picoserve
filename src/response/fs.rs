@@ -180,11 +180,7 @@ impl super::Content for File {
         self.body.len()
     }
 
-    async fn write_content<R: Read, W: Write>(
-        self,
-        _connection: super::Connection<'_, R>,
-        mut writer: W,
-    ) -> Result<(), W::Error> {
+    async fn write_content<W: Write>(self, mut writer: W) -> Result<(), W::Error> {
         writer.write_all(self.body).await
     }
 }

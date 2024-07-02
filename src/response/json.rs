@@ -439,7 +439,7 @@ impl<T: serde::Serialize> JsonStream<T> {
 }
 
 impl<T: serde::Serialize> JsonStream<T> {
-    async fn write_json_value<W: Write>(self, writer: &mut W) -> Result<(), W::Error> {
+    async fn write_json_value<W: Write>(self, mut writer: W) -> Result<(), W::Error> {
         match self {
             JsonStream::Short { buffer } => writer.write_all(&buffer.data).await,
             JsonStream::Long { mut buffer, value } => {
@@ -491,12 +491,8 @@ impl<T: serde::Serialize> super::Content for JsonBody<T> {
         }
     }
 
-    async fn write_content<R: crate::io::Read, W: Write>(
-        self,
-        _connection: super::Connection<'_, R>,
-        mut writer: W,
-    ) -> Result<(), W::Error> {
-        self.0.write_json_value(&mut writer).await
+    async fn write_content<W: Write>(self, writer: W) -> Result<(), W::Error> {
+        self.0.write_json_value(writer).await
     }
 }
 
