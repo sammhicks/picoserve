@@ -18,13 +18,13 @@ embassy-executor = { version = "0.5.0", features = ["arch-cortex-m", "executor-t
 embassy-futures = "0.1.1"
 embassy-net = { version = "0.4.0", features = ["tcp", "proto-ipv4", "medium-ethernet"] }
 embassy-rp = { version = "0.1.0", features = ["critical-section-impl", "time-driver"] }
-embassy-sync = "0.5.0"
-embassy-time = "0.3.0"
-embassy-usb-logger = "0.1.0"
-embedded-io-async = "0.6.0"
-log = { version = "0.4.20", default-features = false }
+embassy-sync = "0.6.0"
+embassy-time = "0.3.1"
+embassy-usb-logger = "0.2.0"
+embedded-io-async = "0.6.1"
+log = { version = "0.4.22", default-features = false }
 panic-persist = { version = "0.3.0", features = ["utf8"] }
 picoserve = { path = "../..", features = ["embassy"] }
-portable-atomic = { version = "1.6.0", features = ["critical-section"], default-features = false }
+portable-atomic = { version = "1.7.0", features = ["critical-section"], default-features = false }
 rand = { version = "0.8.5", default-features = false }
-static_cell = { version = "2.0.0", features = ["nightly"] }
+static_cell = { version = "2.1.0", features = ["nightly"] }
