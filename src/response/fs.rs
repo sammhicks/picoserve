@@ -34,8 +34,11 @@ impl fmt::Display for ETag {
 
 impl PartialEq<[u8]> for ETag {
     fn eq(&self, other: &[u8]) -> bool {
-        fn decode_hex_nibble(c: Option<u8>) -> Option<u8> {
-            Some(match c? {
+        struct Eq;
+
+        fn eq(self_bytes: &[u8], other_str_bytes: &[u8]) -> Option<Eq> {
+            fn decode_hex_nibble(c: u8) -> Option<u8> {
+                Some(match c {
                 c @ b'0'..=b'9' => c - b'0',
                 c @ b'a'..=b'f' => 10 + c - b'a',
                 c @ b'A'..=b'F' => 10 + c - b'A',
@@ -43,24 +46,27 @@ impl PartialEq<[u8]> for ETag {
             })
         }
 
-        let mut bytes = other.iter().copied();
+            let mut other_str_bytes = other_str_bytes
+                .strip_prefix(b"\"")?
+                .strip_suffix(b"\"")?
+                .iter()
+                .copied();
 
-        for b in self.0 {
-            let Some(c0) = decode_hex_nibble(bytes.next()) else {
-                return false;
-            };
-            let Some(c1) = decode_hex_nibble(bytes.next()) else {
-                return false;
-            };
+            for &self_byte in self_bytes {
+                let other_byte0 = decode_hex_nibble(other_str_bytes.next()?)?;
+                let other_byte1 = decode_hex_nibble(other_str_bytes.next()?)?;
 
-            let c = 0x10 * c0 + c1;
+                let other_byte = 0x10 * other_byte0 + other_byte1;
 
-            if b != c {
-                return false;
+                if self_byte != other_byte {
+                    return None;
             }
         }
 
-        true
+            other_str_bytes.next().is_none().then_some(Eq)
+        }
+
+        matches!(eq(&self.0, other), Some(Eq))
     }
 }
 

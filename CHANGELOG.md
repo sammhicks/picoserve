@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - No longer flushing forever if the already closed while an `embassy_net::tcp::TcpSocket` socket is shutting down.
+- Fixed bug in `<ETag as PartialEq<[u8]>>::eq`
 
 ### Changed
 
