@@ -5,30 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## Unreleased
+## [0.12.0] - 2024-07-22
 
 ### Breaking
 
-- Deprecated and removed `ShutdownMethod`, `Config::shutdown_connection_on_close`, `Config::abort_connection_on_close`, `Socket::abort`
-- `<embassy_net::tcp::TcpSocket as picoserve::io::Socket>::shutdown` now aborts the flush once the socket state is `Closed`
-- [`File`](https://docs.rs/picoserve/latest/picoserve/response/fs/struct.File.html) no longer implements [`IntoResponse`](https://docs.rs/picoserve/latest/picoserve/response/trait.IntoResponse.html)
+- Deprecated and removed `ShutdownMethod`, `Config::shutdown_connection_on_close`, `Config::abort_connection_on_close`, `Socket::abort`.
+- `<embassy_net::tcp::TcpSocket as picoserve::io::Socket>::shutdown` now aborts the flush once the socket state is `Closed`.
+- [`File`](https://docs.rs/picoserve/0.12.0/picoserve/response/fs/struct.File.html) no longer implements [`IntoResponse`](https://docs.rs/picoserve/0.12.0/picoserve/response/trait.IntoResponse.html).
 
 ### Fixed
 
 - No longer flushing forever if the already closed while an `embassy_net::tcp::TcpSocket` socket is shutting down.
-- Fixed bug in `<ETag as PartialEq<[u8]>>::eq`
+- Fixed bug in `<ETag as PartialEq<[u8]>>::eq`.
 
 ### Changed
 
-- Changed where the socket is flushed, avoid double-flushes
+- Changed where the socket is flushed, avoid double-flushes.
 
 ### Added
 
-- [Layers](https://docs.rs/picoserve/latest/picoserve/routing/trait.Layer.html) can take ownership of requests, allowing them to:
-  - Route requests to a different Router
-  - Not call the next layer, but return a response
-- Implemented [Chunked](https://docs.rs/picoserve/latest/picoserve/response/chunked/struct.ChunkedResponse.html) Transfer Encoding
-- Added [CustomResponse](https://docs.rs/picoserve/latest/picoserve/response/custom/index.html), allowing for responses with a body that doesn’t match a regular HTTP response.
+- [Layers](https://docs.rs/picoserve/0.12.0/picoserve/routing/trait.Layer.html) can take ownership of requests, allowing them to:
+  - Route requests to a different Router.
+  - Not call the next layer, but return a response.
+- Implemented [Chunked](https://docs.rs/picoserve/0.12.0/picoserve/response/chunked/struct.ChunkedResponse.html) Transfer Encoding.
+- Added [CustomResponse](https://docs.rs/picoserve/0.12.0/picoserve/response/custom/index.html), allowing for responses with a body that doesn’t match a regular HTTP response.
 
 ## [0.11.1] - 2024-06-06
 
