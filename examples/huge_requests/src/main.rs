@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use picoserve::{io::Read, response::IntoResponse, routing::get};
+use picoserve::{io::Read, response::IntoResponse, routing::get_service};
 
 struct MeasureBody;
 
@@ -43,7 +43,7 @@ async fn main() -> anyhow::Result<()> {
     let app = std::rc::Rc::new(
         picoserve::Router::new().route(
             "/",
-            get(|| picoserve::response::File::html(include_str!("index.html")))
+            get_service(picoserve::response::File::html(include_str!("index.html")))
                 .post_service(MeasureBody),
         ),
     );

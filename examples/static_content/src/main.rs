@@ -1,25 +1,27 @@
 use std::time::Duration;
 
-use picoserve::routing::get_service;
-
-#[derive(serde::Deserialize)]
-struct FormValue {
-    a: i32,
-    b: heapless::String<32>,
-}
+use picoserve::{
+    response::{Directory, File},
+    routing::get_service,
+};
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> anyhow::Result<()> {
     let port = 8000;
 
-    let app = std::rc::Rc::new(picoserve::Router::new().route(
-        "/",
-        get_service(picoserve::response::File::html(include_str!("index.html"))).post(
-            |picoserve::extract::Form(FormValue { a, b })| {
-                picoserve::response::DebugValue((("a", a), ("b", b)))
-            },
-        ),
-    ));
+    let app = std::rc::Rc::new(
+        picoserve::Router::new()
+            .route("/", get_service(File::html(include_str!("index.html"))))
+            .nest_service(
+                "/static",
+                const {
+                    Directory {
+                        files: &[("index.css", File::css(include_str!("index.css")))],
+                        ..Directory::DEFAULT
+                    }
+                },
+            ),
+    );
 
     let config = picoserve::Config::new(picoserve::Timeouts {
         start_read_request: Some(Duration::from_secs(5)),

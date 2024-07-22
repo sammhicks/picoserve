@@ -12,7 +12,10 @@ use embassy_rp::{
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, mutex::Mutex};
 use embassy_time::Duration;
 use panic_persist as _;
-use picoserve::{response::ws, routing::get};
+use picoserve::{
+    response::ws,
+    routing::{get, get_service},
+};
 use rand::Rng;
 use static_cell::make_static;
 
@@ -205,15 +208,17 @@ async fn main(spawner: embassy_executor::Spawner) {
         picoserve::Router::new()
             .route(
                 "/",
-                get(|| picoserve::response::File::html(include_str!("index.html"))),
+                get_service(picoserve::response::File::html(include_str!("index.html"))),
             )
             .route(
                 "/index.css",
-                get(|| picoserve::response::File::css(include_str!("index.css"))),
+                get_service(picoserve::response::File::css(include_str!("index.css"))),
             )
             .route(
                 "/index.js",
-                get(|| picoserve::response::File::javascript(include_str!("index.js"))),
+                get_service(picoserve::response::File::javascript(include_str!(
+                    "index.js"
+                ))),
             )
             .route(
                 "/ws",

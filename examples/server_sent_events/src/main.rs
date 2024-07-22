@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use picoserve::{
     response::{self, StatusCode},
-    routing::{get, post},
+    routing::{get, get_service, post},
     ResponseSent,
 };
 
@@ -88,7 +88,7 @@ async fn main() -> anyhow::Result<()> {
             picoserve::Router::new()
                 .route(
                     "/",
-                    get(|| response::File::html(include_str!("index.html"))),
+                    get_service(response::File::html(include_str!("index.html"))),
                 )
                 .route(
                     "/set_message",
@@ -102,35 +102,36 @@ async fn main() -> anyhow::Result<()> {
                     "/events",
                     get(move || response::EventStream(Events(messages_rx.clone()))),
                 )
-                .nest_service("/static", {
-                    const STATIC_FILES: response::Directory = response::Directory {
-                        files: &[],
-                        sub_directories: &[
-                            (
-                                "styles",
-                                response::Directory {
-                                    files: &[(
-                                        "index.css",
-                                        response::File::css(include_str!("index.css")),
-                                    )],
-                                    sub_directories: &[],
-                                },
-                            ),
-                            (
-                                "scripts",
-                                response::Directory {
-                                    files: &[(
-                                        "index.js",
-                                        response::File::css(include_str!("index.js")),
-                                    )],
-                                    sub_directories: &[],
-                                },
-                            ),
-                        ],
-                    };
-
-                    STATIC_FILES
-                }),
+                .nest_service(
+                    "/static",
+                    const {
+                        response::Directory {
+                            files: &[],
+                            sub_directories: &[
+                                (
+                                    "styles",
+                                    response::Directory {
+                                        files: &[(
+                                            "index.css",
+                                            response::File::css(include_str!("index.css")),
+                                        )],
+                                        ..response::Directory::DEFAULT
+                                    },
+                                ),
+                                (
+                                    "scripts",
+                                    response::Directory {
+                                        files: &[(
+                                            "index.js",
+                                            response::File::css(include_str!("index.js")),
+                                        )],
+                                        ..response::Directory::DEFAULT
+                                    },
+                                ),
+                            ],
+                        }
+                    },
+                ),
         );
 
     let config = picoserve::Config::new(picoserve::Timeouts {

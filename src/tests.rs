@@ -303,7 +303,7 @@ async fn file_routing() {
             STYLES_DIRECTORY,
             Directory {
                 files: &[(CSS_PATH, File::css(CSS))],
-                sub_directories: &[],
+                ..Directory::DEFAULT
             },
         )],
     };
@@ -352,6 +352,53 @@ async fn file_routing() {
             StatusCode::NOT_FOUND,
             "{path} should not have been found"
         );
+    }
+}
+
+#[tokio::test]
+/// Test file and directory routing
+async fn file_etag_based_cache() {
+    const HTML: &str = "<h1>Hello World</h1>";
+
+    let app = Router::new().route("/", routing::get_service(response::File::html(HTML)));
+
+    let etag;
+
+    {
+        let (parts, body) = run_single_request_test(
+            &app,
+            hyper::Request::get("/").body(Default::default()).unwrap(),
+        )
+        .await;
+
+        assert_eq!(parts.status, StatusCode::OK);
+        assert_eq!(body, HTML.as_bytes());
+
+        etag = parts
+            .headers
+            .get("etag")
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .to_owned();
+
+        assert!(etag.starts_with('"'));
+        assert!(etag.ends_with('"'));
+        assert_eq!(etag.len(), 42);
+    }
+
+    {
+        let (parts, body) = run_single_request_test(
+            &app,
+            hyper::Request::get("/")
+                .header("If-None-Match", etag)
+                .body(Default::default())
+                .unwrap(),
+        )
+        .await;
+
+        assert_eq!(parts.status, StatusCode::NOT_MODIFIED);
+        assert_eq!(&body[..], b"");
     }
 }
 

@@ -1,6 +1,9 @@
 //! Route requests to the appropriate handler.
 //!
-//! At its core are "handler" functions, which are async functions with zero or more ["extractors"](crate::extract)
+//! At its core are "handler" functions, which are async functions with zero or more ["extractors"](crate::extract) and which return ["responses"](crate::response::IntoResponse).
+//! There are also "request handler services", which are types that implement ["RequestHandlerService"], such as:
+//!     + [File](crate::response::fs::File)
+//!     + [Directory](crate::response::fs::File)
 
 use core::{fmt, future::IntoFuture, marker::PhantomData, str::FromStr};
 

@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Deprecated and removed `ShutdownMethod`, `Config::shutdown_connection_on_close`, `Config::abort_connection_on_close`, `Socket::abort`
 - `<embassy_net::tcp::TcpSocket as picoserve::io::Socket>::shutdown` now aborts the flush once the socket state is `Closed`
+- [`File`](https://docs.rs/picoserve/latest/picoserve/response/fs/struct.File.html) no longer implements [`IntoResponse`](https://docs.rs/picoserve/latest/picoserve/response/trait.IntoResponse.html)
 
 ### Fixed
 

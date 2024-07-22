@@ -39,12 +39,12 @@ impl PartialEq<[u8]> for ETag {
         fn eq(self_bytes: &[u8], other_str_bytes: &[u8]) -> Option<Eq> {
             fn decode_hex_nibble(c: u8) -> Option<u8> {
                 Some(match c {
-                c @ b'0'..=b'9' => c - b'0',
-                c @ b'a'..=b'f' => 10 + c - b'a',
-                c @ b'A'..=b'F' => 10 + c - b'A',
-                _ => return None,
-            })
-        }
+                    c @ b'0'..=b'9' => c - b'0',
+                    c @ b'a'..=b'f' => 10 + c - b'a',
+                    c @ b'A'..=b'F' => 10 + c - b'A',
+                    _ => return None,
+                })
+            }
 
             let mut other_str_bytes = other_str_bytes
                 .strip_prefix(b"\"")?
@@ -60,8 +60,8 @@ impl PartialEq<[u8]> for ETag {
 
                 if self_byte != other_byte {
                     return None;
+                }
             }
-        }
 
             other_str_bytes.next().is_none().then_some(Eq)
         }
@@ -86,7 +86,7 @@ impl super::HeadersIter for ETag {
     }
 }
 
-/// [RequestHandler] that serves a single file.
+/// [RequestHandlerService] that serves a single file.
 #[derive(Debug, Clone)]
 pub struct File {
     content_type: &'static str,
@@ -134,15 +134,6 @@ impl File {
     pub const fn javascript(body: &'static str) -> Self {
         Self::with_content_type("application/javascript; charset=utf-8", body.as_bytes())
     }
-
-    /// Convert into a [super::Response] with a status code of "OK"
-    pub fn into_response(self) -> super::Response<impl super::HeadersIter, impl super::Body> {
-        let etag = self.etag.clone();
-        let headers = self.headers;
-        super::Response::ok(self)
-            .with_headers(headers)
-            .with_headers(etag)
-    }
 }
 
 impl<State, PathParameters> crate::routing::RequestHandlerService<State, PathParameters> for File {
@@ -171,48 +162,31 @@ impl<State, PathParameters> crate::routing::RequestHandlerService<State, PathPar
             }
         }
 
-        self.clone()
+        struct FileContent<'a>(&'a File);
+
+        impl<'a> super::Content for FileContent<'a> {
+            fn content_type(&self) -> &'static str {
+                self.0.content_type
+            }
+
+            fn content_length(&self) -> usize {
+                self.0.body.len()
+            }
+
+            async fn write_content<W: Write>(self, mut writer: W) -> Result<(), W::Error> {
+                writer.write_all(self.0.body).await
+            }
+        }
+
+        super::Response::ok(FileContent(self))
+            .with_headers(self.headers)
+            .with_headers(self.etag.clone())
             .write_to(request.body_connection.finalize().await?, response_writer)
             .await
     }
 }
 
-impl super::Content for File {
-    fn content_type(&self) -> &'static str {
-        self.content_type
-    }
-
-    fn content_length(&self) -> usize {
-        self.body.len()
-    }
-
-    async fn write_content<W: Write>(self, mut writer: W) -> Result<(), W::Error> {
-        writer.write_all(self.body).await
-    }
-}
-
-impl super::IntoResponse for File {
-    async fn write_to<R: Read, W: super::ResponseWriter<Error = R::Error>>(
-        self,
-        connection: super::Connection<'_, R>,
-        response_writer: W,
-    ) -> Result<ResponseSent, W::Error> {
-        response_writer
-            .write_response(connection, self.into_response())
-            .await
-    }
-}
-
-impl core::future::IntoFuture for File {
-    type Output = Self;
-    type IntoFuture = core::future::Ready<Self>;
-
-    fn into_future(self) -> Self::IntoFuture {
-        core::future::ready(self)
-    }
-}
-
-/// [PathRouter] that serves a single file.
+/// [PathRouter] that serves a single file based on the request path.
 #[derive(Debug, Default)]
 pub struct Directory {
     /// The files in the directory.
@@ -223,6 +197,11 @@ pub struct Directory {
 }
 
 impl Directory {
+    pub const DEFAULT: Self = Self {
+        files: &[],
+        sub_directories: &[],
+    };
+
     fn matching_file(&self, path: crate::request::Path) -> Option<&File> {
         for (name, file) in self.files.iter() {
             if let Some(crate::request::Path(crate::url_encoded::UrlEncodedString(""))) =

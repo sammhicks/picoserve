@@ -12,6 +12,7 @@ members = [
     "examples/routing_fallback",
     "examples/server_sent_events",
     "examples/state",
+    "examples/static_content",
     "examples/web_sockets"
 ]
 exclude = [
