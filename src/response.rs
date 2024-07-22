@@ -113,6 +113,23 @@ impl<'r, R: Read> Connection<'r, R> {
     pub async fn wait_for_disconnection(self) -> Result<(), R::Error> {
         crate::extract::UpgradeToken::discard_all_data(self).await
     }
+
+    pub async fn run_until_disconnection<T>(
+        self,
+        default: T,
+        action: impl core::future::Future<Output = Result<T, R::Error>>,
+    ) -> Result<T, R::Error> {
+        futures_util::future::select(
+            core::pin::pin!(async {
+                self.wait_for_disconnection().await?;
+                Ok(default)
+            }),
+            core::pin::pin!(action),
+        )
+        .await
+        .factor_first()
+        .0
+    }
 }
 
 pub(crate) struct EmptyReader<E: crate::io::Error>(core::marker::PhantomData<E>);
@@ -270,9 +287,11 @@ impl<C: Content> Body for ContentBody<C> {
     async fn write_response_body<R: Read, W: Write<Error = R::Error>>(
         self,
         _connection: Connection<'_, R>,
-        writer: W,
+        mut writer: W,
     ) -> Result<(), W::Error> {
-        self.0.write_content(writer).await
+        self.0.write_content(&mut writer).await?;
+        writer.flush().await?;
+        Ok(())
     }
 }
 
@@ -522,11 +541,11 @@ impl<W: Write> ResponseWriter for ResponseStream<W> {
             .await?;
 
         self.writer.write_all(b"\r\n").await?;
+        self.writer.flush().await?;
 
         body.write_response_body(connection, &mut self.writer)
-            .await?;
-
-        self.writer.flush().await.map(ResponseSent)
+            .await
+            .map(super::ResponseSent)
     }
 }
 

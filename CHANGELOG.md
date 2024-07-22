@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+### Breaking
+
+- Deprecated and removed `ShutdownMethod`, `Config::shutdown_connection_on_close`, `Config::abort_connection_on_close`, `Socket::abort`
+- `<embassy_net::tcp::TcpSocket as picoserve::io::Socket>::shutdown` now aborts the flush once the socket state is `Closed`
+
+### Fixed
+
+- No longer flushing forever if the already closed while an `embassy_net::tcp::TcpSocket` socket is shutting down.
+
+### Changed
+
+- Changed where the socket is flushed, avoid double-flushes
+
 ### Added
 
 - [Layers](https://docs.rs/picoserve/latest/picoserve/routing/trait.Layer.html) can take ownership of requests, allowing them to:

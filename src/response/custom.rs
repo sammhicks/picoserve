@@ -67,18 +67,12 @@ impl<H: HeadersIter, B: CustomBody> super::IntoResponse for CustomResponse<H, B>
                 connection: crate::response::Connection<'_, R>,
                 mut writer: W,
             ) -> Result<(), W::Error> {
-                *connection.has_been_upgraded = true;
-
-                futures_util::future::select(
-                    core::pin::pin!(async {
+                connection
+                    .run_until_disconnection((), async {
                         self.body.write_response_body(&mut writer).await?;
                         writer.flush().await
-                    }),
-                    core::pin::pin!(connection.wait_for_disconnection()),
-                )
-                .await
-                .factor_first()
-                .0
+                    })
+                    .await
             }
         }
 

@@ -648,9 +648,8 @@ impl<C: WebSocketCallback> super::Body for UpgradedWebSocketBody<C> {
     >(
         self,
         connection: super::Connection<'_, R>,
-        mut writer: W,
+        writer: W,
     ) -> Result<(), W::Error> {
-        writer.flush().await?;
         self.callback
             .run(
                 SocketRx {

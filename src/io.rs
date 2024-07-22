@@ -4,6 +4,18 @@ use core::fmt;
 
 pub use embedded_io_async::{self, Error, ErrorKind, ErrorType, Read, Write};
 
+pub trait ReadExt: Read {
+    async fn discard_all_data(&mut self) -> Result<(), Self::Error> {
+        let mut buffer = [0; 128];
+
+        while self.read(&mut buffer).await? > 0 {}
+
+        Ok(())
+    }
+}
+
+impl<R: Read> ReadExt for R {}
+
 pub(crate) enum FormatBufferWriteError<T> {
     FormatError,
     OutOfSpace(T),
@@ -101,13 +113,6 @@ pub trait Socket: Sized {
     /// Split the socket into its "read" and "write" half
     fn split(&mut self) -> (Self::ReadHalf<'_>, Self::WriteHalf<'_>);
 
-    /// Forcibly close the socket
-    async fn abort<Timer: crate::Timer>(
-        self,
-        timeouts: &crate::Timeouts<Timer::Duration>,
-        timer: &mut Timer,
-    ) -> Result<(), super::Error<Self::Error>>;
-
     /// Perform a graceful shutdown
     async fn shutdown<Timer: crate::Timer>(
         self,
@@ -160,14 +165,6 @@ pub(crate) mod tokio_support {
             (TokioIo(read_half), TokioIo(write_half))
         }
 
-        async fn abort<Timer: crate::Timer>(
-            self,
-            _timeouts: &crate::Timeouts<Timer::Duration>,
-            _timer: &mut Timer,
-        ) -> Result<(), crate::Error<Self::Error>> {
-            Ok(())
-        }
-
         async fn shutdown<Timer: crate::Timer>(
             mut self,
             timeouts: &crate::Timeouts<Timer::Duration>,
@@ -212,59 +209,53 @@ impl<'s> Socket for embassy_net::tcp::TcpSocket<'s> {
         embassy_net::tcp::TcpSocket::split(self)
     }
 
-    async fn abort<Timer: crate::Timer>(
-        mut self,
-        timeouts: &crate::Timeouts<Timer::Duration>,
-        timer: &mut Timer,
-    ) -> Result<(), crate::Error<Self::Error>> {
-        use crate::time::TimerExt;
-
-        // Send data that has been written to the socket before and not yet sent or not yet ACKed.
-        timer
-            .run_with_maybe_timeout(timeouts.write.clone(), self.flush())
-            .await
-            .map_err(|_err| crate::Error::WriteTimeout)?
-            .map_err(crate::Error::Write)?;
-
-        Self::abort(&mut self);
-
-        // `abort()` does not send the TCP RST packet immediately. To let the remote host know the
-        // connection has been closed, we wait for a `flush()` call to complete before dropping or
-        // reusing the socket.
-        timer
-            .run_with_maybe_timeout(timeouts.write.clone(), self.flush())
-            .await
-            .map_err(|_err| crate::Error::WriteTimeout)?
-            .map_err(crate::Error::Write)?;
-
-        Ok(())
-    }
-
     async fn shutdown<Timer: crate::Timer>(
         mut self,
         timeouts: &crate::Timeouts<Timer::Duration>,
         timer: &mut Timer,
     ) -> Result<(), crate::Error<Self::Error>> {
-        self.close();
-
         use crate::time::TimerExt;
 
+        self.close();
+
+        let (mut rx, mut tx) = self.split();
+
+        // Flush the write half until the read half has been closed by the client
+        futures_util::future::select(
+            core::pin::pin!(async {
+                timer
+                    .run_with_maybe_timeout(timeouts.read_request.clone(), rx.discard_all_data())
+                    .await
+                    .map_err(|_err| crate::Error::ReadTimeout)?
+                    .map_err(crate::Error::Read)
+            }),
+            core::pin::pin!(async {
+                tx.flush().await.map_err(crate::Error::Write)?;
+                core::future::pending().await
+            }),
+        )
+        .await
+        .factor_first()
+        .0?;
+
+        // Flush the write half until the socket is closed.
+        // `embassy_net::tcp::TcpSocket` (possibly erroniously) keeps trying to flush until the tx buffer is empty,
+        // but we don't care at this point if data is lost
         timer
-            .run_with_maybe_timeout(timeouts.write.clone(), self.flush())
+            .run_with_maybe_timeout(
+                timeouts.write.clone(),
+                core::future::poll_fn(|cx| {
+                    use core::future::Future;
+
+                    if self.state() == embassy_net::tcp::State::Closed {
+                        core::task::Poll::Ready(Ok(()))
+                    } else {
+                        core::pin::pin!(self.flush()).poll(cx)
+                    }
+                }),
+            )
             .await
             .map_err(|_err| crate::Error::WriteTimeout)?
-            .map_err(crate::Error::Write)?;
-
-        let mut buffer = [0; 128];
-
-        while timer
-            .run_with_maybe_timeout(timeouts.read_request.clone(), self.read(&mut buffer))
-            .await
-            .map_err(|_err| crate::Error::ReadTimeout)?
-            .map_err(crate::Error::Read)?
-            > 0
-        {}
-
-        Ok(())
+            .map_err(crate::Error::Write)
     }
 }

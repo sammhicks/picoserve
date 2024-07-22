@@ -14,7 +14,7 @@
 //! Although [RequestHandlerFunctions](crate::routing::RequestHandlerFunction) may not borrow from request due to restrictions with Higher-Order-Lifetime-Bounds, by using [from_request](crate::from_request) and [from_request_parts](crate::from_request_parts), [RequestHandlerServices](crate::routing::RequestHandlerService) and [PathRouterServices](crate::routing::PathRouterService) may do so.
 
 use crate::{
-    io::Read,
+    io::{Read, ReadExt},
     request::{RequestBody, RequestParts},
     response::{IntoResponse, StatusCode},
     ResponseSent,
@@ -531,10 +531,9 @@ impl UpgradeToken {
         // Consumes and discards all data, so cannot gain access to the next requests data,
         // and the connection is consumed so cannot be upgraded after this call
 
-        let mut reader = connection.upgrade(UpgradeToken(()));
-
-        while reader.read(&mut [0; 8]).await? > 0 {}
-
-        Ok(())
+        connection
+            .upgrade(UpgradeToken(()))
+            .discard_all_data()
+            .await
     }
 }

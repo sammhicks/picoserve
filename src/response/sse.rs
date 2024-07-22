@@ -1,7 +1,5 @@
 //! Server-Sent Events. See [server_sent_events](https://github.com/sammhicks/picoserve/blob/main/examples/server_sent_events/src/main.rs) for usage example.
 
-use core::future::Future;
-
 use crate::io::{Read, Write, WriteExt};
 
 use super::StatusCode;
@@ -120,14 +118,9 @@ impl<S: EventSource> super::Body for EventStream<S> {
     ) -> Result<(), W::Error> {
         writer.flush().await?;
 
-        let mut disconnection = core::pin::pin!(connection.wait_for_disconnection());
-        let mut write_events = core::pin::pin!(self.0.write_events(EventWriter { writer }));
-
-        core::future::poll_fn(|cx| match disconnection.as_mut().poll(cx) {
-            core::task::Poll::Ready(result) => core::task::Poll::Ready(result),
-            core::task::Poll::Pending => write_events.as_mut().poll(cx),
-        })
-        .await
+        connection
+            .run_until_disconnection((), self.0.write_events(EventWriter { writer }))
+            .await
     }
 }
 
