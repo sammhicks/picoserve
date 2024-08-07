@@ -2,14 +2,12 @@
 #![no_main]
 #![feature(type_alias_impl_trait)]
 
-use cyw43::Control;
 use cyw43_pio::PioSpi;
 use embassy_rp::{
     gpio::{Level, Output},
     peripherals::{DMA_CH0, PIN_23, PIN_25, PIO0},
     pio::Pio,
 };
-use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, mutex::Mutex};
 use embassy_time::Duration;
 use panic_persist as _;
 use picoserve::{
@@ -46,35 +44,7 @@ async fn net_task(stack: &'static embassy_net::Stack<cyw43::NetDriver<'static>>)
     stack.run().await
 }
 
-struct EmbassyTimer;
-
-impl picoserve::Timer for EmbassyTimer {
-    type Duration = embassy_time::Duration;
-    type TimeoutError = embassy_time::TimeoutError;
-
-    async fn run_with_timeout<F: core::future::Future>(
-        &mut self,
-        duration: Self::Duration,
-        future: F,
-    ) -> Result<F::Output, Self::TimeoutError> {
-        embassy_time::with_timeout(duration, future).await
-    }
-}
-
-#[derive(Clone, Copy)]
-struct SharedControl(&'static Mutex<CriticalSectionRawMutex, Control<'static>>);
-
-struct AppState {
-    shared_control: SharedControl,
-}
-
-impl picoserve::extract::FromRef<AppState> for SharedControl {
-    fn from_ref(state: &AppState) -> Self {
-        state.shared_control
-    }
-}
-
-type AppRouter = impl picoserve::routing::PathRouter<AppState>;
+type AppRouter = impl picoserve::routing::PathRouter;
 
 const WEB_TASK_POOL_SIZE: usize = 8;
 
@@ -82,16 +52,15 @@ const WEB_TASK_POOL_SIZE: usize = 8;
 async fn web_task(
     id: usize,
     stack: &'static embassy_net::Stack<cyw43::NetDriver<'static>>,
-    app: &'static picoserve::Router<AppRouter, AppState>,
+    app: &'static picoserve::Router<AppRouter>,
     config: &'static picoserve::Config<Duration>,
-    state: AppState,
 ) -> ! {
     let port = 80;
     let mut tcp_rx_buffer = [0; 1024];
     let mut tcp_tx_buffer = [0; 1024];
     let mut http_buffer = [0; 2048];
 
-    picoserve::listen_and_serve_with_state(
+    picoserve::listen_and_serve(
         id,
         app,
         config,
@@ -100,7 +69,6 @@ async fn web_task(
         &mut tcp_rx_buffer,
         &mut tcp_tx_buffer,
         &mut http_buffer,
-        &state,
     )
     .await
 }
@@ -204,7 +172,7 @@ async fn main(spawner: embassy_executor::Spawner) {
         )
         .await;
 
-    fn make_app() -> picoserve::Router<AppRouter, AppState> {
+    fn make_app() -> picoserve::Router<AppRouter> {
         picoserve::Router::new()
             .route(
                 "/",
@@ -237,15 +205,7 @@ async fn main(spawner: embassy_executor::Spawner) {
     })
     .keep_connection_alive());
 
-    let shared_control = SharedControl(make_static!(Mutex::new(control)));
-
     for id in 0..WEB_TASK_POOL_SIZE {
-        spawner.must_spawn(web_task(
-            id,
-            stack,
-            app,
-            config,
-            AppState { shared_control },
-        ));
+        spawner.must_spawn(web_task(id, stack, app, config));
     }
 }
