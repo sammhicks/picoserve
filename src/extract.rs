@@ -20,6 +20,14 @@ use crate::{
     ResponseSent,
 };
 
+pub mod json {
+    pub use crate::json::Json;
+
+    pub use serde_json_core::str;
+}
+
+pub use crate::json::Json;
+
 mod private {
     pub struct ViaRequest;
     pub struct ViaParts;
@@ -450,6 +458,58 @@ impl<'r, State, T: serde::de::DeserializeOwned> FromRequest<'r, State> for Form<
         ))
         .map(Self)
         .map_err(|super::url_encoded::FormDeserializationError| FormRejection::BadForm)
+    }
+}
+
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub enum JsonRejection {
+    IoError,
+    DeserializationError(serde_json_core::de::Error),
+}
+
+impl IntoResponse for JsonRejection {
+    async fn write_to<R: Read, W: crate::response::ResponseWriter<Error = R::Error>>(
+        self,
+        connection: crate::response::Connection<'_, R>,
+        response_writer: W,
+    ) -> Result<ResponseSent, W::Error> {
+        match self {
+            Self::IoError => {
+                (StatusCode::INTERNAL_SERVER_ERROR, "IO Error")
+                    .write_to(connection, response_writer)
+                    .await
+            }
+            Self::DeserializationError(error) => {
+                (
+                    StatusCode::BAD_REQUEST,
+                    format_args!("Failed to parse JSON body: {error}"),
+                )
+                    .write_to(connection, response_writer)
+                    .await
+            }
+        }
+    }
+}
+
+impl<'r, State, T: serde::Deserialize<'r>, const UNESCAPE_BUFFER_SIZE: usize>
+    FromRequest<'r, State, T> for Json<T, UNESCAPE_BUFFER_SIZE>
+{
+    type Rejection = JsonRejection;
+
+    async fn from_request<R: Read>(
+        _state: &'r State,
+        _request_parts: RequestParts<'r>,
+        request_body: RequestBody<'r, R>,
+    ) -> Result<Self, Self::Rejection> {
+        serde_json_core::from_slice_escaped(
+            request_body
+                .read_all()
+                .await
+                .map_err(|_| JsonRejection::IoError)?,
+            &mut [0; UNESCAPE_BUFFER_SIZE],
+        )
+        .map(|(value, _)| Self(value))
+        .map_err(JsonRejection::DeserializationError)
     }
 }
 

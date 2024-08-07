@@ -1,10 +1,12 @@
-//! Support for serializing and deserializing JSON structures
+//! Support for serializing JSON structures
 
 use core::fmt;
 
 use serde::Serialize;
 
 use crate::io::{FormatBuffer, FormatBufferWriteError, Write};
+
+pub use crate::json::Json;
 
 #[derive(Debug)]
 struct SerializeError;
@@ -495,9 +497,6 @@ impl<T: serde::Serialize> super::Content for JsonBody<T> {
         self.0.write_json_value(writer).await
     }
 }
-
-/// Serializes the value in JSON form. The value might be serialized several times during sending, so the value must be serialized in the same way each time.
-pub struct Json<T>(pub T);
 
 impl<T: serde::Serialize> Json<T> {
     pub(crate) async fn do_write_to<W: Write>(&self, writer: &mut W) -> Result<(), W::Error> {

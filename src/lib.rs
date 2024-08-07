@@ -13,6 +13,8 @@ compile_error!("You cannot enable both tokio and embassy support");
 #[cfg(feature = "alloc")]
 extern crate alloc;
 
+mod json;
+
 #[macro_use]
 mod logging;
 
