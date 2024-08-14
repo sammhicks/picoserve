@@ -52,8 +52,14 @@ macro_rules! log_info {
 pub use defmt::Debug2Format;
 
 #[cfg(not(feature = "defmt"))]
-#[derive(Debug)]
 pub struct Debug2Format<'a, T: core::fmt::Debug + ?Sized>(pub &'a T);
+
+#[cfg(not(feature = "defmt"))]
+impl<'a, T: core::fmt::Debug + ?Sized> core::fmt::Debug for Debug2Format<'a, T> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        core::fmt::Debug::fmt(self.0, f)
+    }
+}
 
 #[cfg(not(feature = "defmt"))]
 impl<'a, T: core::fmt::Debug + ?Sized> core::fmt::Display for Debug2Format<'a, T> {
