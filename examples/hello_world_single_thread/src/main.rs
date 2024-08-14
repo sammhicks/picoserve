@@ -14,7 +14,7 @@ async fn main() -> anyhow::Result<()> {
         write: Some(Duration::from_secs(1)),
     });
 
-    let socket = tokio::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 8000)).await?;
+    let socket = tokio::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, port)).await?;
 
     println!("http://localhost:{port}/");
 

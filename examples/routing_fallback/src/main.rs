@@ -40,7 +40,7 @@ async fn main() -> anyhow::Result<()> {
     })
     .keep_connection_alive();
 
-    let socket = tokio::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 8000)).await?;
+    let socket = tokio::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, port)).await?;
 
     println!("http://localhost:{port}/");
 
