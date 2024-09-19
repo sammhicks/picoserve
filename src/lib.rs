@@ -333,6 +333,12 @@ pub async fn serve_with_state<State, P: routing::PathRouter<State>>(
     serve_and_shutdown(app, time::EmbassyTimer, config, buffer, socket, state).await
 }
 
+#[cfg(all(feature = "embassy", feature = "embassy-stack-is-copy"))]
+pub type EmbassyStack = embassy_net::Stack<'static>;
+
+#[cfg(all(feature = "embassy", not(feature = "embassy-stack-is-copy")))]
+pub type EmbassyStack = embassy_net::Stack<impl embassy_net::driver::Driver>;
+
 #[cfg(feature = "embassy")]
 /// Serve `app` with incoming requests. App has a no state.
 /// `task_id` is printed in log messages.
@@ -340,7 +346,7 @@ pub async fn listen_and_serve<P: routing::PathRouter<()>>(
     task_id: impl LogDisplay,
     app: &Router<P, ()>,
     config: &Config<embassy_time::Duration>,
-    stack: &embassy_net::Stack<impl embassy_net::driver::Driver>,
+    stack: &EmbassyStack,
     port: u16,
     tcp_rx_buffer: &mut [u8],
     tcp_tx_buffer: &mut [u8],
@@ -367,7 +373,7 @@ pub async fn listen_and_serve_with_state<State, P: routing::PathRouter<State>>(
     task_id: impl LogDisplay,
     app: &Router<P, State>,
     config: &Config<embassy_time::Duration>,
-    stack: &embassy_net::Stack<impl embassy_net::driver::Driver>,
+    stack: &EmbassyStack,
     port: u16,
     tcp_rx_buffer: &mut [u8],
     tcp_tx_buffer: &mut [u8],
@@ -375,6 +381,9 @@ pub async fn listen_and_serve_with_state<State, P: routing::PathRouter<State>>(
     state: &State,
 ) -> ! {
     loop {
+        #[cfg(feature = "embassy-stack-is-copy")]
+        let stack = *stack;
+
         let mut socket = embassy_net::tcp::TcpSocket::new(stack, tcp_rx_buffer, tcp_tx_buffer);
 
         log_info!("{}: Listening on TCP:{}...", task_id, port);

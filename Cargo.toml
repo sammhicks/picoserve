@@ -57,6 +57,9 @@ alloc = []
 tokio = ["dep:tokio", "std", "serde/std"]
 embassy = ["dep:embassy-time", "dep:embassy-net"]
 
+# set this for newer embassy (after https://github.com/embassy-rs/embassy/pull/3329)
+embassy-stack-is-copy = ["embassy"]
+
 defmt = ["dep:defmt", "embassy-net?/defmt", "serde-json-core/defmt"]
 log = ["dep:log"]
 
