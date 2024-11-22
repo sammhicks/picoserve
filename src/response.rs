@@ -625,8 +625,8 @@ impl<const N: usize> IntoResponse for heapless::String<N> {
     }
 }
 
-#[cfg(feature = "std")]
-impl IntoResponse for std::string::String {
+#[cfg(feature = "alloc")]
+impl IntoResponse for alloc::string::String {
     async fn write_to<R: Read, W: ResponseWriter<Error = R::Error>>(
         self,
         connection: Connection<'_, R>,
