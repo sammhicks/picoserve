@@ -8,6 +8,7 @@ members = [
     "examples/hello_world_single_thread",
     "examples/huge_requests",
     "examples/layers",
+    "examples/nested_router",
     "examples/path_parameters",
     "examples/routing_fallback",
     "examples/server_sent_events",

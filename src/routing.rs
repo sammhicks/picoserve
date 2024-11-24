@@ -1185,7 +1185,7 @@ impl<State, CurrentPathParameters, RouterInner: PathRouter<State, CurrentPathPar
     pub fn nest<PD: PathDescription<CurrentPathParameters>>(
         self,
         path_description: PD,
-        router: Router<impl PathRouter<State, PD::Output>>,
+        router: Router<impl PathRouter<State, PD::Output>, State>,
     ) -> Router<impl PathRouter<State, CurrentPathParameters>, State, CurrentPathParameters> {
         let Router {
             router: fallback,
