@@ -438,54 +438,157 @@ pub trait MethodHandler<State, PathParameters>: Sealed {
 /// A [MethodHandler] which routes requests to the appropriate [RequestHandler] based on the method.
 ///
 /// Automatically handled the `HEAD` method by calling the `GET` handler and returning an empty body.
-pub struct MethodRouter<GET, POST> {
+pub struct MethodRouter<GET, POST, PUT, DELETE> {
     get: GET,
     post: POST,
+    put: PUT,
+    delete: DELETE,
 }
 
-impl<GET, POST> Sealed for MethodRouter<GET, POST> {}
+impl<GET, POST, PUT, DELETE> Sealed for MethodRouter<GET, POST, PUT, DELETE> {}
 
 /// Route `GET` requests to the given [handler](RequestHandlerFunction).
 pub fn get<State, PathParameters, T, Handler: RequestHandlerFunction<State, PathParameters, T>>(
     handler: Handler,
-) -> MethodRouter<impl RequestHandler<State, PathParameters>, MethodNotAllowed> {
+) -> MethodRouter<
+    impl RequestHandler<State, PathParameters>,
+    MethodNotAllowed,
+    MethodNotAllowed,
+    MethodNotAllowed,
+> {
     MethodRouter {
         get: HandlerFunctionRequestHandler::new(handler),
         post: MethodNotAllowed,
+        put: MethodNotAllowed,
+        delete: MethodNotAllowed,
     }
 }
 
 /// Route `GET` requests to the given [service](RequestHandlerService).
 pub fn get_service<State, PathParameters: IntoPathParameterList>(
     service: impl RequestHandlerService<State, PathParameters::ParameterList>,
-) -> MethodRouter<impl RequestHandler<State, PathParameters>, MethodNotAllowed> {
+) -> MethodRouter<
+    impl RequestHandler<State, PathParameters>,
+    MethodNotAllowed,
+    MethodNotAllowed,
+    MethodNotAllowed,
+> {
     MethodRouter {
         get: RequestHandlerServiceRequestHandler { service },
         post: MethodNotAllowed,
+        put: MethodNotAllowed,
+        delete: MethodNotAllowed,
     }
 }
 
 /// Route `POST` requests to the given [handler](RequestHandlerFunction).
 pub fn post<State, PathParameters, T, Handler: RequestHandlerFunction<State, PathParameters, T>>(
     handler: Handler,
-) -> MethodRouter<MethodNotAllowed, impl RequestHandler<State, PathParameters>> {
+) -> MethodRouter<
+    MethodNotAllowed,
+    impl RequestHandler<State, PathParameters>,
+    MethodNotAllowed,
+    MethodNotAllowed,
+> {
     MethodRouter {
         get: MethodNotAllowed,
         post: HandlerFunctionRequestHandler::new(handler),
+        put: MethodNotAllowed,
+        delete: MethodNotAllowed,
     }
 }
 
 /// Route `POST` requests to the given [service](RequestHandlerService).
 pub fn post_service<State, PathParameters: IntoPathParameterList>(
     service: impl RequestHandlerService<State, PathParameters::ParameterList>,
-) -> MethodRouter<MethodNotAllowed, impl RequestHandler<State, PathParameters>> {
+) -> MethodRouter<
+    MethodNotAllowed,
+    impl RequestHandler<State, PathParameters>,
+    MethodNotAllowed,
+    MethodNotAllowed,
+> {
     MethodRouter {
         get: MethodNotAllowed,
         post: RequestHandlerServiceRequestHandler { service },
+        put: MethodNotAllowed,
+        delete: MethodNotAllowed,
     }
 }
 
-impl<POST> MethodRouter<MethodNotAllowed, POST> {
+/// Route `PUT` requests to the given [handler](RequestHandlerFunction).
+pub fn put<State, PathParameters, T, Handler: RequestHandlerFunction<State, PathParameters, T>>(
+    handler: Handler,
+) -> MethodRouter<
+    MethodNotAllowed,
+    MethodNotAllowed,
+    impl RequestHandler<State, PathParameters>,
+    MethodNotAllowed,
+> {
+    MethodRouter {
+        get: MethodNotAllowed,
+        post: MethodNotAllowed,
+        put: HandlerFunctionRequestHandler::new(handler),
+        delete: MethodNotAllowed,
+    }
+}
+
+/// Route `PUT` requests to the given [service](RequestHandlerService).
+pub fn put_service<State, PathParameters: IntoPathParameterList>(
+    service: impl RequestHandlerService<State, PathParameters::ParameterList>,
+) -> MethodRouter<
+    MethodNotAllowed,
+    MethodNotAllowed,
+    impl RequestHandler<State, PathParameters>,
+    MethodNotAllowed,
+> {
+    MethodRouter {
+        get: MethodNotAllowed,
+        post: MethodNotAllowed,
+        put: RequestHandlerServiceRequestHandler { service },
+        delete: MethodNotAllowed,
+    }
+}
+
+/// Route `DELETE` requests to the given [handler](RequestHandlerFunction).
+pub fn delete<
+    State,
+    PathParameters,
+    T,
+    Handler: RequestHandlerFunction<State, PathParameters, T>,
+>(
+    handler: Handler,
+) -> MethodRouter<
+    MethodNotAllowed,
+    MethodNotAllowed,
+    MethodNotAllowed,
+    impl RequestHandler<State, PathParameters>,
+> {
+    MethodRouter {
+        get: MethodNotAllowed,
+        post: MethodNotAllowed,
+        put: MethodNotAllowed,
+        delete: HandlerFunctionRequestHandler::new(handler),
+    }
+}
+
+/// Route `DELETE` requests to the given [service](RequestHandlerService).
+pub fn delete_service<State, PathParameters: IntoPathParameterList>(
+    service: impl RequestHandlerService<State, PathParameters::ParameterList>,
+) -> MethodRouter<
+    MethodNotAllowed,
+    MethodNotAllowed,
+    MethodNotAllowed,
+    impl RequestHandler<State, PathParameters>,
+> {
+    MethodRouter {
+        get: MethodNotAllowed,
+        post: MethodNotAllowed,
+        put: MethodNotAllowed,
+        delete: RequestHandlerServiceRequestHandler { service },
+    }
+}
+
+impl<POST, PUT, DELETE> MethodRouter<MethodNotAllowed, POST, PUT, DELETE> {
     /// Chain an additional [handler](RequestHandlerFunction) that will only accept `GET` requests.
     pub fn get<
         State,
@@ -495,15 +598,19 @@ impl<POST> MethodRouter<MethodNotAllowed, POST> {
     >(
         self,
         handler: Handler,
-    ) -> MethodRouter<impl RequestHandler<State, PathParameters>, POST> {
+    ) -> MethodRouter<impl RequestHandler<State, PathParameters>, POST, PUT, DELETE> {
         let MethodRouter {
             get: MethodNotAllowed,
             post,
+            put,
+            delete,
         } = self;
 
         MethodRouter {
             get: HandlerFunctionRequestHandler::new(handler),
             post,
+            put,
+            delete,
         }
     }
 
@@ -511,20 +618,24 @@ impl<POST> MethodRouter<MethodNotAllowed, POST> {
     pub fn get_service<State, PathParameters: IntoPathParameterList>(
         self,
         service: impl RequestHandlerService<State, PathParameters::ParameterList>,
-    ) -> MethodRouter<impl RequestHandler<State, PathParameters>, POST> {
+    ) -> MethodRouter<impl RequestHandler<State, PathParameters>, POST, PUT, DELETE> {
         let MethodRouter {
             get: MethodNotAllowed,
             post,
+            put,
+            delete,
         } = self;
 
         MethodRouter {
             get: RequestHandlerServiceRequestHandler { service },
             post,
+            put,
+            delete,
         }
     }
 }
 
-impl<GET> MethodRouter<GET, MethodNotAllowed> {
+impl<GET, PUT, DELETE> MethodRouter<GET, MethodNotAllowed, PUT, DELETE> {
     /// Chain an additional [handler](RequestHandlerFunction) that will only accept `POST` requests.
     pub fn post<
         State,
@@ -534,15 +645,19 @@ impl<GET> MethodRouter<GET, MethodNotAllowed> {
     >(
         self,
         handler: Handler,
-    ) -> MethodRouter<GET, impl RequestHandler<State, PathParameters>> {
+    ) -> MethodRouter<GET, impl RequestHandler<State, PathParameters>, PUT, DELETE> {
         let MethodRouter {
             get,
             post: MethodNotAllowed,
+            put,
+            delete,
         } = self;
 
         MethodRouter {
             get,
             post: HandlerFunctionRequestHandler::new(handler),
+            put,
+            delete,
         }
     }
 
@@ -550,20 +665,118 @@ impl<GET> MethodRouter<GET, MethodNotAllowed> {
     pub fn post_service<State, PathParameters: IntoPathParameterList>(
         self,
         service: impl RequestHandlerService<State, PathParameters::ParameterList>,
-    ) -> MethodRouter<GET, impl RequestHandler<State, PathParameters>> {
+    ) -> MethodRouter<GET, impl RequestHandler<State, PathParameters>, PUT, DELETE> {
         let MethodRouter {
             get,
             post: MethodNotAllowed,
+            put,
+            delete,
         } = self;
 
         MethodRouter {
             get,
             post: RequestHandlerServiceRequestHandler { service },
+            put,
+            delete,
         }
     }
 }
 
-impl<GET, POST> MethodRouter<GET, POST> {
+impl<GET, POST, DELETE> MethodRouter<GET, POST, MethodNotAllowed, DELETE> {
+    /// Chain an additional [handler](RequestHandlerFunction) that will only accept `PUT` requests.
+    pub fn put<
+        State,
+        PathParameters,
+        T,
+        Handler: RequestHandlerFunction<State, PathParameters, T>,
+    >(
+        self,
+        handler: Handler,
+    ) -> MethodRouter<GET, POST, impl RequestHandler<State, PathParameters>, DELETE> {
+        let MethodRouter {
+            get,
+            post,
+            put: MethodNotAllowed,
+            delete,
+        } = self;
+
+        MethodRouter {
+            get,
+            post,
+            put: HandlerFunctionRequestHandler::new(handler),
+            delete,
+        }
+    }
+
+    /// Chain an additional [service](RequestHandlerService) that will only accept `PUT` requests.
+    pub fn put_service<State, PathParameters: IntoPathParameterList>(
+        self,
+        service: impl RequestHandlerService<State, PathParameters::ParameterList>,
+    ) -> MethodRouter<GET, POST, impl RequestHandler<State, PathParameters>, DELETE> {
+        let MethodRouter {
+            get,
+            post,
+            put: MethodNotAllowed,
+            delete,
+        } = self;
+
+        MethodRouter {
+            get,
+            post,
+            put: RequestHandlerServiceRequestHandler { service },
+            delete,
+        }
+    }
+}
+
+impl<GET, POST, PUT> MethodRouter<GET, POST, PUT, MethodNotAllowed> {
+    /// Chain an additional [handler](RequestHandlerFunction) that will only accept `DELETE` requests.
+    pub fn delete<
+        State,
+        PathParameters,
+        T,
+        Handler: RequestHandlerFunction<State, PathParameters, T>,
+    >(
+        self,
+        handler: Handler,
+    ) -> MethodRouter<GET, POST, PUT, impl RequestHandler<State, PathParameters>> {
+        let MethodRouter {
+            get,
+            post,
+            put,
+            delete: MethodNotAllowed,
+        } = self;
+
+        MethodRouter {
+            get,
+            post,
+            put,
+            delete: HandlerFunctionRequestHandler::new(handler),
+        }
+    }
+
+    /// Chain an additional [service](RequestHandlerService) that will only accept `DELETE` requests.
+    pub fn delete_service<State, PathParameters: IntoPathParameterList>(
+        self,
+        service: impl RequestHandlerService<State, PathParameters::ParameterList>,
+    ) -> MethodRouter<GET, POST, PUT, impl RequestHandler<State, PathParameters>> {
+        let MethodRouter {
+            get,
+            post,
+            put,
+            delete: MethodNotAllowed,
+        } = self;
+
+        MethodRouter {
+            get,
+            post,
+            put,
+            delete: RequestHandlerServiceRequestHandler { service },
+        }
+    }
+}
+
+impl<GET, POST, PUT, DELETE> MethodRouter<GET, POST, PUT, DELETE> {
     /// Add a [Layer] to all routes in the router
     pub fn layer<State, PathParameters, L: Layer<State, PathParameters>>(
         self,
@@ -572,6 +785,8 @@ impl<GET, POST> MethodRouter<GET, POST> {
     where
         GET: RequestHandler<L::NextState, L::NextPathParameters>,
         POST: RequestHandler<L::NextState, L::NextPathParameters>,
+        PUT: RequestHandler<L::NextState, L::NextPathParameters>,
+        DELETE: RequestHandler<L::NextState, L::NextPathParameters>,
     {
         layer::MethodRouterLayer { layer, inner: self }
     }
@@ -582,7 +797,9 @@ impl<
         PathParameters,
         GET: RequestHandler<State, PathParameters>,
         POST: RequestHandler<State, PathParameters>,
-    > MethodHandler<State, PathParameters> for MethodRouter<GET, POST>
+        PUT: RequestHandler<State, PathParameters>,
+        DELETE: RequestHandler<State, PathParameters>,
+    > MethodHandler<State, PathParameters> for MethodRouter<GET, POST, PUT, DELETE>
 {
     async fn call_method_handler<R: Read, W: ResponseWriter<Error = R::Error>>(
         &self,
@@ -609,6 +826,16 @@ impl<
             }
             "POST" => {
                 self.post
+                    .call_request_handler(state, path_parameters, request, response_writer)
+                    .await
+            }
+            "PUT" => {
+                self.put
+                    .call_request_handler(state, path_parameters, request, response_writer)
+                    .await
+            }
+            "DELETE" => {
+                self.delete
                     .call_request_handler(state, path_parameters, request, response_writer)
                     .await
             }
