@@ -6,8 +6,15 @@ use picoserve::routing::get;
 async fn main() -> anyhow::Result<()> {
     let port = 8000;
 
-    let app =
-        std::rc::Rc::new(picoserve::Router::new().route("/", get(|| async { "Hello World" })));
+    let app = std::rc::Rc::new(
+        picoserve::Router::new().route(
+            "/",
+            get(|| async { "Hello World" })
+                .post(|| async { "Hello post" })
+                .put(|| async { "Hello put" })
+                .delete(|| async { "Hello delete" }),
+        ),
+    );
 
     let config = picoserve::Config::new(picoserve::Timeouts {
         start_read_request: Some(Duration::from_secs(5)),
