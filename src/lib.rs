@@ -5,7 +5,7 @@
 //!
 //! It was designed with [embassy](https://embassy.dev/) on the Raspberry Pi Pico W in mind, but should work with other embedded runtimes and hardware.
 //!
-//! For examples on how to use picoserve, see the [examples](https://github.com/sammhicks/picoserve/tree/main/examples) directory
+//! For examples on how to use picoserve, see the [examples](https://github.com/sammhicks/picoserve/tree/main/examples) directory.
 
 #[cfg(all(feature = "tokio", feature = "embassy"))]
 compile_error!("You cannot enable both tokio and embassy support");
@@ -428,4 +428,47 @@ pub async fn serve_with_state<'r, State, T: Timer, P: routing::PathRouter<State>
     state: &State,
 ) -> Result<u64, Error<S::Error>> {
     serve_and_shutdown(app, timer, config, buffer, socket, state).await
+}
+
+/// A helper trait which simplifies creating a static [Router] with no state.
+///
+/// In practice usage requires the nightly Rust toolchain.
+pub trait AppBuilder {
+    type PathRouter: routing::PathRouter;
+
+    fn build_app(self) -> Router<Self::PathRouter>;
+}
+
+/// A helper trait which simplifies creating a static [Router] with a declared state.
+///
+/// In practice usage requires the nightly Rust toolchain.
+pub trait AppWithStateBuilder {
+    type State;
+    type PathRouter: routing::PathRouter<Self::State>;
+
+    fn build_app(self) -> Router<Self::PathRouter, Self::State>;
+}
+
+impl<T: AppBuilder> AppWithStateBuilder for T {
+    type State = ();
+    type PathRouter = <Self as AppBuilder>::PathRouter;
+
+    fn build_app(self) -> Router<Self::PathRouter, Self::State> {
+        <Self as AppBuilder>::build_app(self)
+    }
+}
+
+/// The [Router] for the app constructed from the Props (which implement [AppBuilder]).
+pub type AppRouter<Props> =
+    Router<<Props as AppWithStateBuilder>::PathRouter, <Props as AppWithStateBuilder>::State>;
+
+/// Replacement for [`static_cell::make_static`](https://docs.rs/static_cell/latest/static_cell/macro.make_static.html) for use cases when the type is known.
+#[macro_export]
+macro_rules! make_static {
+    ($t:ty, $val:expr) => ($crate::make_static!($t, $val,));
+    ($t:ty, $val:expr, $(#[$m:meta])*) => {{
+        $(#[$m])*
+        static STATIC_CELL: static_cell::StaticCell<$t> = static_cell::StaticCell::new();
+        STATIC_CELL.init($val)
+    }};
 }

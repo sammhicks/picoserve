@@ -1,20 +1,19 @@
 #![no_std]
 #![no_main]
-#![feature(type_alias_impl_trait)]
+#![feature(impl_trait_in_assoc_type)]
 
 use cyw43_pio::PioSpi;
 use embassy_rp::{
     gpio::{Level, Output},
-    peripherals::{DMA_CH0, PIN_23, PIN_25, PIO0},
+    peripherals::{DMA_CH0, PIO0},
     pio::Pio,
 };
 
 use defmt_rtt as _;
 use embassy_time::Duration;
 use panic_probe as _;
-use picoserve::routing::get;
+use picoserve::{make_static, routing::get, AppBuilder, AppRouter};
 use rand::Rng;
-use static_cell::make_static;
 
 embassy_rp::bind_interrupts!(struct Irqs {
     PIO0_IRQ_0 => embassy_rp::pio::InterruptHandler<embassy_rp::peripherals::PIO0>;
@@ -22,11 +21,7 @@ embassy_rp::bind_interrupts!(struct Irqs {
 
 #[embassy_executor::task]
 async fn wifi_task(
-    runner: cyw43::Runner<
-        'static,
-        Output<'static, PIN_23>,
-        PioSpi<'static, PIN_25, PIO0, 0, DMA_CH0>,
-    >,
+    runner: cyw43::Runner<'static, Output<'static>, PioSpi<'static, PIO0, 0, DMA_CH0>>,
 ) -> ! {
     runner.run().await
 }
@@ -36,7 +31,15 @@ async fn net_task(stack: &'static embassy_net::Stack<cyw43::NetDriver<'static>>)
     stack.run().await
 }
 
-type AppRouter = impl picoserve::routing::PathRouter;
+struct AppProps;
+
+impl AppBuilder for AppProps {
+    type PathRouter = impl picoserve::routing::PathRouter;
+
+    fn build_app(self) -> picoserve::Router<Self::PathRouter> {
+        picoserve::Router::new().route("/", get(|| async move { "Hello World" }))
+    }
+}
 
 const WEB_TASK_POOL_SIZE: usize = 8;
 
@@ -44,7 +47,7 @@ const WEB_TASK_POOL_SIZE: usize = 8;
 async fn web_task(
     id: usize,
     stack: &'static embassy_net::Stack<cyw43::NetDriver<'static>>,
-    app: &'static picoserve::Router<AppRouter>,
+    app: &'static AppRouter<AppProps>,
     config: &'static picoserve::Config<Duration>,
 ) -> ! {
     let port = 80;
@@ -85,22 +88,31 @@ async fn main(spawner: embassy_executor::Spawner) {
         p.DMA_CH0,
     );
 
-    let state = make_static!(cyw43::State::new());
+    let state = make_static!(cyw43::State, cyw43::State::new());
     let (net_device, mut control, runner) = cyw43::new(state, pwr, spi, fw).await;
     spawner.must_spawn(wifi_task(runner));
 
     control.init(clm).await;
 
-    let stack = &*make_static!(embassy_net::Stack::new(
-        net_device,
-        embassy_net::Config::ipv4_static(embassy_net::StaticConfigV4 {
-            address: embassy_net::Ipv4Cidr::new(embassy_net::Ipv4Address::new(192, 168, 0, 1), 24),
-            gateway: None,
-            dns_servers: Default::default(),
-        }),
-        make_static!(embassy_net::StackResources::<WEB_TASK_POOL_SIZE>::new()),
-        embassy_rp::clocks::RoscRng.gen(),
-    ));
+    let stack = make_static!(
+        embassy_net::Stack::<cyw43::NetDriver>,
+        embassy_net::Stack::new(
+            net_device,
+            embassy_net::Config::ipv4_static(embassy_net::StaticConfigV4 {
+                address: embassy_net::Ipv4Cidr::new(
+                    embassy_net::Ipv4Address::new(192, 168, 0, 1),
+                    24
+                ),
+                gateway: None,
+                dns_servers: Default::default(),
+            }),
+            make_static!(
+                embassy_net::StackResources::<WEB_TASK_POOL_SIZE>,
+                embassy_net::StackResources::new()
+            ),
+            embassy_rp::clocks::RoscRng.gen(),
+        )
+    );
 
     spawner.must_spawn(net_task(stack));
 
@@ -112,18 +124,17 @@ async fn main(spawner: embassy_executor::Spawner) {
         )
         .await;
 
-    fn make_app() -> picoserve::Router<AppRouter> {
-        picoserve::Router::new().route("/", get(|| async move { "Hello World" }))
-    }
+    let app = make_static!(AppRouter<AppProps>, AppProps.build_app());
 
-    let app = make_static!(make_app());
-
-    let config = make_static!(picoserve::Config::new(picoserve::Timeouts {
-        start_read_request: Some(Duration::from_secs(5)),
-        read_request: Some(Duration::from_secs(1)),
-        write: Some(Duration::from_secs(1)),
-    })
-    .keep_connection_alive());
+    let config = make_static!(
+        picoserve::Config::<Duration>,
+        picoserve::Config::new(picoserve::Timeouts {
+            start_read_request: Some(Duration::from_secs(5)),
+            read_request: Some(Duration::from_secs(1)),
+            write: Some(Duration::from_secs(1)),
+        })
+        .keep_connection_alive()
+    );
 
     for id in 0..WEB_TASK_POOL_SIZE {
         spawner.must_spawn(web_task(id, stack, app, config));
