@@ -429,3 +429,21 @@ pub async fn serve_with_state<'r, State, T: Timer, P: routing::PathRouter<State>
 ) -> Result<u64, Error<S::Error>> {
     serve_and_shutdown(app, timer, config, buffer, socket, state).await
 }
+
+pub trait AppBuilder {
+    type Router;
+
+    fn build_app(self) -> Self::Router;
+}
+
+pub type AppRouter<Props> = <Props as AppBuilder>::Router;
+
+#[macro_export]
+macro_rules! make_static {
+    ($t:ty, $val:expr) => ($crate::make_static!($t, $val,));
+    ($t:ty, $val:expr, $(#[$m:meta])*) => {{
+        $(#[$m])*
+        static STATIC_CELL: static_cell::StaticCell<$t> = static_cell::StaticCell::new();
+        STATIC_CELL.init($val)
+    }};
+}
