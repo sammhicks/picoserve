@@ -14,11 +14,11 @@ exclude = [
 cortex-m-rt = "0.7.3"
 cyw43 = { version = "0.2.0", features = ["firmware-logs"] }
 cyw43-pio = "0.2.0"
-embassy-executor = { version = "0.5.0", features = ["arch-cortex-m", "executor-thread", "integrated-timers", "nightly"] }
+embassy-executor = { version = "0.6.3", features = ["arch-cortex-m", "executor-thread", "integrated-timers", "nightly"] }
 embassy-futures = "0.1.1"
-embassy-net = { version = "0.4.0", features = ["tcp", "proto-ipv4", "medium-ethernet"] }
+embassy-net = { version = "0.5.0", features = ["tcp", "proto-ipv4", "medium-ethernet"] }
 embassy-rp = { version = "0.2.0", features = ["critical-section-impl", "time-driver", "rp2040"] }
-embassy-sync = "0.6.0"
+embassy-sync = "0.6.1"
 embassy-time = "0.3.1"
 embassy-usb-logger = "0.2.0"
 embedded-io-async = "0.6.1"
@@ -30,11 +30,11 @@ rand = { version = "0.8.5", default-features = false }
 static_cell = { version = "2.1.0", features = ["nightly"] }
 
 [patch.crates-io]
-cyw43 = { git = "https://github.com/embassy-rs/embassy", rev = "af6fbb0ee19c5200bb4bafb9a10c7557fbcd460c" }
-cyw43-pio = { git = "https://github.com/embassy-rs/embassy", rev = "af6fbb0ee19c5200bb4bafb9a10c7557fbcd460c" }
-embassy-rp = { git = "https://github.com/embassy-rs/embassy", rev = "af6fbb0ee19c5200bb4bafb9a10c7557fbcd460c" }
-embassy-net = { git = "https://github.com/embassy-rs/embassy", rev = "af6fbb0ee19c5200bb4bafb9a10c7557fbcd460c" }
-embassy-sync = { git = "https://github.com/embassy-rs/embassy", rev = "af6fbb0ee19c5200bb4bafb9a10c7557fbcd460c" }
-embassy-usb-logger = { git = "https://github.com/embassy-rs/embassy", rev = "af6fbb0ee19c5200bb4bafb9a10c7557fbcd460c" }
-embassy-time-driver = { git = "https://github.com/embassy-rs/embassy", rev = "af6fbb0ee19c5200bb4bafb9a10c7557fbcd460c" }
-embassy-time-queue-driver = { git = "https://github.com/embassy-rs/embassy", rev = "af6fbb0ee19c5200bb4bafb9a10c7557fbcd460c" }
+cyw43 = { git = "https://github.com/embassy-rs/embassy", rev = "1a1d5c4689a8b6c57ebb74e99fdea8df39adb037" }
+cyw43-pio = { git = "https://github.com/embassy-rs/embassy", rev = "1a1d5c4689a8b6c57ebb74e99fdea8df39adb037" }
+embassy-rp = { git = "https://github.com/embassy-rs/embassy", rev = "1a1d5c4689a8b6c57ebb74e99fdea8df39adb037" }
+embassy-net = { git = "https://github.com/embassy-rs/embassy", rev = "1a1d5c4689a8b6c57ebb74e99fdea8df39adb037" }
+embassy-sync = { git = "https://github.com/embassy-rs/embassy", rev = "1a1d5c4689a8b6c57ebb74e99fdea8df39adb037" }
+embassy-usb-logger = { git = "https://github.com/embassy-rs/embassy", rev = "1a1d5c4689a8b6c57ebb74e99fdea8df39adb037" }
+embassy-time-driver = { git = "https://github.com/embassy-rs/embassy", rev = "1a1d5c4689a8b6c57ebb74e99fdea8df39adb037" }
+embassy-time-queue-driver = { git = "https://github.com/embassy-rs/embassy", rev = "1a1d5c4689a8b6c57ebb74e99fdea8df39adb037" }
