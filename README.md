@@ -14,7 +14,6 @@ Features:
 
 Shortcomings:
 + While in version `0.*.*`, there may be breaking API changes
-+ Only the GET, POST, and HEAD methods are supported.
 + URL-Encoded strings, for example in Query and Form parsing, have a maximum length of 1024.
 + This has relatively little stress-testing so I advise not to expose it directly to the internet, but place it behind a proxy such as nginx, which will act as a security layer.
 + Certain serialization methods, such as the DebugValue response and JSON serialisation might be called several times if the response payload is large. The caller MUST ensure that the output of serialisation is the same during repeated calls with the same value.

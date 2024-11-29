@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Picoserve</title>
+    <script>
+        async function handle_get() {
+            document.getElementById("current_value").innerText = await (await fetch("/api/value", {
+                method: "GET"
+            })).json();
+        }
+
+        async function handle_set() {
+            await fetch("/api/value", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: document.getElementById("new_value").value
+            });
+
+            handle_get();
+        }
+    </script>
+</head>
+
+<body>
+    <fieldset>
+        <legend>Current Value</legend>
+
+        <button onclick="handle_get()">Get Value</button>
+
+        <output id="current_value"></output>
+    </fieldset>
+
+    <fieldset>
+        <legend>Set Value</legend>
+
+        <label>New Value: <input id="new_value" type="number"></label>
+
+        <button onclick="handle_set()">Submit</button>
+    </fieldset>
+
+</body>
+
+</html>
