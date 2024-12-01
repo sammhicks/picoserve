@@ -39,7 +39,7 @@ categories = ["asynchronous", "network-programming", "web-programming::http-serv
 const-sha1 = { version = "0.3.0", default-features = false }
 data-encoding = { version = "2.4.0", default-features = false }
 defmt = { version = "0.3.6", optional = true }
-embassy-net = { version = "0.4.0", optional = true, features = ["tcp", "proto-ipv4", "medium-ethernet"] }
+embassy-net = { version = "0.5.0", optional = true, features = ["tcp", "proto-ipv4", "medium-ethernet"] }
 embassy-time = { version = "0.3.0", optional = true }
 embedded-io-async = "0.6.0"
 futures-util = { version = "0.3.28", default-features = false }
