@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changes
 - `[picoserve::response::chunked::ChunkWriter::write_chunk](https://docs.rs/picoserve/latest/picoserve/response/chunked/struct.ChunkWriter.html)` no longer flushes the socket.
+- Removed workaround for embassy-net TcpSocket::flush() never finishing due to upstream bugfix.
 
 ## [0.13.1] - 2024-12-06
 

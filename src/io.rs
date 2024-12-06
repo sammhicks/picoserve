@@ -239,21 +239,8 @@ impl<'s> Socket for embassy_net::tcp::TcpSocket<'s> {
         .0?;
 
         // Flush the write half until the socket is closed.
-        // `embassy_net::tcp::TcpSocket` (possibly erroniously) keeps trying to flush until the tx buffer is empty,
-        // but we don't care at this point if data is lost
         timer
-            .run_with_maybe_timeout(
-                timeouts.write.clone(),
-                core::future::poll_fn(|cx| {
-                    use core::future::Future;
-
-                    if self.state() == embassy_net::tcp::State::Closed {
-                        core::task::Poll::Ready(Ok(()))
-                    } else {
-                        core::pin::pin!(self.flush()).poll(cx)
-                    }
-                }),
-            )
+            .run_with_maybe_timeout(timeouts.write.clone(), self.flush())
             .await
             .map_err(|_err| crate::Error::WriteTimeout)?
             .map_err(crate::Error::Write)
