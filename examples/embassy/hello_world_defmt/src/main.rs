@@ -97,7 +97,7 @@ async fn main(spawner: embassy_executor::Spawner) {
     let (stack, runner) = embassy_net::new(
         net_device,
         embassy_net::Config::ipv4_static(embassy_net::StaticConfigV4 {
-            address: embassy_net::Ipv4Cidr::new(embassy_net::Ipv4Address::new(192, 168, 0, 1), 24),
+            address: embassy_net::Ipv4Cidr::new(core::net::Ipv4Addr::new(192, 168, 0, 1), 24),
             gateway: None,
             dns_servers: Default::default(),
         }),
