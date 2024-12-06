@@ -41,7 +41,7 @@ async fn wifi_task(
 }
 
 #[embassy_executor::task]
-async fn net_task(stack: &'static embassy_net::Stack<cyw43::NetDriver<'static>>) -> ! {
+async fn net_task(mut stack: embassy_net::Runner<'static, cyw43::NetDriver<'static>>) -> ! {
     stack.run().await
 }
 
@@ -98,7 +98,7 @@ const WEB_TASK_POOL_SIZE: usize = 8;
 #[embassy_executor::task(pool_size = WEB_TASK_POOL_SIZE)]
 async fn web_task(
     id: usize,
-    stack: &'static embassy_net::Stack<cyw43::NetDriver<'static>>,
+    stack: embassy_net::Stack<'static>,
     app: &'static AppRouter<AppProps>,
     config: &'static picoserve::Config<Duration>,
     state: AppState,
@@ -157,27 +157,21 @@ async fn main(spawner: embassy_executor::Spawner) {
 
     control.init(clm).await;
 
-    let stack = make_static!(
-        embassy_net::Stack::<cyw43::NetDriver>,
-        embassy_net::Stack::new(
-            net_device,
-            embassy_net::Config::ipv4_static(embassy_net::StaticConfigV4 {
-                address: embassy_net::Ipv4Cidr::new(
-                    embassy_net::Ipv4Address::new(192, 168, 0, 1),
-                    24
-                ),
-                gateway: None,
-                dns_servers: Default::default(),
-            }),
-            make_static!(
-                embassy_net::StackResources::<WEB_TASK_POOL_SIZE>,
-                embassy_net::StackResources::new()
-            ),
-            embassy_rp::clocks::RoscRng.gen(),
-        )
+    let (stack, runner) = embassy_net::new(
+        net_device,
+        embassy_net::Config::ipv4_static(embassy_net::StaticConfigV4 {
+            address: embassy_net::Ipv4Cidr::new(embassy_net::Ipv4Address::new(192, 168, 0, 1), 24),
+            gateway: None,
+            dns_servers: Default::default(),
+        }),
+        make_static!(
+            embassy_net::StackResources::<WEB_TASK_POOL_SIZE>,
+            embassy_net::StackResources::new()
+        ),
+        embassy_rp::clocks::RoscRng.gen(),
     );
 
-    spawner.must_spawn(net_task(stack));
+    spawner.must_spawn(net_task(runner));
 
     control
         .start_ap_wpa2(
