@@ -22,10 +22,10 @@ impl<W: crate::io::Write> ChunkWriter<W> {
         self.writer.write_all(chunk).await?;
         self.writer.write_all(b"\r\n").await?;
 
-        self.writer.flush().await
+        Ok(())
     }
 
-    /// Finish writing chunks.
+    /// Finish writing chunks and flush the buffer.
     pub async fn finalize(mut self) -> Result<ChunksWritten, W::Error> {
         self.writer.write_all(b"0\r\n\r\n").await?;
         self.writer.flush().await?;
@@ -54,6 +54,12 @@ impl<W: crate::io::Write> ChunkWriter<W> {
         }
 
         write!(&mut self.writer, "{chunk_size:x}\r\n{args}\r\n",).await?;
+
+        Ok(())
+    }
+
+    /// Flush the underlying connection.
+    pub async fn flush(&mut self) -> Result<(), W::Error> {
         self.writer.flush().await
     }
 }
