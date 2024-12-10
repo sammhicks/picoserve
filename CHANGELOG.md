@@ -8,8 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Unreleased
 
 ### Changes
+
 - `[picoserve::response::chunked::ChunkWriter::write_chunk](https://docs.rs/picoserve/latest/picoserve/response/chunked/struct.ChunkWriter.html)` no longer flushes the socket.
 - Removed workaround for embassy-net TcpSocket::flush() never finishing due to upstream bugfix.
+
+### Added
+
+- Created an embassy example `app_with_props` to demonstrate building an app with build properties.
 
 ## [0.13.1] - 2024-12-06
 

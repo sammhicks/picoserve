@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
+    "app_with_props",
     "example_secrets",
     "hello_world",
     "set_pico_w_led",
