@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+### Fixed
+
+- Fixed `--inline-threshold` deprecation warning in `embassy` examples.
+
 ### Changes
 
 - `[picoserve::response::chunked::ChunkWriter::write_chunk](https://docs.rs/picoserve/latest/picoserve/response/chunked/struct.ChunkWriter.html)` no longer flushes the socket.
