@@ -190,14 +190,16 @@ impl<'r, State> FromRequest<'r, State> for alloc::vec::Vec<u8> {
     ) -> Result<Self, Self::Rejection> {
         let mut buffer = alloc::vec::Vec::new();
 
-        buffer
-            .try_reserve_exact(request_body.content_length())
-            .map_err(|_| FailedToExtractEntireBodyError::BufferIsTooSmall {
-                content_length: request_body.content_length(),
-                buffer_length: request_body.buffer_length(),
-            })?;
+        let content_length = request_body.content_length();
 
-        buffer.fill(0);
+        buffer.try_reserve_exact(content_length).map_err(|_| {
+            FailedToExtractEntireBodyError::BufferIsTooSmall {
+                content_length,
+                buffer_length: request_body.buffer_length(),
+            }
+        })?;
+
+        buffer.resize(content_length, 0);
 
         request_body
             .reader()
