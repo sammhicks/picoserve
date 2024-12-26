@@ -280,8 +280,26 @@ pub trait Content {
     async fn write_content<W: Write>(self, writer: W) -> Result<(), W::Error>;
 }
 
+macro_rules! content_methods {
+    ($as:ident) => {
+        fn content_type(&self) -> &'static str {
+            self.$as().content_type()
+        }
+
+        fn content_length(&self) -> usize {
+            self.$as().content_length()
+        }
+
+        async fn write_content<W: Write>(self, writer: W) -> Result<(), W::Error> {
+            self.$as().write_content(writer).await
+        }
+    };
+}
+
 #[doc(hidden)]
-pub struct ContentBody<C: Content>(C);
+pub struct ContentBody<C: Content> {
+    content: C,
+}
 
 impl<C: Content> Body for ContentBody<C> {
     async fn write_response_body<R: Read, W: Write<Error = R::Error>>(
@@ -289,7 +307,7 @@ impl<C: Content> Body for ContentBody<C> {
         _connection: Connection<'_, R>,
         mut writer: W,
     ) -> Result<(), W::Error> {
-        self.0.write_content(&mut writer).await?;
+        self.content.write_content(&mut writer).await?;
         writer.flush().await?;
         Ok(())
     }
@@ -309,19 +327,13 @@ impl<'a> Content for &'a [u8] {
     }
 }
 
+impl<const N: usize> Content for heapless::Vec<u8, N> {
+    content_methods!(as_slice);
+}
+
 #[cfg(feature = "alloc")]
 impl Content for alloc::vec::Vec<u8> {
-    fn content_type(&self) -> &'static str {
-        self.as_slice().content_type()
-    }
-
-    fn content_length(&self) -> usize {
-        self.as_slice().content_length()
-    }
-
-    async fn write_content<W: Write>(self, writer: W) -> Result<(), W::Error> {
-        self.as_slice().write_content(writer).await
-    }
+    content_methods!(as_slice);
 }
 
 impl<'a> Content for &'a str {
@@ -338,19 +350,13 @@ impl<'a> Content for &'a str {
     }
 }
 
+impl<const N: usize> Content for heapless::String<N> {
+    content_methods!(as_str);
+}
+
 #[cfg(feature = "alloc")]
 impl Content for alloc::string::String {
-    fn content_type(&self) -> &'static str {
-        self.as_str().content_type()
-    }
-
-    fn content_length(&self) -> usize {
-        self.as_str().content_length()
-    }
-
-    async fn write_content<W: Write>(self, writer: W) -> Result<(), W::Error> {
-        self.as_str().write_content(writer).await
-    }
+    content_methods!(as_str);
 }
 
 impl<'a> Content for fmt::Arguments<'a> {
@@ -376,15 +382,6 @@ pub struct ContentHeaders {
     content_length: usize,
 }
 
-impl ContentHeaders {
-    fn new(body: &impl Content) -> Self {
-        Self {
-            content_type: body.content_type(),
-            content_length: body.content_length(),
-        }
-    }
-}
-
 impl HeadersIter for ContentHeaders {
     async fn for_each_header<F: ForEachHeader>(self, mut f: F) -> Result<F::Output, F::Error> {
         f.call("Content-Type", self.content_type).await?;
@@ -400,18 +397,21 @@ pub struct Response<H: HeadersIter, B: Body> {
     pub(crate) body: B,
 }
 
-impl<B: Content> Response<ContentHeaders, ContentBody<B>> {
+impl<C: Content> Response<ContentHeaders, ContentBody<C>> {
     /// Creates a response from a HTTP status code and body with content. The Content-Type and Content-Length headers are generated from the values returned by the Body.
-    pub fn new(status_code: StatusCode, body: B) -> Self {
+    pub fn new(status_code: StatusCode, content: C) -> Self {
         Self {
             status_code,
-            headers: ContentHeaders::new(&body),
-            body: ContentBody(body),
+            headers: ContentHeaders {
+                content_type: content.content_type(),
+                content_length: content.content_length(),
+            },
+            body: ContentBody { content },
         }
     }
 
     /// A response with a status of 200 "OK".
-    pub fn ok(body: B) -> Self {
+    pub fn ok(body: C) -> Self {
         Self::new(StatusCode::OK, body)
     }
 }
@@ -561,6 +561,18 @@ pub trait IntoResponse: Sized {
     ) -> Result<ResponseSent, W::Error>;
 }
 
+impl<C: Content> IntoResponse for C {
+    async fn write_to<R: Read, W: ResponseWriter<Error = R::Error>>(
+        self,
+        connection: Connection<'_, R>,
+        response_writer: W,
+    ) -> Result<ResponseSent, W::Error> {
+        response_writer
+            .write_response(connection, Response::ok(self))
+            .await
+    }
+}
+
 impl<H: HeadersIter, B: Body> IntoResponse for Response<H, B> {
     async fn write_to<R: Read, W: ResponseWriter<Error = R::Error>>(
         self,
@@ -588,51 +600,6 @@ impl IntoResponse for () {
         response_writer: W,
     ) -> Result<ResponseSent, W::Error> {
         "OK\n".write_to(connection, response_writer).await
-    }
-}
-
-impl<'a> IntoResponse for &'a str {
-    async fn write_to<R: Read, W: ResponseWriter<Error = R::Error>>(
-        self,
-        connection: Connection<'_, R>,
-        response_writer: W,
-    ) -> Result<ResponseSent, W::Error> {
-        response_writer
-            .write_response(connection, Response::ok(self))
-            .await
-    }
-}
-
-impl<'a> IntoResponse for fmt::Arguments<'a> {
-    async fn write_to<R: Read, W: ResponseWriter<Error = R::Error>>(
-        self,
-        connection: Connection<'_, R>,
-        response_writer: W,
-    ) -> Result<ResponseSent, W::Error> {
-        response_writer
-            .write_response(connection, Response::ok(self))
-            .await
-    }
-}
-
-impl<const N: usize> IntoResponse for heapless::String<N> {
-    async fn write_to<R: Read, W: ResponseWriter<Error = R::Error>>(
-        self,
-        connection: Connection<'_, R>,
-        response_writer: W,
-    ) -> Result<ResponseSent, W::Error> {
-        self.as_str().write_to(connection, response_writer).await
-    }
-}
-
-#[cfg(feature = "alloc")]
-impl IntoResponse for alloc::string::String {
-    async fn write_to<R: Read, W: ResponseWriter<Error = R::Error>>(
-        self,
-        connection: Connection<'_, R>,
-        response_writer: W,
-    ) -> Result<ResponseSent, W::Error> {
-        self.as_str().write_to(connection, response_writer).await
     }
 }
 

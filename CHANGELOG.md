@@ -16,6 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `[picoserve::response::chunked::ChunkWriter::write_chunk](https://docs.rs/picoserve/latest/picoserve/response/chunked/struct.ChunkWriter.html)` no longer flushes the socket.
 - Removed workaround for embassy-net TcpSocket::flush() never finishing due to upstream bugfix.
+- Tidied Content implementation of containers (e.g. Vec and String).
+- `impl<C: Content> IntoResponse for C`
 
 ### Added
 
