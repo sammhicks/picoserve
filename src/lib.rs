@@ -1,5 +1,11 @@
 #![cfg_attr(not(any(feature = "std", test)), no_std)]
 #![allow(async_fn_in_trait)]
+#![deny(
+    unsafe_code,
+    clippy::missing_safety_doc,
+    clippy::multiple_unsafe_ops_per_block,
+    clippy::undocumented_unsafe_blocks
+)]
 
 //! An async `no_std` HTTP server suitable for bare-metal environments, heavily inspired by [axum](https://github.com/tokio-rs/axum).
 //!

@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Fixed `--inline-threshold` deprecation warning in `embassy` examples.
+- Require safety documentation for unsafe blocks.
 
 ### Changes
 

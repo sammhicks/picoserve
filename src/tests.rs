@@ -78,12 +78,22 @@ impl hyper::rt::Read for PipeRx {
             };
         }
 
-        let read_size = this.current.read(unsafe {
-            // TODO - replace with MaybeUninit::slice_assume_init_mut when stable
-            &mut *(buf.as_mut() as *mut [std::mem::MaybeUninit<u8>] as *mut [u8])
-        });
+        let read_size = this.current.read(
+            // Safety:
+            // Copied from MaybeUninit::slice_assume_init_mut.
+            #[allow(unsafe_code, clippy::multiple_unsafe_ops_per_block)]
+            unsafe {
+                // TODO - replace with MaybeUninit::slice_assume_init_mut when stable
+                &mut *(buf.as_mut() as *mut [std::mem::MaybeUninit<u8>] as *mut [u8])
+            },
+        );
 
-        unsafe { buf.advance(read_size) };
+        // Safety:
+        // read_size comes from reading from the buffer and thus is at most the size of the buffer.
+        #[allow(unsafe_code)]
+        unsafe {
+            buf.advance(read_size)
+        };
 
         Poll::Ready(Ok(()))
     }

@@ -682,10 +682,15 @@ impl<P: WebSocketProtocol, C: WebSocketCallback> super::IntoResponse for Upgrade
                     headers: [
                         ("Upgrade", "websocket"),
                         ("Connection", "upgrade"),
-                        ("Sec-WebSocket-Accept", unsafe {
-                            // SAFETY: sec_websocket_accept was created by data_encoding::BASE64.encode_mut, which creates a UTF-8 string
-                            core::str::from_utf8_unchecked(&sec_websocket_accept)
-                        }),
+                        (
+                            "Sec-WebSocket-Accept",
+                            // Safety:
+                            // sec_websocket_accept was created by data_encoding::BASE64.encode_mut, which creates a UTF-8 string
+                            #[allow(unsafe_code)]
+                            unsafe {
+                                core::str::from_utf8_unchecked(&sec_websocket_accept)
+                            },
+                        ),
                     ],
                     body: UpgradedWebSocketBody {
                         upgrade_token,
