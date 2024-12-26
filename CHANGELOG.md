@@ -5,16 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## Unreleased
+## [0.13.3] - 2024-12-26
 
 ### Fixed
 
 - Require safety documentation for unsafe blocks.
-- Fixed [FromRequest](https://docs.rs/picoserve/latest/picoserve/extract/trait.FromRequest.html) for `alloc::vec::Vec`, and by extension, `alloc::string::String`.
+- Fixed [FromRequest](https://docs.rs/picoserve/0.13.3/picoserve/extract/trait.FromRequest.html) for `alloc::vec::Vec`, and by extension, `alloc::string::String`.
 
 ### Changes
 
-- [`picoserve::response::chunked::ChunkWriter::write_chunk`](https://docs.rs/picoserve/latest/picoserve/response/chunked/struct.ChunkWriter.html) no longer flushes the socket.
+- [`picoserve::response::chunked::ChunkWriter::write_chunk`](https://docs.rs/picoserve/0.13.3/picoserve/response/chunked/struct.ChunkWriter.html) no longer flushes the socket.
 - Removed workaround for embassy-net TcpSocket::flush() never finishing due to upstream bugfix.
 - Tidied Content implementation of containers (e.g. Vec and String).
 - `impl<C: Content> IntoResponse for C`
