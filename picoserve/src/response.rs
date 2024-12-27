@@ -732,3 +732,7 @@ impl core::future::IntoFuture for Redirect {
         core::future::ready(self)
     }
 }
+
+pub trait ErrorWithStatusCode: fmt::Display + IntoResponse {
+    fn status_code(&self) -> StatusCode;
+}

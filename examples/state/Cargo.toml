@@ -6,7 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-anyhow = "1.0.86"
-picoserve = { path = "../..", features = ["tokio"] }
-serde = { version = "1.0.204", features = ["derive"] }
-tokio = { version = "1.38.1", features = ["rt", "io-util", "net", "time", "macros"] }
+anyhow = { workspace = true }
+picoserve = { path = "../../picoserve", features = ["tokio"] }
+serde = { workspace = true }
+tokio = { workspace = true }
