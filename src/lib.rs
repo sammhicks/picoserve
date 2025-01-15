@@ -327,6 +327,22 @@ pub async fn serve<P: routing::PathRouter>(
     serve_and_shutdown(app, time::EmbassyTimer, config, buffer, socket, &()).await
 }
 
+/// Serve 'app' with incoming requests. App has no state.
+///
+/// This variant does not use the embassy_net::tcp::TcpSocket, but the
+/// (internal) picoserve socket. This is useful in cases where a 3rd party TCP
+/// stack and (custom) socket to that are used. It is far easier to implement a
+/// picoserve socket then an embassy-net socket.
+#[cfg(feature = "embassy")]
+pub async fn serve_custom_socket<P: routing::PathRouter, S: io::Socket>(
+    app: &Router<P>,
+    config: &Config<embassy_time::Duration>,
+    buffer: &mut [u8],
+    socket: S,
+) -> Result<u64, Error<S::Error>> {
+    serve_and_shutdown(app, time::EmbassyTimer, config, buffer, socket, &()).await
+}
+
 #[cfg(feature = "embassy")]
 /// Serve `app` with incoming requests. App has a state of `State`.
 pub async fn serve_with_state<State, P: routing::PathRouter<State>>(
