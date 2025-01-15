@@ -331,8 +331,8 @@ pub async fn serve<P: routing::PathRouter>(
 ///
 /// This variant does not use the embassy_net::tcp::TcpSocket, but the
 /// (internal) picoserve socket. This is useful in cases where a 3rd party TCP
-/// stack and (custom) socket to that are used. It is far easier to implement a
-/// picoserve socket then an embassy-net socket.
+/// stack, and (custom) socket to that, are used. It is far easier to implement
+/// a picoserve socket, than an embassy-net socket.
 #[cfg(feature = "embassy")]
 pub async fn serve_custom_socket<P: routing::PathRouter, S: io::Socket>(
     app: &Router<P>,
