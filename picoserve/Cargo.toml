@@ -32,14 +32,14 @@ thiserror = { version = "2.0.9", default-features = false }
 tokio = { version = "1.32.0", optional = true, features = ["io-util", "net", "time"] }
 
 [features]
-std = ["alloc"]
-alloc = []
+std = ["alloc"]     # Use the standard library. Used by examples.
+alloc = []          # Enable `FromRequest` and `Content` for some alloc types.
 
-tokio = ["dep:tokio", "std", "serde/std"]
-embassy = ["dep:embassy-time", "dep:embassy-net"]
+tokio = ["dep:tokio", "std", "serde/std"]           # Use the `tokio` runtime. Used by examples.
+embassy = ["dep:embassy-time", "dep:embassy-net"]   # Use the `embassy` runtime and `embassy-net` sockets.
 
-defmt = ["dep:defmt", "embassy-net?/defmt", "serde-json-core/defmt"]
-log = ["dep:log"]
+defmt = ["dep:defmt", "embassy-net?/defmt", "serde-json-core/defmt"]    # Emit log messages using the `defmt` crate.
+log = ["dep:log"]                                                       # Emit log messages using the `log` crate.
 
 [dev-dependencies]
 embedded-io-async = { version = "0.6.0", features = ["std"] }
