@@ -161,6 +161,7 @@ async fn main(spawner: embassy_executor::Spawner) {
     let spi = cyw43_pio::PioSpi::new(
         &mut pio.common,
         pio.sm0,
+        cyw43_pio::DEFAULT_CLOCK_DIVIDER,
         pio.irq0,
         cs,
         p.PIN_24,

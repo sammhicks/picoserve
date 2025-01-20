@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+### Breaking
+
+- Updated to embassy-net >=0.6 and embassy-time >=0.4, which has a breaking change.
+
 ### Added
 
 - Added derivable trait [`ErrorWithStatusCode`](https://docs.rs/picoserve/latest/picoserve/response/trait.ErrorWithStatusCode.html) to facilitate creating error responses. Deriving `ErrorWithStatusCode` also derives [`IntoResponse`](https://docs.rs/picoserve/latest/picoserve/response/trait.IntoResponse.html)
