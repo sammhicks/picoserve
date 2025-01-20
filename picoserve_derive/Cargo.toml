@@ -1,9 +1,9 @@
 [package]
 name = "picoserve_derive"
-version = "0.1.0"
+version = "0.1.1"
 authors = ["Samuel Hicks"]
 edition = "2021"
-rust-version = "1.79"
+rust-version = "1.80"
 description = "Macros for picoserve"
 repository = "https://github.com/sammhicks/picoserve"
 license = "MIT"

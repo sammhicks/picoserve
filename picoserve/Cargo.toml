@@ -1,9 +1,9 @@
 [package]
 name = "picoserve"
-version = "0.14.0"
+version = "0.14.1"
 authors = ["Samuel Hicks"]
 edition = "2021"
-rust-version = "1.79"
+rust-version = "1.80"
 description = "An async no_std HTTP server suitable for bare-metal environments"
 readme = "../README.md"
 repository = "https://github.com/sammhicks/picoserve"
