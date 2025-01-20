@@ -69,6 +69,26 @@ impl<'a, T: core::fmt::Debug + ?Sized> core::fmt::Display for Debug2Format<'a, T
 }
 
 #[cfg(feature = "defmt")]
+pub use defmt::Display2Format;
+
+#[cfg(not(feature = "defmt"))]
+pub struct Display2Format<'a, T: core::fmt::Display + ?Sized>(pub &'a T);
+
+#[cfg(not(feature = "defmt"))]
+impl<'a, T: core::fmt::Display + ?Sized> core::fmt::Debug for Display2Format<'a, T> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        core::fmt::Display::fmt(self.0, f)
+    }
+}
+
+#[cfg(not(feature = "defmt"))]
+impl<'a, T: core::fmt::Display + ?Sized> core::fmt::Display for Display2Format<'a, T> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        core::fmt::Display::fmt(self.0, f)
+    }
+}
+
+#[cfg(feature = "defmt")]
 pub trait LogDisplay: core::fmt::Display + defmt::Format {}
 
 #[cfg(feature = "defmt")]

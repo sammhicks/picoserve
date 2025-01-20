@@ -302,13 +302,10 @@ impl fmt::Display for DeserializationError {
 
 impl serde::de::Error for DeserializationError {
     fn custom<T: fmt::Display>(msg: T) -> Self {
-        #[cfg(feature = "std")]
-        println!("DeserializationError: {msg}");
-
-        // TODO - defmt logging
-
-        #[cfg(not(feature = "std"))]
-        drop(msg);
+        log_warn!(
+            "DeserializationError: {}",
+            crate::logging::Display2Format(&msg)
+        );
 
         Self
     }
