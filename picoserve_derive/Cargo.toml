@@ -1,7 +1,14 @@
 [package]
 name = "picoserve_derive"
 version = "0.1.0"
+authors = ["Samuel Hicks"]
 edition = "2021"
+rust-version = "1.79"
+description = "Macros for picoserve"
+repository = "https://github.com/sammhicks/picoserve"
+license = "MIT"
+keywords = ["no_std", "http", "web", "framework"]
+categories = ["asynchronous", "network-programming", "web-programming::http-server"]
 
 [lib]
 proc-macro = true
