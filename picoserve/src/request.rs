@@ -263,8 +263,8 @@ impl<'a> Iterator for HeadersIter<'a> {
     }
 }
 
-#[derive(Clone, Copy)]
 /// The Request Headers.
+#[derive(Clone, Copy)]
 pub struct Headers<'a>(&'a [u8]);
 
 impl<'a> Headers<'a> {
@@ -304,8 +304,8 @@ impl<'a> fmt::Debug for Headers<'a> {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
 /// The URL-encoded path of the request
+#[derive(Debug, Clone, Copy)]
 pub struct Path<'r>(pub(crate) UrlEncodedString<'r>);
 
 impl<'r> fmt::Display for Path<'r> {
@@ -365,8 +365,8 @@ impl<'r> IntoIterator for Path<'r> {
     }
 }
 
-#[derive(Clone)]
 /// A path "segment", i.e. the text between two `/`s.
+#[derive(Clone)]
 pub struct PathSegments<'r>(Path<'r>);
 
 impl<'r> PathSegments<'r> {
@@ -489,9 +489,9 @@ pub enum ReadAllBodyError<E> {
     IO(E),
 }
 
+/// The body of the request, which may not have yet been buffered.
 #[derive(Debug)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-/// The body of the request, which may not have yet been buffered.
 pub struct RequestBody<'r, R: Read> {
     content_length: usize,
     reader: &'r mut R,

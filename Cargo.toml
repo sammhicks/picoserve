@@ -2,6 +2,7 @@
 resolver = "2"
 members = [
     "picoserve",
+    "picoserve_derive",
     "examples/chunked_response",
     "examples/custom_extractor",
     "examples/form",
@@ -25,4 +26,5 @@ exclude = [
 anyhow = "1.0.86"
 heapless = { version = "0.8.0", features = ["serde"] }
 serde = { version = "1.0.204", features = ["derive"] }
+thiserror = { version = "2.0.9", default-features = false }
 tokio = { version = "1.38.1", features = ["rt", "io-util", "net", "time", "macros"] }

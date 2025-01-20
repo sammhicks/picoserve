@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use picoserve::{
     extract::FromRequest,
-    response::IntoResponse,
+    response::{ErrorWithStatusCode, IntoResponse},
     routing::{get_service, post},
 };
 
@@ -12,48 +12,16 @@ struct Number {
     value: f32,
 }
 
+#[derive(Debug, thiserror::Error, ErrorWithStatusCode)]
+#[status_code(BAD_REQUEST)]
 enum BadRequest {
+    #[error("Read Error")]
+    #[status_code(INTERNAL_SERVER_ERROR)]
     ReadError,
+    #[error("Request Body is not UTF-8: {0}")]
     NotUtf8(core::str::Utf8Error),
+    #[error("Request Body is not a valid integer: {0}")]
     BadNumber(core::num::ParseFloatError),
-}
-
-impl IntoResponse for BadRequest {
-    async fn write_to<
-        R: picoserve::io::Read,
-        W: picoserve::response::ResponseWriter<Error = R::Error>,
-    >(
-        self,
-        connection: picoserve::response::Connection<'_, R>,
-        response_writer: W,
-    ) -> Result<picoserve::ResponseSent, W::Error> {
-        match self {
-            BadRequest::ReadError => {
-                (
-                    picoserve::response::StatusCode::BAD_REQUEST,
-                    format_args!("Read Error"),
-                )
-                    .write_to(connection, response_writer)
-                    .await
-            }
-            BadRequest::NotUtf8(err) => {
-                (
-                    picoserve::response::StatusCode::BAD_REQUEST,
-                    format_args!("Request Body is not UTF-8: {err}"),
-                )
-                    .write_to(connection, response_writer)
-                    .await
-            }
-            BadRequest::BadNumber(err) => {
-                (
-                    picoserve::response::StatusCode::BAD_REQUEST,
-                    format_args!("Request Body is not a valid integer: {err}"),
-                )
-                    .write_to(connection, response_writer)
-                    .await
-            }
-        }
-    }
 }
 
 impl<'r, State> FromRequest<'r, State> for Number {

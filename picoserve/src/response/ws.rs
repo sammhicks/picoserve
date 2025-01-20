@@ -1,6 +1,9 @@
 //! Web Sockets. See [web_sockets](https://github.com/sammhicks/picoserve/blob/main/examples/web_sockets/src/main.rs) for usage example.
 
+use picoserve_derive::ErrorWithStatusCode;
+
 use crate::{
+    self as picoserve,
     extract::FromRequestParts,
     io::{Read, Write, WriteExt},
 };
@@ -8,53 +11,26 @@ use crate::{
 use super::StatusCode;
 
 /// Indicates that the websocket failed to be upgraded.
+#[derive(Debug, thiserror::Error, ErrorWithStatusCode)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+#[status_code(BAD_REQUEST)]
 pub enum WebSocketUpgradeRejection {
     /// Websocket upgrades must use the GET method.
+    #[error("Websocket upgrades must use the `GET` method")]
+    #[status_code(BAD_REQUEST)]
     MethodNotGet,
     /// Websocket upgrades must have a Connection header of "Upgrade".
+    #[error("Websocket upgrades must have a Connection header of `Upgrade`")]
     InvalidConnectionHeader,
     /// Websocket upgrades must have an Upgrade of "websocket".
+    #[error("Websocket upgrades must have an Upgrade of `websocket`")]
     InvalidUpgradeHeader,
     /// Websocket version must be 13.
+    #[error("Websocket version must be 13")]
     InvalidWebSocketVersionHeader,
     /// Websocket upgrade header "sec-websocket-key" is missing.
+    #[error("Websocket upgrades must have a `Sec-WebSocket-Key` header")]
     WebSocketKeyHeaderMissing,
-}
-
-impl super::IntoResponse for WebSocketUpgradeRejection {
-    async fn write_to<R: Read, W: super::ResponseWriter<Error = R::Error>>(
-        self,
-        connection: super::Connection<'_, R>,
-        response_writer: W,
-    ) -> Result<crate::ResponseSent, W::Error> {
-        (
-            StatusCode::BAD_REQUEST,
-            match self {
-                WebSocketUpgradeRejection::MethodNotGet => {
-                    return (
-                        StatusCode::METHOD_NOT_ALLOWED,
-                        "Websocket upgrades must use the `GET` method\n",
-                    )
-                        .write_to(connection, response_writer)
-                        .await
-                }
-                WebSocketUpgradeRejection::InvalidConnectionHeader => {
-                    "Websocket upgrades must have a Connection header of `Upgrade`\n"
-                }
-                WebSocketUpgradeRejection::InvalidUpgradeHeader => {
-                    "Websocket upgrades must have an Upgrade of `websocket`\n"
-                }
-                WebSocketUpgradeRejection::InvalidWebSocketVersionHeader => {
-                    "Websocket version must be 13\n"
-                }
-                WebSocketUpgradeRejection::WebSocketKeyHeaderMissing => {
-                    "Websocket upgrades must have a `Sec-WebSocket-Key` header\n"
-                }
-            },
-        )
-            .write_to(connection, response_writer)
-            .await
-    }
 }
 
 /// Types which can represent either a specified web socket protocol, or an unspecified web socket protocol.
@@ -166,9 +142,9 @@ impl<'r, State> crate::extract::FromRequest<'r, State> for WebSocketUpgrade {
     }
 }
 
+/// A web socket message opcode.
 #[derive(Debug)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-/// A web socket message opcode.
 pub enum Opcode {
     /// "Data", e.g. text or binary.
     Data(Data),

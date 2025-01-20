@@ -80,9 +80,9 @@ pub struct Timeouts<D> {
     pub write: Option<D>,
 }
 
+/// After the response has been sent, should the connection be kept open to allow the client to make further requests on the same TCP connection?
 #[derive(Debug, Clone, Copy)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-/// After the response has been sent, should the connection be kept open to allow the client to make further requests on the same TCP connection?
 pub enum KeepAlive {
     /// Close the connection after the response has been sent, i.e. each TCP connection serves a single request.
     Close,

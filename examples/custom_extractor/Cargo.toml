@@ -9,4 +9,5 @@ edition = "2021"
 anyhow = { workspace = true }
 picoserve = { path = "../../picoserve", features = ["tokio"] }
 serde = { workspace = true }
+thiserror = { workspace = true }
 tokio = { workspace = true }

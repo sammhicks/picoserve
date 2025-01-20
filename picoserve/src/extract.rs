@@ -14,10 +14,10 @@
 //! Although [RequestHandlerFunctions](crate::routing::RequestHandlerFunction) may not borrow from request due to restrictions with Higher-Order-Lifetime-Bounds, by using [from_request](crate::from_request) and [from_request_parts](crate::from_request_parts), [RequestHandlerServices](crate::routing::RequestHandlerService) and [PathRouterServices](crate::routing::PathRouterService) may do so.
 
 use crate::{
+    self as picoserve,
     io::{Read, ReadExt},
     request::{RequestBody, RequestParts},
-    response::{IntoResponse, StatusCode},
-    ResponseSent,
+    response::{ErrorWithStatusCode, IntoResponse},
 };
 
 pub mod json {
@@ -45,9 +45,9 @@ pub trait FromRequestParts<'r, State>: Sized {
     ) -> Result<Self, Self::Rejection>;
 }
 
-#[macro_export]
 /// Extract values from Request Parts. Each `$name` must implement [FromRequestParts], but may borrow from the request.
 /// If extraction is rejected, the rejection is written to `$response_writer` and the function returns.
+#[macro_export]
 macro_rules! from_request_parts {
     ($state:ident, $request:ident, $response_writer:ident $(,$name:ty)* $(,)?) => {
         (
@@ -74,9 +74,9 @@ pub trait FromRequest<'r, State, M = private::ViaRequest>: Sized {
     ) -> Result<Self, Self::Rejection>;
 }
 
-#[macro_export]
 /// Extract a value from a request. `$name` must implement [FromRequest], but may borrow from the request.
 /// If extraction is rejected, the rejection is written to `$response_writer` and the function returns.
+#[macro_export]
 macro_rules! from_request {
     ($state:ident, $request:ident, $response_writer:ident, $name:ty $(,)?) => {
         match <$name as $crate::extract::FromRequest>::from_request(
@@ -96,48 +96,19 @@ macro_rules! from_request {
     };
 }
 
-#[derive(Debug)]
+/// Errors arising while reading the entire body.
+#[derive(Debug, thiserror::Error, ErrorWithStatusCode)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-/// Errors arising while reading the entire body
 pub enum FailedToExtractEntireBodyError {
+    #[error("No space to extract entire body. Content Length: {content_length}. Buffer Length: {buffer_length}.")]
+    #[status_code(PAYLOAD_TOO_LARGE)]
     BufferIsTooSmall {
         content_length: usize,
         buffer_length: usize,
     },
+    #[error("IO Error while reading body.")]
+    #[status_code(INTERNAL_SERVER_ERROR)]
     IoError,
-}
-
-impl IntoResponse for FailedToExtractEntireBodyError {
-    async fn write_to<R: Read, W: crate::response::ResponseWriter<Error = R::Error>>(
-        self,
-        connection: crate::response::Connection<'_, R>,
-        response_writer: W,
-    ) -> Result<ResponseSent, W::Error> {
-        match self {
-            FailedToExtractEntireBodyError::BufferIsTooSmall {
-                content_length,
-                buffer_length,
-            } => {
-                (
-                    StatusCode::PAYLOAD_TOO_LARGE,
-                    format_args!(
-                        "No space to extract entire body. Content Length: {}. Buffer Length: {}.",
-                        content_length, buffer_length,
-                    ),
-                )
-                    .write_to(connection, response_writer)
-                    .await
-            }
-            FailedToExtractEntireBodyError::IoError => {
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "IO Error while reading body",
-                )
-                    .write_to(connection, response_writer)
-                    .await
-            }
-        }
-    }
 }
 
 impl<'r, State> FromRequest<'r, State> for &'r mut [u8] {
@@ -238,34 +209,16 @@ impl<'r, State> FromRequest<'r, State> for alloc::borrow::Cow<'r, [u8]> {
     }
 }
 
-#[derive(Debug)]
+/// Errors arising while reading the entire body as a UTF-8 String.
+#[derive(Debug, thiserror::Error, ErrorWithStatusCode)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-/// Errors arising while reading the entire body as a UTF-8 String
 pub enum FailedToExtractEntireBodyAsStringError {
+    #[error(transparent)]
+    #[status_code(transparent)]
     FailedToExtractEntireBody(FailedToExtractEntireBodyError),
+    #[error("Body is not UTF-8: {0}")]
+    #[status_code(BAD_REQUEST)]
     StringIsNotUtf8(#[cfg_attr(feature = "defmt", defmt(Debug2Format))] core::str::Utf8Error),
-}
-
-impl IntoResponse for FailedToExtractEntireBodyAsStringError {
-    async fn write_to<R: Read, W: crate::response::ResponseWriter<Error = R::Error>>(
-        self,
-        connection: crate::response::Connection<'_, R>,
-        response_writer: W,
-    ) -> Result<ResponseSent, W::Error> {
-        match self {
-            FailedToExtractEntireBodyAsStringError::FailedToExtractEntireBody(err) => {
-                err.write_to(connection, response_writer).await
-            }
-            FailedToExtractEntireBodyAsStringError::StringIsNotUtf8(err) => {
-                (
-                    StatusCode::BAD_REQUEST,
-                    format_args!("Body is not UTF-8: {err}"),
-                )
-                    .write_to(connection, response_writer)
-                    .await
-            }
-        }
-    }
 }
 
 impl<'r, State> FromRequest<'r, State> for &'r mut str {
@@ -371,19 +324,11 @@ impl<T: serde::de::DeserializeOwned> core::ops::DerefMut for Query<T> {
 }
 
 /// Rejection used for [Query].
+#[derive(Debug, thiserror::Error, ErrorWithStatusCode)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+#[error("Bad Query")]
+#[status_code(BAD_REQUEST)]
 pub struct QueryRejection;
-
-impl IntoResponse for QueryRejection {
-    async fn write_to<R: Read, W: crate::response::ResponseWriter<Error = R::Error>>(
-        self,
-        connection: crate::response::Connection<'_, R>,
-        response_writer: W,
-    ) -> Result<ResponseSent, W::Error> {
-        (StatusCode::BAD_REQUEST, "Bad Query\n")
-            .write_to(connection, response_writer)
-            .await
-    }
-}
 
 impl<'r, State, T: serde::de::DeserializeOwned> FromRequestParts<'r, State> for Query<T> {
     type Rejection = QueryRejection;
@@ -416,29 +361,16 @@ impl<T: serde::de::DeserializeOwned> core::ops::DerefMut for Form<T> {
 }
 
 /// Rejection used for [Form].
+#[derive(Debug, thiserror::Error, ErrorWithStatusCode)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+#[status_code(BAD_REQUEST)]
 pub enum FormRejection {
     /// Error decoding the body as UTF-8
+    #[error("Body is not UTF-8")]
     BodyIsNotUtf8,
     /// Error deserializing Form
+    #[error("Bad Form")]
     BadForm,
-}
-
-impl IntoResponse for FormRejection {
-    async fn write_to<R: Read, W: crate::response::ResponseWriter<Error = R::Error>>(
-        self,
-        connection: crate::response::Connection<'_, R>,
-        response_writer: W,
-    ) -> Result<ResponseSent, W::Error> {
-        (
-            StatusCode::BAD_REQUEST,
-            match self {
-                Self::BodyIsNotUtf8 => "Body is not UTF-8\n",
-                Self::BadForm => "Bad Form\n",
-            },
-        )
-            .write_to(connection, response_writer)
-            .await
-    }
 }
 
 impl<'r, State, T: serde::de::DeserializeOwned> FromRequest<'r, State> for Form<T> {
@@ -463,34 +395,16 @@ impl<'r, State, T: serde::de::DeserializeOwned> FromRequest<'r, State> for Form<
     }
 }
 
+/// Rejection used for [Json].
+#[derive(Debug, thiserror::Error, ErrorWithStatusCode)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum JsonRejection {
+    #[error("IO Error")]
+    #[status_code(INTERNAL_SERVER_ERROR)]
     IoError,
+    #[error("Failed to parse JSON body: {0}")]
+    #[status_code(BAD_REQUEST)]
     DeserializationError(serde_json_core::de::Error),
-}
-
-impl IntoResponse for JsonRejection {
-    async fn write_to<R: Read, W: crate::response::ResponseWriter<Error = R::Error>>(
-        self,
-        connection: crate::response::Connection<'_, R>,
-        response_writer: W,
-    ) -> Result<ResponseSent, W::Error> {
-        match self {
-            Self::IoError => {
-                (StatusCode::INTERNAL_SERVER_ERROR, "IO Error")
-                    .write_to(connection, response_writer)
-                    .await
-            }
-            Self::DeserializationError(error) => {
-                (
-                    StatusCode::BAD_REQUEST,
-                    format_args!("Failed to parse JSON body: {error}"),
-                )
-                    .write_to(connection, response_writer)
-                    .await
-            }
-        }
-    }
 }
 
 impl<'r, State, T: serde::Deserialize<'r>, const UNESCAPE_BUFFER_SIZE: usize>
@@ -546,29 +460,16 @@ impl<'r, S, T: FromRef<S>> FromRequestParts<'r, S> for State<T> {
     }
 }
 
-#[derive(Debug)]
+/// The Connection could not be upgraded because the "Upgrade" headed was missing.
+#[derive(Debug, thiserror::Error, ErrorWithStatusCode)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-/// The Connection could not be upgraded because the "Upgrade" headed was missing
+#[error("Connection header did not include `upgrade`")]
+#[status_code(BAD_REQUEST)]
 pub struct NoUpgradeHeaderError;
 
-impl IntoResponse for NoUpgradeHeaderError {
-    async fn write_to<R: Read, W: crate::response::ResponseWriter<Error = R::Error>>(
-        self,
-        connection: crate::response::Connection<'_, R>,
-        response_writer: W,
-    ) -> Result<ResponseSent, W::Error> {
-        (
-            StatusCode::BAD_REQUEST,
-            "Connection header did not include `upgrade`\n",
-        )
-            .write_to(connection, response_writer)
-            .await
-    }
-}
-
+/// A token which allows a connection to be upgraded. Verifies that the "Upgrade" header has been set.
 #[derive(Debug)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-/// A token which allows a connection to be upgraded. Verifies that the "Upgrade" header has been set
 pub struct UpgradeToken(());
 
 impl<'r, State> FromRequestParts<'r, State> for UpgradeToken {

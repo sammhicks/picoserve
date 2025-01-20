@@ -27,6 +27,8 @@ use crate::{
     KeepAlive, ResponseSent,
 };
 
+pub use picoserve_derive::ErrorWithStatusCode;
+
 pub mod chunked;
 pub mod custom;
 pub mod fs;
@@ -733,6 +735,10 @@ impl core::future::IntoFuture for Redirect {
     }
 }
 
+/// Error Responses consisting of a `text/plain` message and a [StatusCode].
+///
+/// This trait is derivable. See [picoserve_derive::ErrorWithStatusCode].
 pub trait ErrorWithStatusCode: fmt::Display + IntoResponse {
+    /// The [StatusCode] to return for this error.
     fn status_code(&self) -> StatusCode;
 }

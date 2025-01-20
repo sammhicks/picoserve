@@ -4,9 +4,9 @@ use core::fmt;
 
 use serde::de::Error;
 
+/// The error returned when attempting to decode a character in a [UrlEncodedString].
 #[derive(Debug)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-/// The error returned when attempting to decode a character in a [UrlEncodedString].
 pub enum UrlEncodedCharacterDecodeError {
     /// Percent symbol is not followed by two hex digits.
     BadlyFormattedPercentEncoding,
@@ -177,9 +177,9 @@ struct UrlEncodedRepresentation<'a> {
     value: &'a str,
 }
 
+/// The error returned when attempting to decode a [UrlEncodedString] into a string.
 #[derive(Debug)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-/// The error returned when attempting to decode a [UrlEncodedString] into a string.
 pub enum DecodeError {
     /// Error during decoding a character.
     BadUrlEncodedCharacter(UrlEncodedCharacterDecodeError),
@@ -411,9 +411,9 @@ impl<'de> serde::Deserializer<'de> for DeserializeUrlEncoded<'de> {
     }
 }
 
+/// Failed to deserialize a URL-Encoded form
 #[derive(Debug)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-/// Failed to deserialize a URL-Encoded form
 pub struct FormDeserializationError;
 
 impl fmt::Display for FormDeserializationError {
