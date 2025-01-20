@@ -1,9 +1,15 @@
-use core::{
+use std::{
     convert::Infallible,
+    format,
     pin::Pin,
+    string::String,
     task::{Context, Poll},
     time::Duration,
+    vec,
+    vec::Vec,
 };
+
+use alloc::borrow::ToOwned;
 
 use embedded_io_async::Read;
 use futures_util::FutureExt;
@@ -37,7 +43,7 @@ impl VecRead {
 
 struct PipeRx {
     current: VecRead,
-    channel: mpsc::UnboundedReceiver<Vec<u8>>,
+    channel: mpsc::UnboundedReceiver<std::vec::Vec<u8>>,
 }
 
 impl io::ErrorType for PipeRx {
@@ -99,7 +105,7 @@ impl hyper::rt::Read for PipeRx {
     }
 }
 
-struct PipeTx(mpsc::UnboundedSender<Vec<u8>>);
+struct PipeTx(mpsc::UnboundedSender<std::vec::Vec<u8>>);
 
 impl io::ErrorType for PipeTx {
     type Error = Infallible;
@@ -142,7 +148,7 @@ fn pipe() -> (PipeTx, PipeRx) {
     (
         PipeTx(tx),
         PipeRx {
-            current: VecRead(Vec::new()),
+            current: VecRead(std::vec::Vec::new()),
             channel: rx,
         },
     )
@@ -480,7 +486,7 @@ async fn keep_alive() {
         &mut http_buffer,
         TestSocket {
             rx: "GET / HTTP/1.1\r\n\r\nGET / HTTP/1.1\r\n\r\n".as_bytes(),
-            tx: Vec::new(),
+            tx: std::vec::Vec::new(),
         },
         &(),
     );

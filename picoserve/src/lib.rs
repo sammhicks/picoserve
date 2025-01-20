@@ -1,4 +1,4 @@
-#![cfg_attr(not(any(feature = "std", test)), no_std)]
+#![no_std]
 #![allow(async_fn_in_trait)]
 #![deny(
     unsafe_code,
@@ -18,6 +18,9 @@ compile_error!("You cannot enable both tokio and embassy support");
 
 #[cfg(feature = "alloc")]
 extern crate alloc;
+
+#[cfg(feature = "std")]
+extern crate std;
 
 mod json;
 
