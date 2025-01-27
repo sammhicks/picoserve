@@ -1348,7 +1348,11 @@ impl<
 }
 
 /// A [PathRouter] which routes requests to a [MethodHandler].
-pub struct Router<RouterInner, State = (), CurrentPathParameters = NoPathParameters> {
+pub struct Router<
+    RouterInner: PathRouter<State, CurrentPathParameters>,
+    State = (),
+    CurrentPathParameters = NoPathParameters,
+> {
     pub(crate) router: RouterInner,
     _data: PhantomData<fn(CurrentPathParameters, State)>,
 }
@@ -1412,7 +1416,7 @@ impl<State, CurrentPathParameters, RouterInner: PathRouter<State, CurrentPathPar
     pub fn nest<PD: PathDescription<CurrentPathParameters>>(
         self,
         path_description: PD,
-        router: Router<impl PathRouter<State, PD::Output>, State>,
+        router: Router<impl PathRouter<State, PD::Output>, State, PD::Output>,
     ) -> Router<impl PathRouter<State, CurrentPathParameters>, State, CurrentPathParameters> {
         let Router {
             router: fallback,
