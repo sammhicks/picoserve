@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Fixed type error in signiature of [`Router::nest`](https://docs.rs/picoserve/latest/picoserve/routing/struct.Router.html#method.nest).
 
+### Added
+
+- Added [`Router::either_left_route`](https://docs.rs/picoserve/latest/picoserve/routing/struct.Router.html#method.either_left_route) and [`Router::either_right_route`](https://docs.rs/picoserve/latest/picoserve/routing/struct.Router.html#method.either_right_route) which can be used to create config-time conditional routers.
+
 ## [0.14.0] - 2025-01-20
 
 ### Breaking

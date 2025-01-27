@@ -1501,3 +1501,83 @@ impl<State, CurrentPathParameters, RouterInner: PathRouter<State, CurrentPathPar
             .await
     }
 }
+
+/// A [PathRouter] which is either the "Left" route or the "Right" route.
+///
+/// Used by [Router::either_left_route] and [Router::either_right_route] to create config-time conditional [Router]s.
+pub enum EitherPathRoute<L, R> {
+    Left { router: L },
+    Right { router: R },
+}
+
+impl<L, R> Sealed for EitherPathRoute<L, R> {}
+
+impl<
+        State,
+        CurrentPathParameters,
+        Left: PathRouter<State, CurrentPathParameters>,
+        Right: PathRouter<State, CurrentPathParameters>,
+    > PathRouter<State, CurrentPathParameters> for EitherPathRoute<Left, Right>
+{
+    async fn call_path_router<R: Read, W: ResponseWriter<Error = R::Error>>(
+        &self,
+        state: &State,
+        current_path_parameters: CurrentPathParameters,
+        path: Path<'_>,
+        request: Request<'_, R>,
+        response_writer: W,
+    ) -> Result<ResponseSent, W::Error> {
+        match self {
+            EitherPathRoute::Left { router } => {
+                router
+                    .call_path_router(
+                        state,
+                        current_path_parameters,
+                        path,
+                        request,
+                        response_writer,
+                    )
+                    .await
+            }
+            EitherPathRoute::Right { router } => {
+                router
+                    .call_path_router(
+                        state,
+                        current_path_parameters,
+                        path,
+                        request,
+                        response_writer,
+                    )
+                    .await
+            }
+        }
+    }
+}
+
+impl<State, CurrentPathParameters, RouterInner: PathRouter<State, CurrentPathParameters>>
+    Router<RouterInner, State, CurrentPathParameters>
+{
+    /// Transforms the [Router] into the "Left" route of a config-time conditional router.
+    pub fn either_left_route<Right: PathRouter<State, CurrentPathParameters>>(
+        self,
+    ) -> Router<EitherPathRoute<RouterInner, Right>, State, CurrentPathParameters> {
+        let Self { router, _data } = self;
+
+        Router {
+            router: EitherPathRoute::Left { router },
+            _data,
+        }
+    }
+
+    /// Transforms the [Router] into the "Right" route of a config-time conditional router.
+    pub fn either_right_route<Left: PathRouter<State, CurrentPathParameters>>(
+        self,
+    ) -> Router<EitherPathRoute<Left, RouterInner>, State, CurrentPathParameters> {
+        let Self { router, _data } = self;
+
+        Router {
+            router: EitherPathRoute::Right { router },
+            _data,
+        }
+    }
+}

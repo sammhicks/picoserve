@@ -4,6 +4,7 @@ members = [
     "picoserve",
     "picoserve_derive",
     "examples/chunked_response",
+    "examples/conditional_routing",
     "examples/custom_extractor",
     "examples/form",
     "examples/hello_world",
