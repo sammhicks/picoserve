@@ -320,25 +320,25 @@ pub async fn serve_with_state<State, P: routing::PathRouter<State>>(
 }
 
 #[cfg(feature = "embassy")]
-/// Serve `app` with incoming requests. App has a no state.
-pub async fn serve<P: routing::PathRouter>(
+/// Serve `app` with requests incoming over `socket`. App has a no state.
+pub async fn serve<P: routing::PathRouter, S: io::Socket>(
     app: &Router<P>,
     config: &Config<embassy_time::Duration>,
     buffer: &mut [u8],
-    socket: embassy_net::tcp::TcpSocket<'_>,
-) -> Result<u64, Error<embassy_net::tcp::Error>> {
+    socket: S,
+) -> Result<u64, Error<S::Error>> {
     serve_and_shutdown(app, time::EmbassyTimer, config, buffer, socket, &()).await
 }
 
 #[cfg(feature = "embassy")]
-/// Serve `app` with incoming requests. App has a state of `State`.
-pub async fn serve_with_state<State, P: routing::PathRouter<State>>(
+/// Serve `app` with requests incoming over `socket`. App has a state of `State`.
+pub async fn serve_with_state<State, P: routing::PathRouter<State>, S: io::Socket>(
     app: &Router<P, State>,
     config: &Config<embassy_time::Duration>,
     buffer: &mut [u8],
-    socket: embassy_net::tcp::TcpSocket<'_>,
+    socket: S,
     state: &State,
-) -> Result<u64, Error<embassy_net::tcp::Error>> {
+) -> Result<u64, Error<S::Error>> {
     serve_and_shutdown(app, time::EmbassyTimer, config, buffer, socket, state).await
 }
 

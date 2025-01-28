@@ -15,6 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Added [`Router::either_left_route`](https://docs.rs/picoserve/latest/picoserve/routing/struct.Router.html#method.either_left_route) and [`Router::either_right_route`](https://docs.rs/picoserve/latest/picoserve/routing/struct.Router.html#method.either_right_route) which can be used to create config-time conditional routers.
 
+### Changed
+
+- When `embassy` feature is enabled, `serve` and `serve_with_state` accept any `S: io::Socket` rather than specifically a `embassy_net::tcp::TcpSocket<'_>`.
+
 ## [0.14.0] - 2025-01-20
 
 ### Breaking
