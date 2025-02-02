@@ -466,8 +466,10 @@ impl<T: AppBuilder> AppWithStateBuilder for T {
 }
 
 /// The [Router] for the app constructed from the Props (which implement [AppBuilder]).
-pub type AppRouter<Props> =
-    Router<dyn routing::PathRouter<<Props as AppWithStateBuilder>::State>, <Props as AppWithStateBuilder>::State>;
+pub type AppRouter<Props> = Router<
+    dyn routing::PathRouter<<Props as AppWithStateBuilder>::State>,
+    <Props as AppWithStateBuilder>::State,
+>;
 
 /// Replacement for [`static_cell::make_static`](https://docs.rs/static_cell/latest/static_cell/macro.make_static.html) for use cases when the type is known.
 #[macro_export]
