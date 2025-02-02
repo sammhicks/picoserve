@@ -14,6 +14,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Added [`Router::either_left_route`](https://docs.rs/picoserve/latest/picoserve/routing/struct.Router.html#method.either_left_route) and [`Router::either_right_route`](https://docs.rs/picoserve/latest/picoserve/routing/struct.Router.html#method.either_right_route) which can be used to create config-time conditional routers.
+- Added support for [`response::Response`](https://docs.rs/picoserve/latest/picoserve/response/struct.Response.html)s with no Content.
+  For example responses with a code of 1xx (Informational) or 204 (No Content).
+  - `(StatusCode, ..., NoContent,)` tuples now implement [`IntoResponse`](https://docs.rs/picoserve/latest/picoserve/response/trait.IntoResponse.html)
+  - Added [`Response::empty`](https://docs.rs/picoserve/latest/picoserve/response/struct.Response.html#method.empty) to create a Response with no body.
 
 ### Changed
 

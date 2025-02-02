@@ -258,7 +258,8 @@ pub trait Body {
     ) -> Result<(), W::Error>;
 }
 
-struct NoBody;
+#[doc(hidden)]
+pub struct NoBody;
 
 impl Body for NoBody {
     async fn write_response_body<R: Read, W: Write<Error = R::Error>>(
@@ -269,6 +270,11 @@ impl Body for NoBody {
         Ok(())
     }
 }
+
+/// Indicates that a [Response] has no content.
+///
+/// Tuples where the first element is a [StatusCode], the last element is [NoContent] and the others implement [HeadersIter] implement [IntoResponse].
+pub struct NoContent;
 
 /// A [Response] body containing data with a known type and length.
 pub trait Content {
@@ -379,6 +385,15 @@ impl<'a> Content for fmt::Arguments<'a> {
 }
 
 #[doc(hidden)]
+pub struct NoHeaders;
+
+impl HeadersIter for NoHeaders {
+    async fn for_each_header<F: ForEachHeader>(self, f: F) -> Result<F::Output, F::Error> {
+        f.finalize().await
+    }
+}
+
+#[doc(hidden)]
 pub struct ContentHeaders {
     content_type: &'static str,
     content_length: usize,
@@ -415,6 +430,16 @@ impl<C: Content> Response<ContentHeaders, ContentBody<C>> {
     /// A response with a status of 200 "OK".
     pub fn ok(body: C) -> Self {
         Self::new(StatusCode::OK, body)
+    }
+}
+
+impl Response<NoHeaders, NoBody> {
+    pub fn empty(status_code: StatusCode) -> Self {
+        Self {
+            status_code,
+            headers: NoHeaders,
+            body: NoBody,
+        }
     }
 }
 
@@ -460,7 +485,7 @@ impl<H: HeadersIter, B: Body> Response<H, B> {
         name: &'static str,
         value: V,
     ) -> Response<impl HeadersIter, B> {
-        self.with_headers([(name, value)])
+        self.with_headers((name, value))
     }
 }
 
@@ -642,6 +667,19 @@ macro_rules! declare_tuple_into_response {
                     response_writer.write_response(
                         connection,
                         Response::new(StatusCode::OK, body)
+                        $(.with_headers($name,))*
+                    ).await
+                }
+            }
+
+            impl<$($name: HeadersIter,)*> IntoResponse for (StatusCode, $($name,)* NoContent,) {
+                #[allow(non_snake_case)]
+                async fn write_to<R: Read, W: ResponseWriter<Error = R::Error>>(self, connection: Connection<'_, R>, response_writer: W) -> Result<ResponseSent, W::Error> {
+                    let (status_code, $($name,)* NoContent,) = self;
+
+                    response_writer.write_response(
+                        connection,
+                        Response::empty(status_code)
                         $(.with_headers($name,))*
                     ).await
                 }
