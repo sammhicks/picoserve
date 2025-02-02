@@ -453,23 +453,21 @@ pub trait AppBuilder {
 /// In practice usage requires the nightly Rust toolchain.
 pub trait AppWithStateBuilder {
     type State;
-    type PathRouter: routing::PathRouter<Self::State>;
 
-    fn build_app(self) -> Router<Self::PathRouter, Self::State>;
+    fn build_app(self) -> Router<impl routing::PathRouter<Self::State>, Self::State>;
 }
 
 impl<T: AppBuilder> AppWithStateBuilder for T {
     type State = ();
-    type PathRouter = <Self as AppBuilder>::PathRouter;
 
-    fn build_app(self) -> Router<Self::PathRouter, Self::State> {
+    fn build_app(self) -> Router<impl routing::PathRouter, Self::State> {
         <Self as AppBuilder>::build_app(self)
     }
 }
 
 /// The [Router] for the app constructed from the Props (which implement [AppBuilder]).
 pub type AppRouter<Props> =
-    Router<<Props as AppWithStateBuilder>::PathRouter, <Props as AppWithStateBuilder>::State>;
+    Router<dyn routing::PathRouter<<Props as AppWithStateBuilder>::State>, <Props as AppWithStateBuilder>::State>;
 
 /// Replacement for [`static_cell::make_static`](https://docs.rs/static_cell/latest/static_cell/macro.make_static.html) for use cases when the type is known.
 #[macro_export]
