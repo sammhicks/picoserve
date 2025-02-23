@@ -5,6 +5,7 @@ members = [
     "example_secrets",
     "hello_world",
     "set_pico_w_led",
+    "various_states",
     "web_sockets"
 ]
 exclude = [
