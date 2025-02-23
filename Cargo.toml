@@ -7,6 +7,7 @@ members = [
     "examples/conditional_routing",
     "examples/custom_extractor",
     "examples/form",
+    "examples/query",
     "examples/hello_world",
     "examples/hello_world_single_thread",
     "examples/huge_requests",
