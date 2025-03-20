@@ -7,17 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Unreleased
 
+### Added
+
+- Added support for empty enums deriving [`ErrorWithStatusCode`](https://docs.rs/picoserve/latest/picoserve/response/trait.ErrorWithStatusCode.html)
+
+### [0.15.0] - 2025-02-23
+
 ### Fixed
 
-- Fixed type error in signiature of [`Router::nest`](https://docs.rs/picoserve/latest/picoserve/routing/struct.Router.html#method.nest).
+- Fixed type error in signiature of [`Router::nest`](https://docs.rs/picoserve/0.15.0/picoserve/routing/struct.Router.html#method.nest).
 
 ### Added
 
-- Added [`Router::either_left_route`](https://docs.rs/picoserve/latest/picoserve/routing/struct.Router.html#method.either_left_route) and [`Router::either_right_route`](https://docs.rs/picoserve/latest/picoserve/routing/struct.Router.html#method.either_right_route) which can be used to create config-time conditional routers.
-- Added support for [`response::Response`](https://docs.rs/picoserve/latest/picoserve/response/struct.Response.html)s with no Content.
+- Added [`Router::either_left_route`](https://docs.rs/picoserve/0.15.0/picoserve/routing/struct.Router.html#method.either_left_route) and [`Router::either_right_route`](https://docs.rs/picoserve/0.15.0/picoserve/routing/struct.Router.html#method.either_right_route) which can be used to create config-time conditional routers.
+- Added support for [`response::Response`](https://docs.rs/picoserve/0.15.0/picoserve/response/struct.Response.html)s with no Content.
   For example responses with a code of 1xx (Informational) or 204 (No Content).
-  - `(StatusCode, ..., NoContent,)` tuples now implement [`IntoResponse`](https://docs.rs/picoserve/latest/picoserve/response/trait.IntoResponse.html)
-  - Added [`Response::empty`](https://docs.rs/picoserve/latest/picoserve/response/struct.Response.html#method.empty) to create a Response with no body.
+  - `(StatusCode, ..., NoContent,)` tuples now implement [`IntoResponse`](https://docs.rs/picoserve/0.15.0/picoserve/response/trait.IntoResponse.html)
+  - Added [`Response::empty`](https://docs.rs/picoserve/0.15.0/picoserve/response/struct.Response.html#method.empty) to create a Response with no body.
 
 ### Changed
 
@@ -40,7 +46,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Require safety documentation for unsafe blocks.
 - Fixed [FromRequest](https://docs.rs/picoserve/0.13.3/picoserve/extract/trait.FromRequest.html) for `alloc::vec::Vec`, and by extension, `alloc::string::String`.
 
-### Changes
+### Changed
 
 - [`picoserve::response::chunked::ChunkWriter::write_chunk`](https://docs.rs/picoserve/0.13.3/picoserve/response/chunked/struct.ChunkWriter.html) no longer flushes the socket.
 - Removed workaround for embassy-net TcpSocket::flush() never finishing due to upstream bugfix.
@@ -211,7 +217,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Connection must be given an [`UpgradeToken`](https://docs.rs/picoserve/0.9.0/picoserve/extract/struct.UpgradeToken.html) when upgraded.
 - [`ResponseWriter`](https://docs.rs/picoserve/0.9.0/picoserve/response/trait.ResponseWriter.html) must be given a [`Connection`](https://docs.rs/picoserve/0.9.0/picoserve/response/struct.Connection.html) when writing the response.
 
-### Changes
+### Changed
 
 - Request Bodies can not be either read into the internal buffer (as previously), or converted into a [`RequestBodyReader`](https://docs.rs/picoserve/0.9.0/picoserve/response/struct.RequestBodyReader.html), which implements Read.
 
@@ -221,7 +227,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.8.1] - 2024-02-05
 
-### Changes
+### Changed
 
 - Fixed newline in WebSocketKeyHeaderMissing message.
 
@@ -231,7 +237,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - [`serve`](https://docs.rs/picoserve/0.8.0/picoserve/fn.serve.html) and [`serve_with_state`](https://docs.rs/picoserve/0.8.0/picoserve/fn.serve_with_state.html) now take a socket rather than a reader and writer.
 
-### Changes
+### Changed
 
 - The socket is now shut down after it has finished handling requests
 
@@ -244,13 +250,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.7.2] - 2024-02-05
 
-### Changes
+### Changed
 
 - Using const_sha from crates.io (rather than copied into this repository) as it now has no_std support
 
 ## [0.7.1] - 2024-01-24
 
-### Changes
+### Changed
 
 - [Config::new](https://docs.rs/picoserve/0.7.1/picoserve/struct.Config.html#method.new) is now const
 
@@ -260,7 +266,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - The "Connection" header is no longer sent in duplicate if the handler has already sent it
 
-### Changes
+### Changed
 
 - The handling of the "Connection" header in the request has changed:
   - If `picoserve` has been configured to always close the connection after responding, set the "Connection" header to "close".
@@ -283,7 +289,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Defaults to closing connection after the response has been sent
   - To preserve previous behaviour, which requires multiple concurrent sockets accepting connections, call `keep_connection_alive` on [Config](https://docs.rs/picoserve/0.6.0/picoserve/struct.Config.html)
 
-### Changes
+### Changed
 
 - Allow configuration of behaviour after the response has been sent, i.e. should the TCP connection be closed or kept alive?
   - If the request does not include the "Connection" header or it is set to "close", the response includes a header of "Connection: close", and the connection is closed after the response has been sent. Otherwise, the response includes a header of "Connection: keep-alive", and the connection is kept alive after the response has been sent, allowing additional requests to be made on the same TCP connection.
@@ -317,7 +323,7 @@ picoserve now runs on stable!
 - [Config](https://docs.rs/picoserve/0.3.0/picoserve/struct.Config.html) now has a field `write_timeout`
 - [Error](https://docs.rs/picoserve/0.3.0/picoserve/enum.Error.html) has an extra variant `WriteTimeout`
 
-### Changes
+### Changed
 
 - If `write_timeout` is `Some(timeout)` in [Config](https://docs.rs/picoserve/0.3.0/picoserve/struct.Config.html), writing data to the client will fail with `Error::WriteTimeout` if the write times out
 

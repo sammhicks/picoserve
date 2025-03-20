@@ -10,12 +10,12 @@ fn single_field(fields: &syn::Fields) -> Option<proc_macro2::TokenStream> {
             fields
                 .next()
                 .is_none()
-                .then(|| quote! { { #field: field } })
+                .then(|| quote! { { #field: ref field } })
         }
         syn::Fields::Unnamed(fields) => {
             let mut fields = fields.unnamed.iter();
             let _field = fields.next()?;
-            fields.next().is_none().then(|| quote! { (field) })
+            fields.next().is_none().then(|| quote! { (ref field) })
         }
         syn::Fields::Unit => None,
     }
@@ -127,7 +127,7 @@ fn try_derive_error_with_status_code(
                 .collect::<Result<proc_macro2::TokenStream, syn::Error>>()?;
 
             quote! {
-                match self {
+                match *self {
                     #cases
                 }
             }
