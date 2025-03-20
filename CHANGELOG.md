@@ -9,11 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- Fixed error message for enums deriving [`ErrorWithStatusCode`](https://docs.rs/picoserve/latest/picoserve/response/trait.ErrorWithStatusCode.html) where neither the enum itself or one of its variants has a `status_code` attribute
+- Fixed error message for enums deriving [`ErrorWithStatusCode`](https://docs.rs/picoserve/latest/picoserve/response/trait.ErrorWithStatusCode.html) where neither the enum itself or one of its variants has a `status_code` attribute.
 
 ### Added
 
-- Added support for empty enums deriving [`ErrorWithStatusCode`](https://docs.rs/picoserve/latest/picoserve/response/trait.ErrorWithStatusCode.html)
+- Added support for empty enums deriving [`ErrorWithStatusCode`](https://docs.rs/picoserve/latest/picoserve/response/trait.ErrorWithStatusCode.html).
+- Added support for generic structures deriving [`ErrorWithStatusCode`](https://docs.rs/picoserve/latest/picoserve/response/trait.ErrorWithStatusCode.html).
 
 ### [0.15.0] - 2025-02-23
 

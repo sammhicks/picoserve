@@ -1,5 +1,5 @@
 use proc_macro::TokenStream;
-use quote::quote;
+use quote::{quote, ToTokens};
 use syn::{parse_macro_input, DeriveInput};
 
 fn single_field(fields: &syn::Fields) -> Option<proc_macro2::TokenStream> {
@@ -140,14 +140,45 @@ fn try_derive_error_with_status_code(
         }
     };
 
+    let syn::Generics {
+        lt_token,
+        params: generics_params,
+        gt_token,
+        where_clause,
+    } = &input.generics;
+
+    let where_clause_predicates = where_clause
+        .as_ref()
+        .map(|where_clause| where_clause.predicates.iter())
+        .into_iter()
+        .flatten()
+        .map(ToTokens::to_token_stream)
+        .chain(std::iter::once(quote! { Self: core::fmt::Display }))
+        .collect::<syn::punctuated::Punctuated<_, syn::token::Comma>>();
+
+    let param_names = generics_params
+        .iter()
+        .map(|param| match param {
+            syn::GenericParam::Lifetime(syn::LifetimeParam { lifetime, .. }) => {
+                lifetime.to_token_stream()
+            }
+            syn::GenericParam::Type(type_param) => type_param.ident.to_token_stream(),
+            syn::GenericParam::Const(const_param) => const_param.ident.to_token_stream(),
+        })
+        .collect::<syn::punctuated::Punctuated<proc_macro2::TokenStream, syn::token::Comma>>();
+
     Ok(quote! {
-        impl picoserve::response::ErrorWithStatusCode for #ident {
+        #[allow(unused_qualifications)]
+        #[automatically_derived]
+        impl #lt_token #generics_params #gt_token picoserve::response::ErrorWithStatusCode for #ident #lt_token #param_names #gt_token where #where_clause_predicates {
             fn status_code(&self) -> picoserve::response::StatusCode {
                 #status_code
             }
         }
 
-        impl picoserve::response::IntoResponse for #ident {
+        #[allow(unused_qualifications)]
+        #[automatically_derived]
+        impl #lt_token #generics_params #gt_token picoserve::response::IntoResponse for #ident #lt_token #param_names #gt_token where #where_clause_predicates {
             async fn write_to<R: picoserve::io::Read, W: picoserve::response::ResponseWriter<Error = R::Error>>(
                 self,
                 connection: picoserve::response::Connection<'_, R>,
