@@ -5,17 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-### Unreleased
+### [0.15.1] - 2025-02-26
 
 ### Fixed
 
-- Fixed error message for enums deriving [`ErrorWithStatusCode`](https://docs.rs/picoserve/latest/picoserve/response/trait.ErrorWithStatusCode.html) where neither the enum itself or one of its variants has a `status_code` attribute.
-- [`SocketTx::send_pong`](https://docs.rs/picoserve/latest/picoserve/response/ws/struct.SocketTx.html#method.send_ping) and [`SocketTx::send_ping`](https://docs.rs/picoserve/latest/picoserve/response/ws/struct.SocketTx.html#method.send_pong) now flush.
+- Fixed error message for enums deriving [`ErrorWithStatusCode`](https://docs.rs/picoserve/0.15.1/picoserve/response/trait.ErrorWithStatusCode.html) where neither the enum itself or one of its variants has a `status_code` attribute.
+- [`SocketTx::send_pong`](https://docs.rs/picoserve/0.15.1/picoserve/response/ws/struct.SocketTx.html#method.send_ping) and [`SocketTx::send_ping`](https://docs.rs/picoserve/0.15.1/picoserve/response/ws/struct.SocketTx.html#method.send_pong) now flush.
 
 ### Added
 
-- Added support for empty enums deriving [`ErrorWithStatusCode`](https://docs.rs/picoserve/latest/picoserve/response/trait.ErrorWithStatusCode.html).
-- Added support for generic structures deriving [`ErrorWithStatusCode`](https://docs.rs/picoserve/latest/picoserve/response/trait.ErrorWithStatusCode.html).
+- Added support for empty enums deriving [`ErrorWithStatusCode`](https://docs.rs/picoserve/0.15.1/picoserve/response/trait.ErrorWithStatusCode.html).
+- Added support for generic structures deriving [`ErrorWithStatusCode`](https://docs.rs/picoserve/0.15.1/picoserve/response/trait.ErrorWithStatusCode.html).
 
 ### [0.15.0] - 2025-02-23
 
