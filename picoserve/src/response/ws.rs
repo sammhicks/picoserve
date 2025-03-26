@@ -521,12 +521,14 @@ impl<W: Write> SocketTx<W> {
 
     /// Send a ping message with the given data.
     pub async fn send_ping(&mut self, data: &[u8]) -> Result<(), W::Error> {
-        self.write_frame(true, 9, data).await
+        self.write_frame(true, 9, data).await?;
+        self.flush().await
     }
 
     /// Send a pong message with the given data.
     pub async fn send_pong(&mut self, data: &[u8]) -> Result<(), W::Error> {
-        self.write_frame(true, 10, data).await
+        self.write_frame(true, 10, data).await?;
+        self.flush().await
     }
 }
 

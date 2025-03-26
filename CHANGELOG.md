@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Fixed error message for enums deriving [`ErrorWithStatusCode`](https://docs.rs/picoserve/latest/picoserve/response/trait.ErrorWithStatusCode.html) where neither the enum itself or one of its variants has a `status_code` attribute.
+- [`SocketTx::send_pong`](https://docs.rs/picoserve/latest/picoserve/response/ws/struct.SocketTx.html#method.send_ping) and [`SocketTx::send_ping`](https://docs.rs/picoserve/latest/picoserve/response/ws/struct.SocketTx.html#method.send_pong) now flush.
 
 ### Added
 
