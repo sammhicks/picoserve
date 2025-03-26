@@ -62,12 +62,12 @@ fn try_derive_error_with_status_code(
 
     let status_code = match &input.data {
         syn::Data::Struct(data_struct) => match default_status_code
-            .ok_or_else(|| syn::Error::new_spanned(input, "missing #[status_code(..)]"))?
+            .ok_or_else(|| syn::Error::new_spanned(input, "Missing #[status_code(..)]"))?
         {
             StatusCodeAttr::StatusCode(token_stream) => token_stream,
             StatusCodeAttr::Transparent => {
                 let fields = single_field(&data_struct.fields).ok_or_else(|| {
-                    syn::Error::new_spanned(input, "transparent errors must have a single field")
+                    syn::Error::new_spanned(input, "Transparent errors must have a single field")
                 })?;
 
                 quote! {
@@ -90,7 +90,7 @@ fn try_derive_error_with_status_code(
                         .ok_or_else(|| {
                             syn::Error::new_spanned(
                                 variant,
-                                "transparent errors must have a single field",
+                                "Either the enum or this variant must have an attribute of `status_code`",
                             )
                         })?;
 
@@ -112,7 +112,7 @@ fn try_derive_error_with_status_code(
                             fields = single_field(&variant.fields).ok_or_else(|| {
                                 syn::Error::new_spanned(
                                     variant,
-                                    "transparent errors must have a single field",
+                                    "Transparent errors must have a single field",
                                 )
                             })?;
 
@@ -178,7 +178,7 @@ fn try_derive_error_with_status_code(
 /// There may also be an attribute `status_code` on a variant, which overrides the default StatusCode.
 /// If all variants have their own attribute `status_code`, the default may be omitted.
 ///
-/// Variants with a `status_code` of transparent must contain a single field which implements `ErrorWithStatusCode`.
+/// Variants with a `status_code` of `transparent` must contain a single field which implements `ErrorWithStatusCode`.
 #[proc_macro_derive(ErrorWithStatusCode, attributes(status_code))]
 pub fn derive_error_with_status_code(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
