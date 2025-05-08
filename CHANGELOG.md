@@ -5,7 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-### [0.15.1] - 2025-02-26
+## Unreleased
+
+### Breaking
+
+- Split [`picoserve::Timeouts::start_read_request`](https://docs.rs/picoserve/latest/picoserve/struct.Timeouts.html) into `start_read_request`, the timeout for reading the start of the first request, and `persistent_start_read_request`, the timeout for reading the start of subsequent requests on the same socket.
+
+## [0.15.1] - 2025-03-26
 
 ### Fixed
 
@@ -17,7 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added support for empty enums deriving [`ErrorWithStatusCode`](https://docs.rs/picoserve/0.15.1/picoserve/response/trait.ErrorWithStatusCode.html).
 - Added support for generic structures deriving [`ErrorWithStatusCode`](https://docs.rs/picoserve/0.15.1/picoserve/response/trait.ErrorWithStatusCode.html).
 
-### [0.15.0] - 2025-02-23
+## [0.15.0] - 2025-02-23
 
 ### Fixed
 

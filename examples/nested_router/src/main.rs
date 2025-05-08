@@ -35,7 +35,7 @@ async fn main() -> anyhow::Result<()> {
     let app = std::rc::Rc::new(app_router());
 
     let config = picoserve::Config::new(picoserve::Timeouts {
-        start_read_request: Some(Duration::from_secs(5)),
+        start_read_request: Some(Duration::from_secs(5)),persistent_start_read_request: Some(Duration::from_secs(1)),
         read_request: Some(Duration::from_secs(1)),
         write: Some(Duration::from_secs(1)),
     })

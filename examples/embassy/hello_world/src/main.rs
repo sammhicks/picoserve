@@ -140,6 +140,7 @@ async fn main(spawner: embassy_executor::Spawner) {
         picoserve::Config<Duration>,
         picoserve::Config::new(picoserve::Timeouts {
             start_read_request: Some(Duration::from_secs(5)),
+            persistent_start_read_request: Some(Duration::from_secs(1)),
             read_request: Some(Duration::from_secs(1)),
             write: Some(Duration::from_secs(1)),
         })

@@ -220,6 +220,7 @@ async fn run_single_request_test(
 
     let config = Config::new(Timeouts {
         start_read_request: None,
+        persistent_start_read_request: None,
         read_request: None,
         write: None,
     });
@@ -428,6 +429,7 @@ async fn only_one_request() {
 
     let config = Config::new(Timeouts {
         start_read_request: None,
+        persistent_start_read_request: None,
         read_request: None,
         write: None,
     });
@@ -472,6 +474,7 @@ async fn keep_alive() {
 
     let config = Config::new(Timeouts {
         start_read_request: None,
+        persistent_start_read_request: None,
         read_request: None,
         write: None,
     })
@@ -638,6 +641,7 @@ async fn upgrade_with_request_body() {
 
     let config = Config::new(Timeouts {
         start_read_request: None,
+        persistent_start_read_request: None,
         read_request: None,
         write: None,
     });

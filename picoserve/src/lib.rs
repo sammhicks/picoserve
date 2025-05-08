@@ -75,8 +75,10 @@ impl<E: embedded_io_async::Error> embedded_io_async::Error for Error<E> {
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct Timeouts<D> {
-    /// The duration of time to wait when starting to read a new request before the connection is closed due to inactivity.
+    /// The duration of time to wait when starting to read the first request before the connection is closed due to inactivity.
     pub start_read_request: Option<D>,
+    /// The duration of time to wait when starting to read persistent (i.e. not the first) requests before the connection is closed due to inactivity.
+    pub persistent_start_read_request: Option<D>,
     /// The duration of time to wait when partway reading a request before the connection is aborted and closed.
     pub read_request: Option<D>,
     /// The duration of time to wait when writing the response before the connection is aborted and closed.
@@ -210,7 +212,11 @@ async fn serve_and_shutdown<State, T: Timer, P: routing::PathRouter<State>, S: i
         for request_count in 0.. {
             match timer
                 .run_with_maybe_timeout(
-                    config.timeouts.start_read_request.clone(),
+                    if request_count == 0 {
+                        config.timeouts.start_read_request.clone()
+                    } else {
+                        config.timeouts.persistent_start_read_request.clone()
+                    },
                     reader.request_is_pending(),
                 )
                 .await
