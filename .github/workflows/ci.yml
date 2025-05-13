@@ -18,7 +18,7 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     - name: Build
-      run: cargo build --verbose
+      run: cargo build --verbose --all
     - name: Build embassy examples
       working-directory: ./examples/embassy
       run: cargo build --verbose
