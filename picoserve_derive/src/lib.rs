@@ -1,6 +1,22 @@
 use proc_macro::TokenStream;
 use quote::{quote, ToTokens};
-use syn::{parse_macro_input, DeriveInput};
+use syn::{parse_macro_input, spanned::Spanned, DeriveInput};
+
+trait HasAttributes: Spanned {
+    fn attributes(&self) -> &[syn::Attribute];
+}
+
+impl HasAttributes for syn::DeriveInput {
+    fn attributes(&self) -> &[syn::Attribute] {
+        &self.attrs
+    }
+}
+
+impl HasAttributes for syn::Variant {
+    fn attributes(&self) -> &[syn::Attribute] {
+        &self.attrs
+    }
+}
 
 fn single_field(fields: &syn::Fields) -> Option<proc_macro2::TokenStream> {
     match fields {
@@ -21,34 +37,35 @@ fn single_field(fields: &syn::Fields) -> Option<proc_macro2::TokenStream> {
     }
 }
 
-enum StatusCodeAttr {
-    StatusCode(proc_macro2::TokenStream),
+enum StatusCodeAttribute {
+    StatusCode(syn::Path),
     Transparent,
 }
 
-fn status_code_attr(attrs: &[syn::Attribute]) -> Result<Option<StatusCodeAttr>, &'static str> {
-    let mut attrs = attrs.iter();
+impl StatusCodeAttribute {
+    fn parse<T: HasAttributes>(obj: &T) -> syn::Result<Option<Self>> {
+        obj.attributes()
+            .iter()
+            .find(|attribute| attribute.path().is_ident("status_code"))
+            .map(|status_code| {
+                let syn::Meta::List(syn::MetaList { tokens, .. }) = &status_code.meta else {
+                    return Err(syn::Error::new(
+                        obj.span(),
+                        "status_code attr must be in the form #[status_code(...)]",
+                    ));
+                };
 
-    loop {
-        let Some(attr) = attrs.next() else {
-            return Ok(None);
-        };
+                let path = syn::parse2::<syn::Path>(tokens.clone())?;
 
-        if !attr.path().is_ident("status_code") {
-            continue;
-        };
-
-        let syn::Meta::List(meta_list) = &attr.meta else {
-            return Err("#[status_code(...)] must be a `StatusCode`");
-        };
-
-        let status_code = &meta_list.tokens;
-
-        return Ok(Some(if status_code.to_string() == "transparent" {
-            StatusCodeAttr::Transparent
-        } else {
-            StatusCodeAttr::StatusCode(quote! { picoserve::response::StatusCode::#status_code })
-        }));
+                Ok(if path.is_ident("transparent") {
+                    StatusCodeAttribute::Transparent
+                } else {
+                    StatusCodeAttribute::StatusCode(
+                        syn::parse_quote! { picoserve::response::StatusCode::#path },
+                    )
+                })
+            })
+            .transpose()
     }
 }
 
@@ -57,20 +74,23 @@ fn try_derive_error_with_status_code(
 ) -> Result<proc_macro2::TokenStream, syn::Error> {
     let ident = &input.ident;
 
-    let default_status_code = status_code_attr(&input.attrs)
-        .map_err(|message| syn::Error::new_spanned(input, message))?;
+    let default_status_code = StatusCodeAttribute::parse(input)?;
 
-    let status_code = match &input.data {
+    let status_code: syn::Expr = match &input.data {
         syn::Data::Struct(data_struct) => match default_status_code
-            .ok_or_else(|| syn::Error::new_spanned(input, "Missing #[status_code(..)]"))?
+            .ok_or_else(|| syn::Error::new(input.span(), "Missing #[status_code(..)]"))?
         {
-            StatusCodeAttr::StatusCode(token_stream) => token_stream,
-            StatusCodeAttr::Transparent => {
+            StatusCodeAttribute::StatusCode(path) => syn::Expr::Path(syn::ExprPath {
+                attrs: Vec::new(),
+                qself: None,
+                path,
+            }),
+            StatusCodeAttribute::Transparent => {
                 let fields = single_field(&data_struct.fields).ok_or_else(|| {
-                    syn::Error::new_spanned(input, "Transparent errors must have a single field")
+                    syn::Error::new(input.span(), "Transparent errors must have a single field")
                 })?;
 
-                quote! {
+                syn::parse_quote! {
                     let Self #fields = self;
                     picoserve::response::ErrorWithStatusCode::status_code(field)
                 }
@@ -81,62 +101,59 @@ fn try_derive_error_with_status_code(
                 .variants
                 .iter()
                 .map(|variant| {
-                    let variant_status_code = status_code_attr(&variant.attrs)
-                        .map_err(|message| syn::Error::new_spanned(ident, message))?;
+                    let variant_status_code = StatusCodeAttribute::parse(variant)?;
 
                     let selected_status_code = variant_status_code
                         .as_ref()
-                        .or(default_status_code.as_ref())
-                        .ok_or_else(|| {
-                            syn::Error::new_spanned(
-                                variant,
-                                "Either the enum or this variant must have an attribute of `status_code`",
-                            )
-                        })?;
+                        .or(default_status_code.as_ref());
+
+                    let selected_status_code = selected_status_code.ok_or_else(|| {
+                        syn::Error::new(
+                            variant.span(),
+                            "Either the enum or this variant must have an attribute of status_code",
+                        )
+                    })?;
 
                     let ident = &variant.ident;
                     let fields;
-                    let status_code;
+                    let status_code: syn::Expr;
 
                     match selected_status_code {
-                        StatusCodeAttr::StatusCode(selected_status_code) => {
+                        StatusCodeAttribute::StatusCode(selected_status_code) => {
                             fields = match variant.fields {
                                 syn::Fields::Named(..) => quote! { {..} },
                                 syn::Fields::Unnamed(..) => quote! { (..) },
                                 syn::Fields::Unit => quote! {},
                             };
 
-                            status_code = selected_status_code.clone();
+                            status_code = syn::parse_quote! { #selected_status_code };
                         }
-                        StatusCodeAttr::Transparent => {
+                        StatusCodeAttribute::Transparent => {
                             fields = single_field(&variant.fields).ok_or_else(|| {
-                                syn::Error::new_spanned(
-                                    variant,
+                                syn::Error::new(
+                                    variant.span(),
                                     "Transparent errors must have a single field",
                                 )
                             })?;
 
-                            status_code = quote! {
+                            status_code = syn::parse_quote! {
                                 picoserve::response::ErrorWithStatusCode::status_code(field)
                             };
                         }
                     }
 
-                    Ok(quote! { Self::#ident #fields => #status_code, })
+                    Ok(quote! { Self::#ident #fields => #status_code })
                 })
-                .collect::<Result<proc_macro2::TokenStream, syn::Error>>()?;
+                .collect::<Result<Vec<_>, syn::Error>>()?;
 
-            quote! {
+            syn::parse_quote! {
                 match *self {
-                    #cases
+                    #(#cases,)*
                 }
             }
         }
         syn::Data::Union(..) => {
-            return Err(syn::Error::new_spanned(
-                input,
-                "Must be a struct or an enum",
-            ))
+            return Err(syn::Error::new(input.span(), "Must be a struct or an enum"))
         }
     };
 
@@ -147,13 +164,14 @@ fn try_derive_error_with_status_code(
         where_clause,
     } = &input.generics;
 
+    let self_is_display = syn::parse_quote!(Self: core::fmt::Display);
+
     let where_clause_predicates = where_clause
         .as_ref()
         .map(|where_clause| where_clause.predicates.iter())
         .into_iter()
         .flatten()
-        .map(ToTokens::to_token_stream)
-        .chain(std::iter::once(quote! { Self: core::fmt::Display }))
+        .chain(std::iter::once(&self_is_display))
         .collect::<syn::punctuated::Punctuated<_, syn::token::Comma>>();
 
     let param_names = generics_params
