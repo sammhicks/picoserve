@@ -32,17 +32,25 @@ pub use picoserve_derive::ErrorWithStatusCode;
 pub mod chunked;
 pub mod custom;
 pub mod fs;
-pub mod json;
 pub mod sse;
 pub mod status;
 pub mod with_state;
+
+#[cfg(feature = "json")]
+pub mod json;
+
+#[cfg(feature = "ws")]
 pub mod ws;
 
 pub use fs::{Directory, File};
-pub use json::Json;
 pub use sse::EventStream;
 pub use status::StatusCode;
 pub use with_state::{ContentUsingState, IntoResponseWithState};
+
+#[cfg(feature = "json")]
+pub use json::Json;
+
+#[cfg(feature = "ws")]
 pub use ws::WebSocketUpgrade;
 
 struct MeasureFormatSize<'a>(&'a mut usize);
@@ -123,16 +131,38 @@ impl<'r, R: Read> Connection<'r, R> {
         default: T,
         action: impl core::future::Future<Output = Result<T, R::Error>>,
     ) -> Result<T, R::Error> {
-        futures_util::future::select(
-            core::pin::pin!(async {
-                self.wait_for_disconnection().await?;
-                Ok(default)
-            }),
-            core::pin::pin!(action),
-        )
-        .await
-        .factor_first()
-        .0
+        #[cfg(feature = "futures-util")]
+        {
+            futures_util::future::select(
+                core::pin::pin!(async {
+                    self.wait_for_disconnection().await?;
+                    Ok(default)
+                }),
+                core::pin::pin!(action),
+            )
+            .await
+            .factor_first()
+            .0
+        }
+
+        #[cfg(feature = "embassy-futures")]
+        {
+            match embassy_futures::select::select(
+                core::pin::pin!(async {
+                    self.wait_for_disconnection().await?;
+                    Ok(default)
+                }),
+                core::pin::pin!(action),
+            )
+            .await
+            {
+                embassy_futures::select::Either::First(x) => x,
+                embassy_futures::select::Either::Second(x) => x,
+            }
+        }
+
+        #[cfg(not(any(feature = "embassy-futures", feature = "futures-util")))]
+        compile_error!("either feature embassy-futures or futures-util has to be enabled")
     }
 }
 

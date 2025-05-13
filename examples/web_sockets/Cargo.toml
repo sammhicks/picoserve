@@ -7,5 +7,5 @@ edition = "2021"
 
 [dependencies]
 anyhow = { workspace = true }
-picoserve = { path = "../../picoserve", features = ["tokio"] }
+picoserve = { path = "../../picoserve", features = ["tokio", "ws"] }
 tokio = { workspace = true }

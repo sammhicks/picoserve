@@ -493,6 +493,7 @@ impl<W: Write> SocketTx<W> {
     /// Send the given value as a JSON encoded text message.
     /// If the message is long, the message will be sent as several frames, and the value will be repeatedly serialized,
     /// so it must serialize to the same value each time.
+    #[cfg(feature = "json")]
     pub async fn send_json(&mut self, value: impl serde::Serialize) -> Result<(), W::Error> {
         let opcode = &mut 1;
         super::json::Json(value)
