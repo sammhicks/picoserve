@@ -35,12 +35,14 @@ pub mod fs;
 pub mod json;
 pub mod sse;
 pub mod status;
+pub mod with_state;
 pub mod ws;
 
 pub use fs::{Directory, File};
 pub use json::Json;
 pub use sse::EventStream;
 pub use status::StatusCode;
+pub use with_state::{ContentUsingState, IntoResponseWithState};
 pub use ws::WebSocketUpgrade;
 
 struct MeasureFormatSize<'a>(&'a mut usize);

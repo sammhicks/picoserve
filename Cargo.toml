@@ -14,11 +14,12 @@ members = [
     "examples/layers",
     "examples/nested_router",
     "examples/path_parameters",
+    "examples/response_using_state",
     "examples/routing_fallback",
     "examples/server_sent_events",
     "examples/state",
     "examples/static_content",
-    "examples/web_sockets"
+    "examples/web_sockets",
 ]
 exclude = [
     "examples/embassy",

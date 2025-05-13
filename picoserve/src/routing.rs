@@ -11,7 +11,7 @@ use crate::{
     extract::{FromRequest, FromRequestParts},
     io::Read,
     request::{Path, Request},
-    response::{IntoResponse, ResponseWriter, StatusCode},
+    response::{with_state::IntoResponseWithState, IntoResponse, ResponseWriter, StatusCode},
     ResponseSent,
 };
 
@@ -84,18 +84,22 @@ pub trait RequestHandlerFunction<State, PathParameters, T> {
 impl<State, FunctionReturn: IntoFuture, H: Fn() -> FunctionReturn>
     RequestHandlerFunction<State, NoPathParameters, (FunctionReturn,)> for H
 where
-    FunctionReturn::Output: IntoResponse,
+    FunctionReturn::Output: IntoResponseWithState<State>,
 {
     async fn call_handler_func<R: Read, W: ResponseWriter<Error = R::Error>>(
         &self,
-        _state: &State,
+        state: &State,
         NoPathParameters: NoPathParameters,
         request: Request<'_, R>,
         response_writer: W,
     ) -> Result<ResponseSent, W::Error> {
         (self)()
             .await
-            .write_to(request.body_connection.finalize().await?, response_writer)
+            .write_to_with_state(
+                state,
+                request.body_connection.finalize().await?,
+                response_writer,
+            )
             .await
     }
 }
@@ -103,18 +107,22 @@ where
 impl<State, PathParameter, FunctionReturn: IntoFuture, H: Fn(PathParameter) -> FunctionReturn>
     RequestHandlerFunction<State, OnePathParameter<PathParameter>, (FunctionReturn,)> for H
 where
-    FunctionReturn::Output: IntoResponse,
+    FunctionReturn::Output: IntoResponseWithState<State>,
 {
     async fn call_handler_func<R: Read, W: ResponseWriter<Error = R::Error>>(
         &self,
-        _state: &State,
+        state: &State,
         OnePathParameter(path_parameter): OnePathParameter<PathParameter>,
         request: Request<'_, R>,
         response_writer: W,
     ) -> Result<ResponseSent, W::Error> {
         (self)(path_parameter)
             .await
-            .write_to(request.body_connection.finalize().await?, response_writer)
+            .write_to_with_state(
+                state,
+                request.body_connection.finalize().await?,
+                response_writer,
+            )
             .await
     }
 }
@@ -126,18 +134,22 @@ impl<
         H: Fn(PathParameters) -> FunctionReturn,
     > RequestHandlerFunction<State, ManyPathParameters<PathParameters>, (FunctionReturn,)> for H
 where
-    FunctionReturn::Output: IntoResponse,
+    FunctionReturn::Output: IntoResponseWithState<State>,
 {
     async fn call_handler_func<R: Read, W: ResponseWriter<Error = R::Error>>(
         &self,
-        _state: &State,
+        state: &State,
         ManyPathParameters(path_parameters): ManyPathParameters<PathParameters>,
         request: Request<'_, R>,
         response_writer: W,
     ) -> Result<ResponseSent, W::Error> {
         (self)(path_parameters)
             .await
-            .write_to(request.body_connection.finalize().await?, response_writer)
+            .write_to_with_state(
+                state,
+                request.body_connection.finalize().await?,
+                response_writer,
+            )
             .await
     }
 }
@@ -148,7 +160,7 @@ macro_rules! declare_handler_func {
             impl<State, FunctionReturn: IntoFuture, $($name: for<'a> FromRequestParts<'a, State>,)* M, E: for<'a> FromRequest<'a, State, M>, H: Fn($($name,)* E,) -> FunctionReturn>
                 RequestHandlerFunction<State, NoPathParameters, (M, $($name,)* E, FunctionReturn,)> for H
             where
-                FunctionReturn::Output: IntoResponse,
+                FunctionReturn::Output: IntoResponseWithState<State>,
             {
                 async fn call_handler_func<R: Read, W: ResponseWriter<Error = R::Error>>(
                     &self,
@@ -168,7 +180,7 @@ macro_rules! declare_handler_func {
                         }
                     )
                     .await
-                    .write_to(request.body_connection.finalize().await?, response_writer)
+                    .write_to_with_state(state, request.body_connection.finalize().await?, response_writer)
                     .await
                 }
             }
@@ -176,7 +188,7 @@ macro_rules! declare_handler_func {
             impl<State, PathParameter, FunctionReturn: IntoFuture, $($name: for<'a> FromRequestParts<'a, State>,)* M, E: for<'a> FromRequest<'a, State, M>, H: Fn(PathParameter, $($name,)* E,) -> FunctionReturn>
                 RequestHandlerFunction<State, OnePathParameter<PathParameter>, (M, $($name,)* E, FunctionReturn,)> for H
             where
-                FunctionReturn::Output: IntoResponse,
+                FunctionReturn::Output: IntoResponseWithState<State>,
             {
                 #[allow(unused_variables)]
                 async fn call_handler_func<R: Read, W: ResponseWriter<Error = R::Error>>(
@@ -198,7 +210,7 @@ macro_rules! declare_handler_func {
                         }
                     )
                     .await
-                    .write_to(request.body_connection.finalize().await?, response_writer)
+                    .write_to_with_state(state, request.body_connection.finalize().await?, response_writer)
                     .await
                 }
             }
@@ -206,7 +218,7 @@ macro_rules! declare_handler_func {
             impl<State, PathParameters, FunctionReturn: IntoFuture, $($name: for<'a> FromRequestParts<'a, State>,)* M, E: for<'a> FromRequest<'a, State, M>, H: Fn(PathParameters, $($name,)* E,) -> FunctionReturn>
                 RequestHandlerFunction<State, ManyPathParameters<PathParameters>, (M, $($name,)* E, FunctionReturn)> for H
             where
-                FunctionReturn::Output: IntoResponse,
+                FunctionReturn::Output: IntoResponseWithState<State>,
             {
                 #[allow(unused_variables)]
                 async fn call_handler_func<R: Read, W: ResponseWriter<Error = R::Error>>(
@@ -228,7 +240,7 @@ macro_rules! declare_handler_func {
                         }
                     )
                     .await
-                    .write_to(request.body_connection.finalize().await?, response_writer)
+                    .write_to_with_state(state, request.body_connection.finalize().await?, response_writer)
                     .await
                 }
             }
