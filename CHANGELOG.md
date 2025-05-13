@@ -5,17 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## Unreleased
+## [0.16.0] - 2025-05-13
 
 ### Breaking
 
-- Split [`picoserve::Timeouts::start_read_request`](https://docs.rs/picoserve/latest/picoserve/struct.Timeouts.html) into `start_read_request`, the timeout for reading the start of the first request, and `persistent_start_read_request`, the timeout for reading the start of subsequent requests on the same socket.
+- Split [`picoserve::Timeouts::start_read_request`](https://docs.rs/picoserve/0.16.0/picoserve/struct.Timeouts.html) into `start_read_request`, the timeout for reading the start of the first request, and `persistent_start_read_request`, the timeout for reading the start of subsequent requests on the same socket.
 
 ### Added
 
 - Added support for accessing `State` when writing responses to the connection:
-  - [`ContentUsingState`](https://docs.rs/picoserve/latest/picoserve/response/with_state/trait.ContentUsingState.html) is the counterpart to [`Content`](https://docs.rs/picoserve/latest/picoserve/response/trait.Content.html).
-  - [`IntoResponseWithState`](https://docs.rs/picoserve/latest/picoserve/response/with_state/trait.IntoResponseWithState.html) is the counterpart to [`IntoResponse`](https://docs.rs/picoserve/latest/picoserve/response/trait.IntoResponse.html).
+  - [`ContentUsingState`](https://docs.rs/picoserve/0.16.0/picoserve/response/with_state/trait.ContentUsingState.html) is the counterpart to [`Content`](https://docs.rs/picoserve/0.16.0/picoserve/response/trait.Content.html).
+  - [`IntoResponseWithState`](https://docs.rs/picoserve/0.16.0/picoserve/response/with_state/trait.IntoResponseWithState.html) is the counterpart to [`IntoResponse`](https://docs.rs/picoserve/0.16.0/picoserve/response/trait.IntoResponse.html).
   - Added "response_using_state" example to demonstrate usage of new structures.
 
 ## [0.15.1] - 2025-03-26
