@@ -221,22 +221,20 @@ impl<'s> Socket for embassy_net::tcp::TcpSocket<'s> {
         let (mut rx, mut tx) = self.split();
 
         // Flush the write half until the read half has been closed by the client
-        futures_util::future::select(
-            core::pin::pin!(async {
+        crate::futures::select(
+            async {
                 timer
                     .run_with_maybe_timeout(timeouts.read_request.clone(), rx.discard_all_data())
                     .await
                     .map_err(|_err| crate::Error::ReadTimeout)?
                     .map_err(crate::Error::Read)
-            }),
-            core::pin::pin!(async {
+            },
+            async {
                 tx.flush().await.map_err(crate::Error::Write)?;
                 core::future::pending().await
-            }),
+            },
         )
-        .await
-        .factor_first()
-        .0?;
+        .await?;
 
         // Flush the write half until the socket is closed.
         timer

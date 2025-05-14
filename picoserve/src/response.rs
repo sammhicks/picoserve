@@ -123,16 +123,11 @@ impl<'r, R: Read> Connection<'r, R> {
         default: T,
         action: impl core::future::Future<Output = Result<T, R::Error>>,
     ) -> Result<T, R::Error> {
-        futures_util::future::select(
-            core::pin::pin!(async {
-                self.wait_for_disconnection().await?;
-                Ok(default)
-            }),
-            core::pin::pin!(action),
-        )
+        crate::futures::select(action, async {
+            self.wait_for_disconnection().await?;
+            Ok(default)
+        })
         .await
-        .factor_first()
-        .0
     }
 }
 
