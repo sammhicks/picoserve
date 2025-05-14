@@ -22,6 +22,7 @@ impl EventData for &str {
     }
 }
 
+#[cfg(feature = "json")]
 impl<T: serde::Serialize> EventData for super::json::Json<T> {
     async fn write_to<W: Write>(self, writer: &mut W) -> Result<(), W::Error> {
         self.do_write_to(writer).await

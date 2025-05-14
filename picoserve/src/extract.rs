@@ -20,12 +20,14 @@ use crate::{
     response::{ErrorWithStatusCode, IntoResponse},
 };
 
+#[cfg(feature = "json")]
 pub mod json {
     pub use crate::json::Json;
 
     pub use serde_json_core::str;
 }
 
+#[cfg(feature = "json")]
 pub use crate::json::Json;
 
 mod private {
@@ -404,9 +406,11 @@ pub enum JsonRejection {
     IoError,
     #[error("Failed to parse JSON body: {0}")]
     #[status_code(BAD_REQUEST)]
+    #[cfg(feature = "json")]
     DeserializationError(serde_json_core::de::Error),
 }
 
+#[cfg(feature = "json")]
 impl<'r, State, T: serde::Deserialize<'r>, const UNESCAPE_BUFFER_SIZE: usize>
     FromRequest<'r, State, T> for Json<T, UNESCAPE_BUFFER_SIZE>
 {

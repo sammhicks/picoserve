@@ -15,18 +15,18 @@ categories = ["asynchronous", "network-programming", "web-programming::http-serv
 
 [dependencies]
 const-sha1 = { version = "0.3.0", default-features = false }
-data-encoding = { version = "2.4.0", default-features = false }
+data-encoding = { version = "2.4.0", default-features = false, optional = true }
 defmt = { version = "0.3.6", optional = true }
 embassy-net = { version = ">=0.6.0", optional = true, features = ["tcp", "proto-ipv4", "medium-ethernet"] }
 embassy-time = { version = ">=0.4.0", optional = true }
 embedded-io-async = "0.6.0"
 heapless = { version = "0.8.0", features = ["serde"] }
-lhash = { version = "1.0.1", features = ["sha1"] }
+lhash = { version = "1.0.1", features = ["sha1"], optional = true }
 log = { version = "0.4.19", optional = true, default-features = false }
 picoserve_derive = { version = "0.1.3", path = "../picoserve_derive" }
-ryu = "1.0.14"
+ryu = { version = "1.0.14", optional = true }
 serde = { version = "1.0.171", default-features = false, features = ["derive"] }
-serde-json-core = "0.6.0"
+serde-json-core = { version = "0.6.0", optional = true }
 thiserror = { version = "2.0.9", default-features = false }
 tokio = { version = "1.32.0", optional = true, features = ["io-util", "net", "time"] }
 
@@ -34,11 +34,13 @@ tokio = { version = "1.32.0", optional = true, features = ["io-util", "net", "ti
 std = ["alloc"]     # Use the standard library. Used by examples.
 alloc = []          # Enable `FromRequest` and `Content` for some alloc types.
 
-tokio = ["dep:tokio", "std", "serde/std"]           # Use the `tokio` runtime. Used by examples.
-embassy = ["dep:embassy-time", "dep:embassy-net"]   # Use the `embassy` runtime and `embassy-net` sockets.
-
+tokio = ["dep:tokio", "std", "serde/std"]                               # Use the `tokio` runtime. Used by examples.
+embassy = ["dep:embassy-time", "dep:embassy-net"]    # Use the `embassy` runtime and `embassy-net` sockets.
 defmt = ["dep:defmt", "embassy-net?/defmt", "serde-json-core/defmt"]    # Emit log messages using the `defmt` crate.
 log = ["dep:log"]                                                       # Emit log messages using the `log` crate.
+
+json = ["dep:ryu", "dep:serde-json-core"]   # Enable JSON support
+ws = ["dep:data-encoding", "dep:lhash"]     # Enable WebSocket support
 
 [dev-dependencies]
 embedded-io-async = { version = "0.6.0", features = ["std"] }

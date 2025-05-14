@@ -22,6 +22,7 @@ extern crate alloc;
 #[cfg(any(feature = "std", test))]
 extern crate std;
 
+#[cfg(feature = "json")]
 mod json;
 
 #[macro_use]

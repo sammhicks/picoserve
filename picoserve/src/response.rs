@@ -32,17 +32,25 @@ pub use picoserve_derive::ErrorWithStatusCode;
 pub mod chunked;
 pub mod custom;
 pub mod fs;
-pub mod json;
 pub mod sse;
 pub mod status;
 pub mod with_state;
+
+#[cfg(feature = "json")]
+pub mod json;
+
+#[cfg(feature = "ws")]
 pub mod ws;
 
 pub use fs::{Directory, File};
-pub use json::Json;
 pub use sse::EventStream;
 pub use status::StatusCode;
 pub use with_state::{ContentUsingState, IntoResponseWithState};
+
+#[cfg(feature = "json")]
+pub use json::Json;
+
+#[cfg(feature = "ws")]
 pub use ws::WebSocketUpgrade;
 
 struct MeasureFormatSize<'a>(&'a mut usize);

@@ -19,7 +19,7 @@ embassy-usb-logger = { workspace = true }
 embedded-io-async = { workspace = true }
 log = { workspace = true }
 panic-persist = { workspace = true }
-picoserve = { workspace = true }
+picoserve = { workspace = true, features = ["ws"] }
 portable-atomic = { workspace = true }
 rand = { workspace = true }
 static_cell = { workspace = true }
