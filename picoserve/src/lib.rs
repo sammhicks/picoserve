@@ -13,8 +13,8 @@
 //!
 //! For examples on how to use picoserve, see the [examples](https://github.com/sammhicks/picoserve/tree/main/examples) directory.
 
-#[cfg(all(feature = "tokio", feature = "embassy"))]
-compile_error!("You cannot enable both tokio and embassy support");
+// #[cfg(all(feature = "tokio", feature = "embassy"))]
+// compile_error!("You cannot enable both tokio and embassy support");
 
 #[cfg(any(feature = "alloc", test))]
 extern crate alloc;
@@ -306,7 +306,7 @@ async fn serve_and_shutdown<State, T: Timer, P: routing::PathRouter<State>, S: i
 
 #[cfg(any(feature = "tokio", test))]
 /// Serve `app` with incoming requests. App has a no state.
-pub async fn serve<P: routing::PathRouter>(
+pub async fn serve_with_tokio<P: routing::PathRouter>(
     app: &Router<P>,
     config: &Config<std::time::Duration>,
     buffer: &mut [u8],
@@ -317,7 +317,7 @@ pub async fn serve<P: routing::PathRouter>(
 
 #[cfg(any(feature = "tokio", test))]
 /// Serve incoming requests read from `reader`, route them to `app`, and write responses to `writer`. App has a state of `State`.
-pub async fn serve_with_state<State, P: routing::PathRouter<State>>(
+pub async fn serve_with_state_with_tokio<State, P: routing::PathRouter<State>>(
     app: &Router<P, State>,
     config: &Config<std::time::Duration>,
     buffer: &mut [u8],
@@ -329,7 +329,7 @@ pub async fn serve_with_state<State, P: routing::PathRouter<State>>(
 
 #[cfg(feature = "embassy")]
 /// Serve `app` with requests incoming over `socket`. App has a no state.
-pub async fn serve<P: routing::PathRouter, S: io::Socket>(
+pub async fn serve_with_embassy<P: routing::PathRouter, S: io::Socket>(
     app: &Router<P>,
     config: &Config<embassy_time::Duration>,
     buffer: &mut [u8],
@@ -340,7 +340,7 @@ pub async fn serve<P: routing::PathRouter, S: io::Socket>(
 
 #[cfg(feature = "embassy")]
 /// Serve `app` with requests incoming over `socket`. App has a state of `State`.
-pub async fn serve_with_state<State, P: routing::PathRouter<State>, S: io::Socket>(
+pub async fn serve_with_state_with_embassy<State, P: routing::PathRouter<State>, S: io::Socket>(
     app: &Router<P, State>,
     config: &Config<embassy_time::Duration>,
     buffer: &mut [u8],
@@ -353,7 +353,7 @@ pub async fn serve_with_state<State, P: routing::PathRouter<State>, S: io::Socke
 #[cfg(feature = "embassy")]
 /// Serve `app` with incoming requests. App has a no state.
 /// `task_id` is printed in log messages.
-pub async fn listen_and_serve<P: routing::PathRouter<()>>(
+pub async fn listen_and_serve_with_embassy<P: routing::PathRouter<()>>(
     task_id: impl LogDisplay,
     app: &Router<P, ()>,
     config: &Config<embassy_time::Duration>,
@@ -363,7 +363,7 @@ pub async fn listen_and_serve<P: routing::PathRouter<()>>(
     tcp_tx_buffer: &mut [u8],
     http_buffer: &mut [u8],
 ) -> ! {
-    listen_and_serve_with_state(
+    listen_and_serve_with_state_with_embassy(
         task_id,
         app,
         config,
@@ -380,7 +380,7 @@ pub async fn listen_and_serve<P: routing::PathRouter<()>>(
 #[cfg(feature = "embassy")]
 /// Serve `app` with incoming requests. App has a state of `State`.
 /// `task_id` is printed in log messages.
-pub async fn listen_and_serve_with_state<State, P: routing::PathRouter<State>>(
+pub async fn listen_and_serve_with_state_with_embassy<State, P: routing::PathRouter<State>>(
     task_id: impl LogDisplay,
     app: &Router<P, State>,
     config: &Config<embassy_time::Duration>,
@@ -409,7 +409,7 @@ pub async fn listen_and_serve_with_state<State, P: routing::PathRouter<State>>(
             remote_endpoint
         );
 
-        match serve_with_state(app, config, http_buffer, socket, state).await {
+        match serve_with_state_with_embassy(app, config, http_buffer, socket, state).await {
             Ok(handled_requests_count) => {
                 log_info!(
                     "{} requests handled from {:?}",
@@ -422,7 +422,7 @@ pub async fn listen_and_serve_with_state<State, P: routing::PathRouter<State>>(
     }
 }
 
-#[cfg(not(any(feature = "tokio", feature = "embassy", test)))]
+// #[cfg(not(any(feature = "tokio", feature = "embassy", test)))]
 /// Serve `app` with incoming requests. App has no state.
 pub async fn serve<T: Timer, P: routing::PathRouter, S: io::Socket>(
     app: &Router<P>,
@@ -434,7 +434,7 @@ pub async fn serve<T: Timer, P: routing::PathRouter, S: io::Socket>(
     serve_and_shutdown(app, timer, config, buffer, socket, &()).await
 }
 
-#[cfg(not(any(feature = "tokio", feature = "embassy", test)))]
+// #[cfg(not(any(feature = "tokio", feature = "embassy", test)))]
 /// Serve `app` with incoming requests. App has a state of `State`.
 pub async fn serve_with_state<'r, State, T: Timer, P: routing::PathRouter<State>, S: io::Socket>(
     app: &Router<P, State>,
