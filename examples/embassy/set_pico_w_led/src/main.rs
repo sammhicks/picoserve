@@ -187,7 +187,8 @@ async fn main(spawner: embassy_executor::Spawner) {
     let config = make_static!(
         picoserve::Config::<Duration>,
         picoserve::Config::new(picoserve::Timeouts {
-            start_read_request: Some(Duration::from_secs(5)),persistent_start_read_request: Some(Duration::from_secs(1)),
+            start_read_request: Some(Duration::from_secs(5)),
+            persistent_start_read_request: Some(Duration::from_secs(1)),
             read_request: Some(Duration::from_secs(1)),
             write: Some(Duration::from_secs(1)),
         })
