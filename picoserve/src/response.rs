@@ -53,6 +53,14 @@ pub use json::Json;
 #[cfg(feature = "ws")]
 pub use ws::WebSocketUpgrade;
 
+fn assert_implements_into_response<T: IntoResponse>(t: T) -> T {
+    t
+}
+
+fn assert_implements_into_response_with_state<State, T: IntoResponseWithState<State>>(t: T) -> T {
+    t
+}
+
 struct MeasureFormatSize<'a>(&'a mut usize);
 
 impl<'a> fmt::Write for MeasureFormatSize<'a> {

@@ -10,6 +10,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Breaking
 
 - JSON and Websocket functionality are behind the `json` and `ws` features respectively.
+- Changed `UpgradedWebSocket<UnspecifiedProtocol, C>` to `UpgradedWebSocket<UnspecifiedProtocol, CallbackNotUsingState<C>>`.
+
+### Added
+- Added support for Websockets which have access to the state with [`WebSocketUpgrade::on_upgrade_using_state`](https://docs.rs/picoserve/latest/picoserve/response/ws/struct.WebSocketUpgrade.html#method.on_upgrade_using_state).
 
 ## [0.16.0] - 2025-05-13
 

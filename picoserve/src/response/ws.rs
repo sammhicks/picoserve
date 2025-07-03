@@ -1,5 +1,7 @@
 //! Web Sockets. See [web_sockets](https://github.com/sammhicks/picoserve/blob/main/examples/web_sockets/src/main.rs) for usage example.
 
+use core::marker::PhantomData;
+
 use picoserve_derive::ErrorWithStatusCode;
 
 use crate::{
@@ -57,9 +59,11 @@ impl<P: AsRef<str>> WebSocketProtocol for SpecifiedProtocol<P> {
     }
 }
 
+type WebSocketKey = [u8; 28];
+
 /// A HTTP upgrade request.
 pub struct WebSocketUpgrade {
-    key: [u8; 28],
+    key: WebSocketKey,
     protocols: Option<heapless::String<32>>,
     upgrade_token: crate::extract::UpgradeToken,
 }
@@ -565,15 +569,36 @@ pub trait WebSocketCallback {
     ) -> Result<(), W::Error>;
 }
 
+pub trait WebSocketCallbackWithState<State> {
+    /// Run the WebSocket connection, reading and writing to the socket.
+    async fn run_with_state<R: Read, W: Write<Error = R::Error>>(
+        self,
+        state: &State,
+        rx: SocketRx<R>,
+        tx: SocketTx<W>,
+    ) -> Result<(), W::Error>;
+}
+
+impl<State, C: WebSocketCallback> WebSocketCallbackWithState<State> for C {
+    async fn run_with_state<R: Read, W: Write<Error = R::Error>>(
+        self,
+        _state: &State,
+        rx: SocketRx<R>,
+        tx: SocketTx<W>,
+    ) -> Result<(), W::Error> {
+        self.run(rx, tx).await
+    }
+}
+
 /// The HTTP response sent to the client, notifying it that the connection can been upgraded to a web socket connection.
-pub struct UpgradedWebSocket<P: WebSocketProtocol, C: WebSocketCallback> {
-    sec_websocket_accept: [u8; 28],
+pub struct UpgradedWebSocket<P: WebSocketProtocol, C> {
+    sec_websocket_accept: WebSocketKey,
     sec_websocket_protocol: P,
     upgrade_token: crate::extract::UpgradeToken,
     callback: C,
 }
 
-impl<C: WebSocketCallback> UpgradedWebSocket<UnspecifiedProtocol, C> {
+impl<C> UpgradedWebSocket<UnspecifiedProtocol, C> {
     /// Specify the web socket protocol used.
     pub fn with_protocol<P: AsRef<str>>(
         self,
@@ -595,57 +620,112 @@ impl<C: WebSocketCallback> UpgradedWebSocket<UnspecifiedProtocol, C> {
     }
 }
 
+/// Indicates that the callback doesn't use the server state
+pub struct CallbackNotUsingState<C: WebSocketCallback> {
+    callback: C,
+}
+
+/// Indicates that the callback uses the server state of type `State`
+pub struct CallbackUsingState<State, C: WebSocketCallbackWithState<State>> {
+    callback: C,
+    state: PhantomData<fn(&State)>,
+}
+
 impl WebSocketUpgrade {
     /// Handle the websocket upgrade. The returned [UpgradedWebSocket] should be returned by the request handler,
     /// and thus returned to the client.
     pub fn on_upgrade<C: WebSocketCallback>(
         self,
         callback: C,
-    ) -> UpgradedWebSocket<UnspecifiedProtocol, C> {
-        let Self {
-            key, upgrade_token, ..
-        } = self;
-
-        UpgradedWebSocket {
-            sec_websocket_accept: key,
+    ) -> UpgradedWebSocket<UnspecifiedProtocol, CallbackNotUsingState<C>> {
+        super::assert_implements_into_response(UpgradedWebSocket {
+            sec_websocket_accept: self.key,
             sec_websocket_protocol: UnspecifiedProtocol,
-            upgrade_token,
-            callback,
-        }
+            upgrade_token: self.upgrade_token,
+            callback: CallbackNotUsingState { callback },
+        })
     }
-}
 
-struct UpgradedWebSocketBody<C: WebSocketCallback> {
-    upgrade_token: crate::extract::UpgradeToken,
-    callback: C,
-}
-
-impl<C: WebSocketCallback> super::Body for UpgradedWebSocketBody<C> {
-    async fn write_response_body<
-        R: embedded_io_async::Read,
-        W: embedded_io_async::Write<Error = R::Error>,
-    >(
+    /// Handle the websocket upgrade, which requires access to the state. The returned [UpgradedWebSocket] should be returned by the request handler,
+    /// and thus returned to the client.
+    pub fn on_upgrade_using_state<State, C: WebSocketCallbackWithState<State>>(
         self,
-        connection: super::Connection<'_, R>,
-        writer: W,
-    ) -> Result<(), W::Error> {
-        self.callback
-            .run(
-                SocketRx {
-                    reader: connection.upgrade(self.upgrade_token),
-                },
-                SocketTx { writer },
-            )
-            .await
+        callback: C,
+    ) -> UpgradedWebSocket<UnspecifiedProtocol, CallbackUsingState<State, C>> {
+        super::assert_implements_into_response_with_state::<State, _>(UpgradedWebSocket {
+            sec_websocket_accept: self.key,
+            sec_websocket_protocol: UnspecifiedProtocol,
+            upgrade_token: self.upgrade_token,
+            callback: CallbackUsingState {
+                callback,
+                state: PhantomData,
+            },
+        })
     }
 }
 
-impl<P: WebSocketProtocol, C: WebSocketCallback> super::IntoResponse for UpgradedWebSocket<P, C> {
+fn websocket_response<'a, B: super::Body + 'a>(
+    sec_websocket_accept: &'a WebSocketKey,
+    sec_websocket_protocol: Option<&'a str>,
+    body: B,
+) -> super::Response<impl super::HeadersIter + 'a, B> {
+    super::Response {
+        status_code: StatusCode::SWITCHING_PROTOCOLS,
+        headers: [
+            ("Upgrade", "websocket"),
+            ("Connection", "upgrade"),
+            (
+                "Sec-WebSocket-Accept",
+                // Safety:
+                // sec_websocket_accept was created by data_encoding::BASE64.encode_mut, which creates a UTF-8 string
+                #[allow(unsafe_code)]
+                unsafe {
+                    core::str::from_utf8_unchecked(sec_websocket_accept)
+                },
+            ),
+        ],
+        body,
+    }
+    .with_headers(
+        sec_websocket_protocol
+            .map(|sec_websocket_protocol| ("Sec-WebSocket-Protocol", sec_websocket_protocol)),
+    )
+}
+
+impl<P: WebSocketProtocol, C: WebSocketCallback> super::IntoResponse
+    for UpgradedWebSocket<P, CallbackNotUsingState<C>>
+{
     async fn write_to<R: Read, W: super::ResponseWriter<Error = R::Error>>(
         self,
         connection: super::Connection<'_, R>,
         response_writer: W,
     ) -> Result<crate::ResponseSent, W::Error> {
+        struct Body<C: WebSocketCallback> {
+            upgrade_token: crate::extract::UpgradeToken,
+            callback: CallbackNotUsingState<C>,
+        }
+
+        impl<C: WebSocketCallback> super::Body for Body<C> {
+            async fn write_response_body<
+                R: embedded_io_async::Read,
+                W: embedded_io_async::Write<Error = R::Error>,
+            >(
+                self,
+                connection: super::Connection<'_, R>,
+                writer: W,
+            ) -> Result<(), W::Error> {
+                self.callback
+                    .callback
+                    .run(
+                        SocketRx {
+                            reader: connection.upgrade(self.upgrade_token),
+                        },
+                        SocketTx { writer },
+                    )
+                    .await
+            }
+        }
+
         let UpgradedWebSocket {
             sec_websocket_accept,
             sec_websocket_protocol,
@@ -656,37 +736,81 @@ impl<P: WebSocketProtocol, C: WebSocketCallback> super::IntoResponse for Upgrade
         response_writer
             .write_response(
                 connection,
-                super::Response {
-                    status_code: StatusCode::SWITCHING_PROTOCOLS,
-                    headers: [
-                        ("Upgrade", "websocket"),
-                        ("Connection", "upgrade"),
-                        (
-                            "Sec-WebSocket-Accept",
-                            // Safety:
-                            // sec_websocket_accept was created by data_encoding::BASE64.encode_mut, which creates a UTF-8 string
-                            #[allow(unsafe_code)]
-                            unsafe {
-                                core::str::from_utf8_unchecked(&sec_websocket_accept)
-                            },
-                        ),
-                    ],
-                    body: UpgradedWebSocketBody {
+                websocket_response(
+                    &sec_websocket_accept,
+                    sec_websocket_protocol.name(),
+                    Body {
                         upgrade_token,
                         callback,
                     },
-                }
-                .with_headers(sec_websocket_protocol.name().map(
-                    |sec_websocket_protocol| ("Sec-WebSocket-Protocol", sec_websocket_protocol),
-                )),
+                ),
             )
             .await
     }
 }
 
-impl<P: WebSocketProtocol, C: WebSocketCallback> core::future::IntoFuture
-    for UpgradedWebSocket<P, C>
+impl<State, P: WebSocketProtocol, C: WebSocketCallbackWithState<State>>
+    super::IntoResponseWithState<State> for UpgradedWebSocket<P, CallbackUsingState<State, C>>
 {
+    async fn write_to_with_state<R: Read, W: super::ResponseWriter<Error = R::Error>>(
+        self,
+        state: &State,
+        connection: super::Connection<'_, R>,
+        response_writer: W,
+    ) -> Result<crate::ResponseSent, W::Error> {
+        struct Body<'s, State, C: WebSocketCallbackWithState<State>> {
+            state: &'s State,
+            upgrade_token: crate::extract::UpgradeToken,
+            callback: CallbackUsingState<State, C>,
+        }
+
+        impl<'s, State, C: WebSocketCallbackWithState<State>> super::Body for Body<'s, State, C> {
+            async fn write_response_body<
+                R: embedded_io_async::Read,
+                W: embedded_io_async::Write<Error = R::Error>,
+            >(
+                self,
+                connection: super::Connection<'_, R>,
+                writer: W,
+            ) -> Result<(), W::Error> {
+                self.callback
+                    .callback
+                    .run_with_state(
+                        self.state,
+                        SocketRx {
+                            reader: connection.upgrade(self.upgrade_token),
+                        },
+                        SocketTx { writer },
+                    )
+                    .await
+            }
+        }
+
+        let UpgradedWebSocket {
+            sec_websocket_accept,
+            sec_websocket_protocol,
+            upgrade_token,
+            callback,
+        } = self;
+
+        response_writer
+            .write_response(
+                connection,
+                websocket_response(
+                    &sec_websocket_accept,
+                    sec_websocket_protocol.name(),
+                    Body {
+                        state,
+                        upgrade_token,
+                        callback,
+                    },
+                ),
+            )
+            .await
+    }
+}
+
+impl<P: WebSocketProtocol, C> core::future::IntoFuture for UpgradedWebSocket<P, C> {
     type Output = Self;
     type IntoFuture = core::future::Ready<Self>;
 

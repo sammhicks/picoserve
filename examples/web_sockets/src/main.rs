@@ -5,30 +5,36 @@ use picoserve::{
     routing::{get, get_service},
 };
 
-struct WebsocketHandler {
-    tx: std::rc::Rc<tokio::sync::broadcast::Sender<String>>,
-    rx: tokio::sync::broadcast::Receiver<String>,
+#[derive(Clone)]
+struct AppState {
+    messages_tx: tokio::sync::broadcast::Sender<String>,
 }
 
-impl ws::WebSocketCallback for WebsocketHandler {
-    async fn run<R: picoserve::io::Read, W: picoserve::io::Write<Error = R::Error>>(
-        mut self,
+struct WebsocketHandler;
+
+impl ws::WebSocketCallbackWithState<AppState> for WebsocketHandler {
+    async fn run_with_state<R: picoserve::io::Read, W: picoserve::io::Write<Error = R::Error>>(
+        self,
+        state: &AppState,
         mut rx: ws::SocketRx<R>,
         mut tx: ws::SocketTx<W>,
     ) -> Result<(), W::Error> {
         use picoserve::response::ws::Message;
 
+        let messages_tx = &state.messages_tx;
+        let mut messages_rx = state.messages_tx.subscribe();
+
         let mut message_buffer = [0; 128];
 
         let close_reason = loop {
             tokio::select! {
-                message_changed = self.rx.recv() => match message_changed {
+                message_changed = messages_rx.recv() => match message_changed {
                     Ok(message) => tx.send_display(format_args!("Message: {message}")).await?,
                     Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => tx.send_display(format_args!("Missed {n} messages")).await?,
                     Err(tokio::sync::broadcast::error::RecvError::Closed) => break None,
                 },
                 new_message = rx.next_message(&mut message_buffer) => match new_message {
-                    Ok(Message::Text(new_message)) => { let _ = self.tx.send(new_message.into()); },
+                    Ok(Message::Text(new_message)) => { let _ = messages_tx.send(new_message.into()); },
                     Ok(Message::Binary(message)) => println!("Ignoring binary message: {message:?}"),
                     Ok(ws::Message::Close(reason)) => {
                         eprintln!("Websocket close reason: {reason:?}");
@@ -76,7 +82,7 @@ async fn main() -> anyhow::Result<()> {
         }
     });
 
-    let messages_tx = std::rc::Rc::new(messages_tx);
+    let state = AppState { messages_tx };
 
     let app = std::rc::Rc::new(
         picoserve::Router::new()
@@ -123,10 +129,7 @@ async fn main() -> anyhow::Result<()> {
                     }
 
                     upgrade
-                        .on_upgrade(WebsocketHandler {
-                            tx: messages_tx.clone(),
-                            rx: messages_tx.subscribe(),
-                        })
+                        .on_upgrade_using_state(WebsocketHandler)
                         .with_protocol("messages")
                 }),
             ),
@@ -153,9 +156,12 @@ async fn main() -> anyhow::Result<()> {
 
                 let app = app.clone();
                 let config = config.clone();
+                let state = state.clone();
 
                 tokio::task::spawn_local(async move {
-                    match picoserve::serve(&app, &config, &mut [0; 2048], stream).await {
+                    match picoserve::serve_with_state(&app, &config, &mut [0; 2048], stream, &state)
+                        .await
+                    {
                         Ok(handled_requests_count) => {
                             println!(
                                 "{handled_requests_count} requests handled from {remote_address}"
