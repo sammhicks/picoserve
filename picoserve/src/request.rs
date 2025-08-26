@@ -203,7 +203,7 @@ impl<'a> HeaderValue<'a> {
         self.value
     }
 
-    pub fn as_str(&self) -> Result<&str, core::str::Utf8Error> {
+    pub fn as_str(&self) -> Result<&'a str, core::str::Utf8Error> {
         core::str::from_utf8(self.value)
     }
 

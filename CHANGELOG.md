@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Fixed [`from_request`](https://docs.rs/picoserve/latest/picoserve/macro.from_request.html) and [`from_request_parts`](https://docs.rs/picoserve/latest/picoserve/macro.from_request_parts.html) macros.
+- Fixed lifetime of [`HeaderValue::as_str`](https://docs.rs/picoserve/latest/picoserve/request/struct.HeaderValue.html#method.as_str).
 
 ### Added
 - Added support for Websockets which have access to the state with [`WebSocketUpgrade::on_upgrade_using_state`](https://docs.rs/picoserve/latest/picoserve/response/ws/struct.WebSocketUpgrade.html#method.on_upgrade_using_state).
