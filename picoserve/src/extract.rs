@@ -54,9 +54,9 @@ macro_rules! from_request_parts {
     ($state:ident, $request:ident, $response_writer:ident $(,$name:ty)* $(,)?) => {
         (
             $(
-                match <$name as $crate::extract::FromRequestParts>::from_request_parts($state, &$request.parts).await {
+                match <$name as $crate::extract::FromRequestParts<_>>::from_request_parts($state, &$request.parts).await {
                     Ok(value) => value,
-                    Err(err) => return err.write_to($request.body.finalize().await?, $response_writer).await,
+                    Err(err) => return err.write_to($request.body_connection.finalize().await?, $response_writer).await,
                 }
             ),*
         )
@@ -81,17 +81,17 @@ pub trait FromRequest<'r, State, M = private::ViaRequest>: Sized {
 #[macro_export]
 macro_rules! from_request {
     ($state:ident, $request:ident, $response_writer:ident, $name:ty $(,)?) => {
-        match <$name as $crate::extract::FromRequest>::from_request(
+        match <$name as $crate::extract::FromRequest<_, _>>::from_request(
             $state,
             $request.parts,
-            $request.body.body(),
+            $request.body_connection.body(),
         )
         .await
         {
             Ok(value) => value,
             Err(err) => {
                 return err
-                    .write_to($request.body.finalize().await?, $response_writer)
+                    .write_to($request.body_connection.finalize().await?, $response_writer)
                     .await
             }
         }
