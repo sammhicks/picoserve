@@ -746,3 +746,73 @@ async fn huge_request() {
         assert_eq!(response.0.status, hyper::http::StatusCode::OK);
     }
 }
+
+#[tokio::test]
+async fn from_request_macros() {
+    use response::IntoResponse;
+
+    const TEST_HEADER_NAME: &str = "test";
+    const TEST_HEADER_VALUE: &str = "Test Header";
+
+    const BODY_VALUE: &str = "Test Body";
+
+    struct TestHeader<'r>(&'r str);
+
+    impl<'r, State> crate::extract::FromRequestParts<'r, State> for TestHeader<'r> {
+        type Rejection = core::convert::Infallible;
+
+        async fn from_request_parts(
+            _state: &'r State,
+            request_parts: &request::RequestParts<'r>,
+        ) -> Result<Self, Self::Rejection> {
+            // `expect` and `unwrap` are allowed as it's a test
+
+            Ok(Self(
+                request_parts
+                    .headers()
+                    .get(TEST_HEADER_NAME)
+                    .expect("Header Missing")
+                    .as_str()
+                    .unwrap(),
+            ))
+        }
+    }
+
+    struct BorrowingService;
+
+    impl crate::routing::RequestHandlerService<()> for BorrowingService {
+        async fn call_request_handler_service<
+            R: Read,
+            W: response::ResponseWriter<Error = R::Error>,
+        >(
+            &self,
+            state: &(),
+            (): (),
+            mut request: request::Request<'_, R>,
+            response_writer: W,
+        ) -> Result<ResponseSent, W::Error> {
+            let TestHeader(header) =
+                crate::from_request_parts!(state, request, response_writer, TestHeader);
+            let body = crate::from_request!(state, request, response_writer, &str);
+
+            assert_eq!(header, TEST_HEADER_VALUE);
+            assert_eq!(body, BODY_VALUE);
+
+            ().write_to(request.body_connection.finalize().await?, response_writer)
+                .await
+        }
+    }
+
+    let app = Router::new().route("/", crate::routing::get_service(BorrowingService));
+
+    let (parts, _) = run_single_request_test(
+        &app,
+        hyper::Request::get("/")
+            .header(TEST_HEADER_NAME, TEST_HEADER_VALUE)
+            .body(BODY_VALUE.into())
+            .unwrap(),
+    )
+    .await;
+
+    assert_eq!(parts.status, StatusCode::OK);
+}
