@@ -40,6 +40,11 @@ pub mod url_encoded;
 #[cfg(test)]
 mod tests;
 
+#[cfg(feature = "embassy")]
+use core::sync::atomic::{AtomicBool, AtomicUsize};
+#[cfg(feature = "embassy")]
+use embassy_time::WithTimeout;
+
 pub use logging::LogDisplay;
 pub use routing::Router;
 pub use time::Timer;
@@ -351,6 +356,48 @@ pub async fn serve_with_state<State, P: routing::PathRouter<State>, S: io::Socke
 }
 
 #[cfg(feature = "embassy")]
+pub struct ListenerManager {
+    is_running_atomic: AtomicBool,
+    running_workers: AtomicUsize
+}
+
+#[cfg(feature = "embassy")]
+impl<'a>  ListenerManager {
+    pub const fn new() -> Self {
+        use core::sync::atomic::AtomicBool;
+
+        Self {
+            is_running_atomic: AtomicBool::new(true),
+            running_workers: AtomicUsize::new(0)
+        }
+    }
+
+    fn start_worker(&self) {
+        self.running_workers.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+    }
+
+    fn stop_worker(&self) {
+        self.running_workers.fetch_sub(1, core::sync::atomic::Ordering::Relaxed);
+    }
+
+    pub fn is_running(&self) -> bool {
+        self.is_running_atomic.load(core::sync::atomic::Ordering::Relaxed)
+    }
+
+    pub fn start_listening(&self) {
+        self.is_running_atomic.store(true, core::sync::atomic::Ordering::Relaxed);
+    }
+
+    pub async fn stop_listening(&self) {
+        self.is_running_atomic.store(false, core::sync::atomic::Ordering::Relaxed);
+
+        while self.running_workers.load(core::sync::atomic::Ordering::Relaxed) > 0 {
+            embassy_time::Timer::after_millis(500).await
+        }
+    }
+}
+
+#[cfg(feature = "embassy")]
 /// Serve `app` with incoming requests. App has a no state.
 /// `task_id` is printed in log messages.
 pub async fn listen_and_serve<P: routing::PathRouter<()>>(
@@ -362,7 +409,8 @@ pub async fn listen_and_serve<P: routing::PathRouter<()>>(
     tcp_rx_buffer: &mut [u8],
     tcp_tx_buffer: &mut [u8],
     http_buffer: &mut [u8],
-) -> ! {
+    listener_manager: &ListenerManager,
+) -> () {
     listen_and_serve_with_state(
         task_id,
         app,
@@ -373,6 +421,7 @@ pub async fn listen_and_serve<P: routing::PathRouter<()>>(
         tcp_tx_buffer,
         http_buffer,
         &(),
+        listener_manager,
     )
     .await
 }
@@ -390,15 +439,32 @@ pub async fn listen_and_serve_with_state<State, P: routing::PathRouter<State>>(
     tcp_tx_buffer: &mut [u8],
     http_buffer: &mut [u8],
     state: &State,
-) -> ! {
+    listener_manager: &ListenerManager,
+) -> () {
+    listener_manager.start_worker();
+
+    log_info!("{}: Started listening on TCP:{}...", task_id, port);
+
     loop {
         let mut socket = embassy_net::tcp::TcpSocket::new(stack, tcp_rx_buffer, tcp_tx_buffer);
 
-        log_info!("{}: Listening on TCP:{}...", task_id, port);
+        let accept_result = socket.accept(port).with_timeout(
+            embassy_time::Duration::from_millis(500)
+        ).await;
 
-        if let Err(err) = socket.accept(port).await {
-            log_warn!("{}: accept error: {:?}", task_id, err);
-            continue;
+        match accept_result {
+            Ok(Ok(_)) => {}
+            Ok(Err(err)) => {
+                log_warn!("{}: accept error: {:?}", task_id, err);
+                continue;
+            }
+            Err(embassy_time::TimeoutError) => {
+                if listener_manager.is_running() == false {
+                    // Stop execution of the loop
+                    break;
+                }
+                continue;
+            }
         }
 
         let remote_endpoint = socket.remote_endpoint();
@@ -420,6 +486,9 @@ pub async fn listen_and_serve_with_state<State, P: routing::PathRouter<State>>(
             Err(err) => log_error!("{}", crate::logging::Debug2Format(&err)),
         }
     }
+
+    listener_manager.stop_worker();
+    log_info!("{}: Stopped listening on TCP:{}...", task_id, port);
 }
 
 #[cfg(not(any(feature = "tokio", feature = "embassy", test)))]
