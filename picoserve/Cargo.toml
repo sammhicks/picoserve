@@ -35,7 +35,7 @@ std = ["alloc"]     # Use the standard library. Used by examples.
 alloc = []          # Enable `FromRequest` and `Content` for some alloc types.
 
 tokio = ["dep:tokio", "std", "serde/std"]                               # Use the `tokio` runtime. Used by examples.
-embassy = ["dep:embassy-time", "dep:embassy-net"]    # Use the `embassy` runtime and `embassy-net` sockets.
+embassy = ["dep:embassy-time", "dep:embassy-net"]                       # Use the `embassy` runtime and `embassy-net` sockets.
 defmt = ["dep:defmt", "embassy-net?/defmt", "serde-json-core/defmt"]    # Emit log messages using the `defmt` crate.
 log = ["dep:log"]                                                       # Emit log messages using the `log` crate.
 

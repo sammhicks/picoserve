@@ -90,7 +90,8 @@ async fn main() -> anyhow::Result<()> {
                         message: "Hello World",
                     }
                 }),
-            ),
+            )
+            .with_state(AppState { key: 13 }),
     );
 
     let config = picoserve::Config::new(picoserve::Timeouts {
@@ -100,8 +101,6 @@ async fn main() -> anyhow::Result<()> {
         write: Some(Duration::from_secs(1)),
     })
     .keep_connection_alive();
-
-    let state = std::rc::Rc::new(AppState { key: 13 });
 
     let socket = tokio::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, port)).await?;
 
@@ -116,12 +115,9 @@ async fn main() -> anyhow::Result<()> {
 
                 let app = app.clone();
                 let config = config.clone();
-                let state = state.clone();
 
                 tokio::task::spawn_local(async move {
-                    match picoserve::serve_with_state(&app, &config, &mut [0; 2048], stream, &state)
-                        .await
-                    {
+                    match picoserve::serve(&app, &config, &mut [0; 2048], stream).await {
                         Ok(handled_requests_count) => {
                             println!(
                                 "{handled_requests_count} requests handled from {remote_address}"

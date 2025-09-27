@@ -21,21 +21,27 @@ fn api_router() -> picoserve::Router<impl picoserve::routing::PathRouter<AppStat
     )
 }
 
-fn app_router() -> picoserve::Router<impl picoserve::routing::PathRouter<AppState>, AppState> {
-    picoserve::Router::new().nest("/api", api_router()).route(
-        "/",
-        get_service(picoserve::response::File::html(include_str!("index.html"))),
-    )
-}
-
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> anyhow::Result<()> {
     let port = 8000;
 
-    let app = std::rc::Rc::new(app_router());
+    let app_state = AppState {
+        value: Rc::new(RefCell::new(0)),
+    };
+
+    let app = std::rc::Rc::new(
+        picoserve::Router::new()
+            .nest("/api", api_router())
+            .route(
+                "/",
+                get_service(picoserve::response::File::html(include_str!("index.html"))),
+            )
+            .with_state(app_state),
+    );
 
     let config = picoserve::Config::new(picoserve::Timeouts {
-        start_read_request: Some(Duration::from_secs(5)),persistent_start_read_request: Some(Duration::from_secs(1)),
+        start_read_request: Some(Duration::from_secs(5)),
+        persistent_start_read_request: Some(Duration::from_secs(1)),
         read_request: Some(Duration::from_secs(1)),
         write: Some(Duration::from_secs(1)),
     })
@@ -54,20 +60,9 @@ async fn main() -> anyhow::Result<()> {
 
                 let app = app.clone();
                 let config = config.clone();
-                let app_state = AppState {
-                    value: Rc::new(RefCell::new(0)),
-                };
 
                 tokio::task::spawn_local(async move {
-                    match picoserve::serve_with_state(
-                        &app,
-                        &config,
-                        &mut [0; 2048],
-                        stream,
-                        &app_state,
-                    )
-                    .await
-                    {
+                    match picoserve::serve(&app, &config, &mut [0; 2048], stream).await {
                         Ok(handled_requests_count) => {
                             println!(
                                 "{handled_requests_count} requests handled from {remote_address}"

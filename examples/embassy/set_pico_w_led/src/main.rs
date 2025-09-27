@@ -16,7 +16,7 @@ use picoserve::{
     make_static,
     response::DebugValue,
     routing::{get, get_service, parse_path_segment, PathRouter},
-    AppRouter, AppWithStateBuilder,
+    AppBuilder, AppRouter,
 };
 use rand::Rng;
 
@@ -45,8 +45,10 @@ async fn net_task(mut stack: embassy_net::Runner<'static, cyw43::NetDriver<'stat
     stack.run().await
 }
 
+type ControlMutex = Mutex<CriticalSectionRawMutex, Control<'static>>;
+
 #[derive(Clone, Copy)]
-struct SharedControl(&'static Mutex<CriticalSectionRawMutex, Control<'static>>);
+struct SharedControl(&'static ControlMutex);
 
 struct AppState {
     shared_control: SharedControl,
@@ -58,13 +60,16 @@ impl picoserve::extract::FromRef<AppState> for SharedControl {
     }
 }
 
-struct AppProps;
+struct AppProps {
+    state: AppState,
+}
 
-impl AppWithStateBuilder for AppProps {
-    type State = AppState;
-    type PathRouter = impl PathRouter<AppState>;
+impl AppBuilder for AppProps {
+    type PathRouter = impl PathRouter;
 
-    fn build_app(self) -> picoserve::Router<Self::PathRouter, Self::State> {
+    fn build_app(self) -> picoserve::Router<Self::PathRouter> {
+        let Self { state } = self;
+
         picoserve::Router::new()
             .route(
                 "/",
@@ -90,6 +95,7 @@ impl AppWithStateBuilder for AppProps {
                     },
                 ),
             )
+            .with_state(state)
     }
 }
 
@@ -101,14 +107,13 @@ async fn web_task(
     stack: embassy_net::Stack<'static>,
     app: &'static AppRouter<AppProps>,
     config: &'static picoserve::Config<Duration>,
-    state: AppState,
 ) -> ! {
     let port = 80;
     let mut tcp_rx_buffer = [0; 1024];
     let mut tcp_tx_buffer = [0; 1024];
     let mut http_buffer = [0; 2048];
 
-    picoserve::listen_and_serve_with_state(
+    picoserve::listen_and_serve(
         id,
         app,
         config,
@@ -117,7 +122,6 @@ async fn web_task(
         &mut tcp_rx_buffer,
         &mut tcp_tx_buffer,
         &mut http_buffer,
-        &state,
     )
     .await
 }
@@ -182,7 +186,17 @@ async fn main(spawner: embassy_executor::Spawner) {
         )
         .await;
 
-    let app = make_static!(AppRouter<AppProps>, AppProps.build_app());
+    let shared_control = SharedControl(
+        make_static!(Mutex<CriticalSectionRawMutex, Control<'static>>, Mutex::new(control)),
+    );
+
+    let app = make_static!(
+        AppRouter<AppProps>,
+        AppProps {
+            state: AppState { shared_control }
+        }
+        .build_app()
+    );
 
     let config = make_static!(
         picoserve::Config::<Duration>,
@@ -195,17 +209,7 @@ async fn main(spawner: embassy_executor::Spawner) {
         .keep_connection_alive()
     );
 
-    let shared_control = SharedControl(
-        make_static!(Mutex<CriticalSectionRawMutex, Control<'static>>, Mutex::new(control)),
-    );
-
     for id in 0..WEB_TASK_POOL_SIZE {
-        spawner.must_spawn(web_task(
-            id,
-            stack,
-            app,
-            config,
-            AppState { shared_control },
-        ));
+        spawner.must_spawn(web_task(id, stack, app, config));
     }
 }

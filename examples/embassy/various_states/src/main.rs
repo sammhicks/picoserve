@@ -139,16 +139,15 @@ async fn web_task(
     let mut tcp_tx_buffer = [0; 1024];
     let mut http_buffer = [0; 2048];
 
-    picoserve::listen_and_serve_with_state(
+    picoserve::listen_and_serve(
         id,
-        app,
+        &app.shared().with_state(state),
         config,
         stack,
         port,
         &mut tcp_rx_buffer,
         &mut tcp_tx_buffer,
         &mut http_buffer,
-        state,
     )
     .await
 }

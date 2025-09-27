@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - JSON and Websocket functionality are behind the `json` and `ws` features respectively.
 - Changed `UpgradedWebSocket<UnspecifiedProtocol, C>` to `UpgradedWebSocket<UnspecifiedProtocol, CallbackNotUsingState<C>>`.
+- Removed `serve_with_state` and `listen_and_serve_with_state`. See the migration guide below.
 
 ### Fixed
 
@@ -21,6 +22,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Added support for Websockets which have access to the state with [`WebSocketUpgrade::on_upgrade_using_state`](https://docs.rs/picoserve/latest/picoserve/response/ws/struct.WebSocketUpgrade.html#method.on_upgrade_using_state).
 - Added support for the `OPTIONS` HTTP method.
+
+### Migration Guide for `serve_with_state` and `listen_and_serve_with_state`.
+
+- If you construct the initial state on startup, call [`with_state`](https://docs.rs/picoserve/latest/picoserve/routing/struct.Router.html#method.with_state) on your current [`Router`](https://docs.rs/picoserve/latest/picoserve/routing/struct.Router.html), passing in the state by value. If you use [`AppWithStateBuilder`](https://docs.rs/picoserve/latest/picoserve/trait.AppWithStateBuilder.html), have the builder take the state by value and pass it into `with_state` during `build_app`, thus your builder type should implement [`AppBuilder`](https://docs.rs/picoserve/latest/picoserve/trait.AppBuilder.html) instead.
+- If you construct state separately from the app [`Router`](https://docs.rs/picoserve/latest/picoserve/routing/struct.Router.html), replace passing `&app` into `serve_with_state` or `listen_and_serve_with_state` with passing `&app.shared().with_state(&state)` into `serve` or `listen_and_serve`.
 
 ## [0.16.0] - 2025-05-13
 

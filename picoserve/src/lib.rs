@@ -198,13 +198,12 @@ impl<R: embedded_io_async::Read> embedded_io_async::Read for MapReadErrorReader<
     }
 }
 
-async fn serve_and_shutdown<State, T: Timer, P: routing::PathRouter<State>, S: io::Socket>(
-    Router { router, .. }: &Router<P, State>,
+async fn serve_and_shutdown<T: Timer, P: routing::PathRouter, S: io::Socket>(
+    app: &Router<P>,
     mut timer: T,
     config: &Config<T::Duration>,
     buffer: &mut [u8],
     mut socket: S,
-    state: &State,
 ) -> Result<u64, Error<S::Error>> {
     let result = async {
         let (reader, mut writer) = socket.split();
@@ -247,11 +246,8 @@ async fn serve_and_shutdown<State, T: Timer, P: routing::PathRouter<State>, S: i
                         timeout_duration: config.timeouts.write.clone(),
                     };
 
-                    let ResponseSent(()) = router
-                        .call_path_router(
-                            state,
-                            routing::NoPathParameters,
-                            request.parts.path(),
+                    let ResponseSent(()) = app
+                        .handle_request(
                             request,
                             response::ResponseStream::new(&mut writer, connection_header),
                         )
@@ -312,84 +308,32 @@ pub async fn serve<P: routing::PathRouter>(
     buffer: &mut [u8],
     stream: tokio::net::TcpStream,
 ) -> Result<u64, Error<io::tokio_support::TokioIoError>> {
-    serve_and_shutdown(app, time::TokioTimer, config, buffer, stream, &()).await
-}
-
-#[cfg(any(feature = "tokio", test))]
-/// Serve incoming requests read from `reader`, route them to `app`, and write responses to `writer`. App has a state of `State`.
-pub async fn serve_with_state<State, P: routing::PathRouter<State>>(
-    app: &Router<P, State>,
-    config: &Config<std::time::Duration>,
-    buffer: &mut [u8],
-    stream: tokio::net::TcpStream,
-    state: &State,
-) -> Result<u64, Error<io::tokio_support::TokioIoError>> {
-    serve_and_shutdown(app, time::TokioTimer, config, buffer, stream, state).await
+    serve_and_shutdown(app, time::TokioTimer, config, buffer, stream).await
 }
 
 #[cfg(feature = "embassy")]
-/// Serve `app` with requests incoming over `socket`. App has a no state.
+/// Serve `app` with requests incoming over `socket`.
 pub async fn serve<P: routing::PathRouter, S: io::Socket>(
     app: &Router<P>,
     config: &Config<embassy_time::Duration>,
     buffer: &mut [u8],
     socket: S,
 ) -> Result<u64, Error<S::Error>> {
-    serve_and_shutdown(app, time::EmbassyTimer, config, buffer, socket, &()).await
+    serve_and_shutdown(app, time::EmbassyTimer, config, buffer, socket).await
 }
 
 #[cfg(feature = "embassy")]
-/// Serve `app` with requests incoming over `socket`. App has a state of `State`.
-pub async fn serve_with_state<State, P: routing::PathRouter<State>, S: io::Socket>(
-    app: &Router<P, State>,
-    config: &Config<embassy_time::Duration>,
-    buffer: &mut [u8],
-    socket: S,
-    state: &State,
-) -> Result<u64, Error<S::Error>> {
-    serve_and_shutdown(app, time::EmbassyTimer, config, buffer, socket, state).await
-}
-
-#[cfg(feature = "embassy")]
-/// Serve `app` with incoming requests. App has a no state.
+/// Serve `app` with incoming requests.
 /// `task_id` is printed in log messages.
-pub async fn listen_and_serve<P: routing::PathRouter<()>>(
+pub async fn listen_and_serve<P: routing::PathRouter>(
     task_id: impl LogDisplay,
-    app: &Router<P, ()>,
+    app: &Router<P>,
     config: &Config<embassy_time::Duration>,
     stack: embassy_net::Stack<'_>,
     port: u16,
     tcp_rx_buffer: &mut [u8],
     tcp_tx_buffer: &mut [u8],
     http_buffer: &mut [u8],
-) -> ! {
-    listen_and_serve_with_state(
-        task_id,
-        app,
-        config,
-        stack,
-        port,
-        tcp_rx_buffer,
-        tcp_tx_buffer,
-        http_buffer,
-        &(),
-    )
-    .await
-}
-
-#[cfg(feature = "embassy")]
-/// Serve `app` with incoming requests. App has a state of `State`.
-/// `task_id` is printed in log messages.
-pub async fn listen_and_serve_with_state<State, P: routing::PathRouter<State>>(
-    task_id: impl LogDisplay,
-    app: &Router<P, State>,
-    config: &Config<embassy_time::Duration>,
-    stack: embassy_net::Stack<'_>,
-    port: u16,
-    tcp_rx_buffer: &mut [u8],
-    tcp_tx_buffer: &mut [u8],
-    http_buffer: &mut [u8],
-    state: &State,
 ) -> ! {
     loop {
         let mut socket = embassy_net::tcp::TcpSocket::new(stack, tcp_rx_buffer, tcp_tx_buffer);
@@ -409,7 +353,7 @@ pub async fn listen_and_serve_with_state<State, P: routing::PathRouter<State>>(
             remote_endpoint
         );
 
-        match serve_with_state(app, config, http_buffer, socket, state).await {
+        match serve(app, config, http_buffer, socket).await {
             Ok(handled_requests_count) => {
                 log_info!(
                     "{} requests handled from {:?}",
@@ -423,7 +367,7 @@ pub async fn listen_and_serve_with_state<State, P: routing::PathRouter<State>>(
 }
 
 #[cfg(not(any(feature = "tokio", feature = "embassy", test)))]
-/// Serve `app` with incoming requests. App has no state.
+/// Serve `app` with incoming requests.
 pub async fn serve<T: Timer, P: routing::PathRouter, S: io::Socket>(
     app: &Router<P>,
     timer: T,
@@ -431,20 +375,7 @@ pub async fn serve<T: Timer, P: routing::PathRouter, S: io::Socket>(
     buffer: &mut [u8],
     socket: S,
 ) -> Result<u64, Error<S::Error>> {
-    serve_and_shutdown(app, timer, config, buffer, socket, &()).await
-}
-
-#[cfg(not(any(feature = "tokio", feature = "embassy", test)))]
-/// Serve `app` with incoming requests. App has a state of `State`.
-pub async fn serve_with_state<'r, State, T: Timer, P: routing::PathRouter<State>, S: io::Socket>(
-    app: &Router<P, State>,
-    timer: T,
-    config: &Config<T::Duration>,
-    buffer: &'r mut [u8],
-    socket: S,
-    state: &State,
-) -> Result<u64, Error<S::Error>> {
-    serve_and_shutdown(app, timer, config, buffer, socket, state).await
+    serve_and_shutdown(app, timer, config, buffer, socket).await
 }
 
 /// A helper trait which simplifies creating a static [Router] with no state.

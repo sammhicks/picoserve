@@ -132,7 +132,8 @@ async fn main() -> anyhow::Result<()> {
                         .on_upgrade_using_state(WebsocketHandler)
                         .with_protocol("messages")
                 }),
-            ),
+            )
+            .with_state(state),
     );
 
     let config = picoserve::Config::new(picoserve::Timeouts {
@@ -156,12 +157,9 @@ async fn main() -> anyhow::Result<()> {
 
                 let app = app.clone();
                 let config = config.clone();
-                let state = state.clone();
 
                 tokio::task::spawn_local(async move {
-                    match picoserve::serve_with_state(&app, &config, &mut [0; 2048], stream, &state)
-                        .await
-                    {
+                    match picoserve::serve(&app, &config, &mut [0; 2048], stream).await {
                         Ok(handled_requests_count) => {
                             println!(
                                 "{handled_requests_count} requests handled from {remote_address}"

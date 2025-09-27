@@ -1434,10 +1434,10 @@ where
         request: Request<'_, R>,
         response_writer: W,
     ) -> Result<ResponseSent, W::Error> {
-        match self.path_description.parse_prefix(
-            current_path_parameters,
-            path,
-        ) {
+        match self
+            .path_description
+            .parse_prefix(current_path_parameters, path)
+        {
             Ok((path_parameters, path)) => {
                 self.service
                     .call_request_handler_service(
@@ -1505,6 +1505,30 @@ pub struct Router<
 > {
     pub(crate) router: RouterInner,
     _data: PhantomData<fn(CurrentPathParameters, State)>,
+}
+
+impl<
+        RouterInner: PathRouter<State, CurrentPathParameters> + Clone,
+        State,
+        CurrentPathParameters,
+    > Clone for Router<RouterInner, State, CurrentPathParameters>
+{
+    fn clone(&self) -> Self {
+        let &Self { ref router, _data } = self;
+
+        Self {
+            router: router.clone(),
+            _data,
+        }
+    }
+}
+
+impl<
+        RouterInner: PathRouter<State, CurrentPathParameters> + Copy,
+        State,
+        CurrentPathParameters,
+    > Copy for Router<RouterInner, State, CurrentPathParameters>
+{
 }
 
 impl<State, CurrentPathParameters> Router<NotFound, State, CurrentPathParameters> {
@@ -1633,17 +1657,134 @@ impl<State, CurrentPathParameters, RouterInner: PathRouter<State, CurrentPathPar
         }
     }
 
+    /// Create a cheaply `Copy`able [`Router`], borrowing from this [`Router`].
+    pub fn shared(
+        &self,
+    ) -> Router<
+        impl PathRouter<State, CurrentPathParameters> + Copy + '_,
+        State,
+        CurrentPathParameters,
+    > {
+        struct SharedPathRouter<'a, RouterInner> {
+            router: &'a RouterInner,
+        }
+
+        impl<'a, RouterInner> Clone for SharedPathRouter<'a, RouterInner> {
+            fn clone(&self) -> Self {
+                *self
+            }
+        }
+
+        impl<'a, RouterInner> Copy for SharedPathRouter<'a, RouterInner> {}
+
+        impl<'a, RouterInner> Sealed for SharedPathRouter<'a, RouterInner> {}
+
+        impl<
+                'a,
+                State,
+                CurrentPathParameters,
+                RouterInner: PathRouter<State, CurrentPathParameters>,
+            > PathRouter<State, CurrentPathParameters> for SharedPathRouter<'a, RouterInner>
+        {
+            async fn call_path_router<R: Read, W: ResponseWriter<Error = R::Error>>(
+                &self,
+                state: &State,
+                current_path_parameters: CurrentPathParameters,
+                path: Path<'_>,
+                request: Request<'_, R>,
+                response_writer: W,
+            ) -> Result<ResponseSent, W::Error> {
+                self.router
+                    .call_path_router(
+                        state,
+                        current_path_parameters,
+                        path,
+                        request,
+                        response_writer,
+                    )
+                    .await
+            }
+        }
+
+        let Self { router, _data } = self;
+
+        Router {
+            router: SharedPathRouter { router },
+            _data: PhantomData,
+        }
+    }
+}
+
+impl<State, CurrentPathParameters, RouterInner: PathRouter<State, CurrentPathParameters>>
+    Router<RouterInner, State, CurrentPathParameters>
+{
+    /// Provide the state for the router. Amongst other forms, the state itself, or a reference to the state, can be passed.
+    /// The provided state will be used for all requests that this router receives, thus ignoring any futher incoming state.
+    pub fn with_state<NewState>(
+        self,
+        state: impl core::borrow::Borrow<State>,
+    ) -> Router<impl PathRouter<NewState, CurrentPathParameters>, NewState, CurrentPathParameters>
+    {
+        struct WithState<State, StateRef, RouterInner> {
+            _state: PhantomData<fn(&State)>,
+            state_ref: StateRef,
+            router: RouterInner,
+        }
+
+        impl<State, StateRef, RouterInner> Sealed for WithState<State, StateRef, RouterInner> {}
+
+        impl<
+                NewState,
+                State,
+                StateRef: core::borrow::Borrow<State>,
+                CurrentPathParameters,
+                RouterInner: PathRouter<State, CurrentPathParameters>,
+            > PathRouter<NewState, CurrentPathParameters>
+            for WithState<State, StateRef, RouterInner>
+        {
+            async fn call_path_router<R: Read, W: ResponseWriter<Error = R::Error>>(
+                &self,
+                _state: &NewState,
+                current_path_parameters: CurrentPathParameters,
+                path: Path<'_>,
+                request: Request<'_, R>,
+                response_writer: W,
+            ) -> Result<ResponseSent, W::Error> {
+                self.router
+                    .call_path_router(
+                        self.state_ref.borrow(),
+                        current_path_parameters,
+                        path,
+                        request,
+                        response_writer,
+                    )
+                    .await
+            }
+        }
+
+        let Self { router, _data } = self;
+
+        Router {
+            router: WithState {
+                _state: PhantomData,
+                state_ref: state,
+                router,
+            },
+            _data: PhantomData,
+        }
+    }
+}
+
+impl<RouterInner: PathRouter> Router<RouterInner> {
     pub async fn handle_request<R: Read<Error = W::Error>, W: ResponseWriter>(
         &self,
-        state: &State,
-        current_path_parameters: CurrentPathParameters,
         request: Request<'_, R>,
         response_writer: W,
     ) -> Result<ResponseSent, W::Error> {
         self.router
             .call_path_router(
-                state,
-                current_path_parameters,
+                &(),
+                NoPathParameters,
                 request.parts.path(),
                 request,
                 response_writer,

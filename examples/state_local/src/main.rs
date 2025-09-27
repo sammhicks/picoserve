@@ -13,17 +13,25 @@ struct Counter {
 
 type SharedCounter = Rc<RefCell<Counter>>;
 
-async fn get_counter(State(state): State<SharedCounter>) -> impl IntoResponse {
-    picoserve::response::Json(state.borrow().clone())
+#[derive(Clone)]
+struct AppState {
+    connection_id: usize,
+    counter: SharedCounter,
 }
 
-async fn increment_counter(State(state): State<SharedCounter>) -> impl IntoResponse {
-    state.borrow_mut().counter += 1;
+async fn get_counter(State(state): State<AppState>) -> impl IntoResponse {
+    picoserve::response::Json(state.counter.borrow().clone())
+        .into_response()
+        .with_header("X-Connection-ID", state.connection_id)
+}
+
+async fn increment_counter(State(state): State<AppState>) -> impl IntoResponse {
+    state.counter.borrow_mut().counter += 1;
     Redirect::to(".")
 }
 
-async fn set_counter(value: i32, State(state): State<SharedCounter>) -> impl IntoResponse {
-    state.borrow_mut().counter = value;
+async fn set_counter(value: i32, State(state): State<AppState>) -> impl IntoResponse {
+    state.counter.borrow_mut().counter = value;
     Redirect::to(".")
 }
 
@@ -31,12 +39,13 @@ async fn set_counter(value: i32, State(state): State<SharedCounter>) -> impl Int
 async fn main() -> anyhow::Result<()> {
     let port = 8000;
 
+    let counter = Rc::new(RefCell::new(Counter { counter: 0 }));
+
     let app = std::rc::Rc::new(
-        picoserve::Router::new()
+        picoserve::Router::<_, AppState>::new()
             .route("/", get(get_counter))
             .route("/increment", get(increment_counter))
-            .route(("/set", parse_path_segment()), get(set_counter))
-            .with_state(Rc::new(RefCell::new(Counter { counter: 0 }))),
+            .route(("/set", parse_path_segment()), get(set_counter)),
     );
 
     let config = picoserve::Config::new(picoserve::Timeouts {
@@ -53,16 +62,27 @@ async fn main() -> anyhow::Result<()> {
 
     tokio::task::LocalSet::new()
         .run_until(async {
-            loop {
+            for connection_id in 0.. {
                 let (stream, remote_address) = socket.accept().await?;
 
                 println!("Connection from {remote_address}");
 
+                let counter = counter.clone();
                 let app = app.clone();
                 let config = config.clone();
 
                 tokio::task::spawn_local(async move {
-                    match picoserve::serve(&app, &config, &mut [0; 2048], stream).await {
+                    match picoserve::serve(
+                        &app.shared().with_state(AppState {
+                            connection_id,
+                            counter,
+                        }),
+                        &config,
+                        &mut [0; 2048],
+                        stream,
+                    )
+                    .await
+                    {
                         Ok(handled_requests_count) => {
                             println!(
                                 "{handled_requests_count} requests handled from {remote_address}"
@@ -72,6 +92,8 @@ async fn main() -> anyhow::Result<()> {
                     }
                 });
             }
+
+            Ok(())
         })
         .await
 }

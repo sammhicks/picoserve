@@ -235,7 +235,6 @@ async fn run_single_request_test(
             rx: request_rx,
             tx: response_tx,
         },
-        &(),
     ));
 
     let (mut request_sender, connection) = hyper::client::conn::http1::handshake(TestSocket {
@@ -512,7 +511,6 @@ async fn only_one_request() {
             rx: request_rx,
             tx: response_tx,
         },
-        &(),
     );
 
     request_tx
@@ -558,7 +556,6 @@ async fn keep_alive() {
             rx: "GET / HTTP/1.1\r\n\r\nGET / HTTP/1.1\r\n\r\n".as_bytes(),
             tx: std::vec::Vec::new(),
         },
-        &(),
     );
 
     assert_eq!(
@@ -743,7 +740,6 @@ async fn upgrade_with_request_body() {
                         },
                         tx: Vec::new(),
                     },
-                    &(),
                 );
 
                 assert_eq!(
