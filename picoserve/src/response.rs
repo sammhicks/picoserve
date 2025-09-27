@@ -53,10 +53,12 @@ pub use json::Json;
 #[cfg(feature = "ws")]
 pub use ws::WebSocketUpgrade;
 
+#[cfg(feature = "ws")] // Expand feature list if other features use this.
 fn assert_implements_into_response<T: IntoResponse>(t: T) -> T {
     t
 }
 
+#[cfg(feature = "ws")] // Expand feature list if other features use this.
 fn assert_implements_into_response_with_state<State, T: IntoResponseWithState<State>>(t: T) -> T {
     t
 }

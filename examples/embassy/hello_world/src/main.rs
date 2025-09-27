@@ -20,7 +20,7 @@ embassy_rp::bind_interrupts!(struct Irqs {
 });
 
 #[embassy_executor::task]
-async fn logger_task(usb: embassy_rp::peripherals::USB) {
+async fn logger_task(usb: embassy_rp::Peri<'static, embassy_rp::peripherals::USB>) {
     let driver = embassy_rp::usb::Driver::new(usb, Irqs);
     embassy_usb_logger::run!(1024, log::LevelFilter::Info, driver);
 }
