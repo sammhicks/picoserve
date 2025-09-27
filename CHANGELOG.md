@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - Added support for Websockets which have access to the state with [`WebSocketUpgrade::on_upgrade_using_state`](https://docs.rs/picoserve/latest/picoserve/response/ws/struct.WebSocketUpgrade.html#method.on_upgrade_using_state).
+- Added support for the `OPTIONS` HTTP method.
 
 ## [0.16.0] - 2025-05-13
 
