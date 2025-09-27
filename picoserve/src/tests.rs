@@ -5,7 +5,6 @@ use std::{
     string::String,
     task::{Context, Poll},
     time::Duration,
-    vec,
     vec::Vec,
 };
 
@@ -299,6 +298,74 @@ async fn not_found() {
     .await;
 
     assert_eq!(response_parts.status, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+/// Test that nesting works
+async fn nesting() {
+    use routing::get;
+
+    const A: &str = "A";
+    const B: &str = "B";
+
+    const AA: &str = "AA";
+    const AB: &str = "AB";
+    const BA: &str = "BA";
+    const BB: &str = "BB";
+
+    const A_PATH: &str = "/a";
+    const B_PATH: &str = "/b";
+
+    const AA_PATH: &str = "/a/a";
+    const AB_PATH: &str = "/a/b";
+    const BA_PATH: &str = "/b/a";
+    const BB_PATH: &str = "/b/b";
+
+    async fn run_tests(app: Router<impl PathRouter>) {
+        async fn run_test(app: &Router<impl PathRouter>, path: &str, expected_body: &str) {
+            let (response_parts, response_body) = run_single_request_test(
+                app,
+                hyper::Request::get(path).body(Default::default()).unwrap(),
+            )
+            .await;
+
+            assert_eq!(response_parts.status, StatusCode::OK);
+
+            assert_eq!(response_body, expected_body.as_bytes());
+        }
+
+        run_test(&app, A_PATH, A).await;
+        run_test(&app, AA_PATH, AA).await;
+        run_test(&app, AB_PATH, AB).await;
+        run_test(&app, B_PATH, B).await;
+        run_test(&app, BA_PATH, BA).await;
+        run_test(&app, BB_PATH, BB).await;
+    }
+
+    fn add_direct_routes(router: Router<impl PathRouter>) -> Router<impl PathRouter> {
+        router
+            .route(A_PATH, get(|| async { A }))
+            .route(B_PATH, get(|| async { B }))
+    }
+
+    fn add_nested_routes(router: Router<impl PathRouter>) -> Router<impl PathRouter> {
+        router
+            .nest(
+                A_PATH,
+                Router::new()
+                    .route(A_PATH, get(|| async { AA }))
+                    .route(B_PATH, get(|| async { AB })),
+            )
+            .nest(
+                B_PATH,
+                Router::new()
+                    .route(A_PATH, get(|| async { BA }))
+                    .route(B_PATH, get(|| async { BB })),
+            )
+    }
+
+    run_tests(add_direct_routes(add_nested_routes(Router::new()))).await;
+    run_tests(add_nested_routes(add_direct_routes(Router::new()))).await;
 }
 
 #[tokio::test]
@@ -598,7 +665,7 @@ async fn upgrade_with_request_body() {
                     assert_eq!(actual_body, EXPECTED_BODY);
                 }
                 BodyReadType::ReadExternally { buffer_size } => {
-                    let mut buffer = vec![0; buffer_size];
+                    let mut buffer = std::vec![0; buffer_size];
 
                     let mut reader = request.body_connection.body().reader();
 
@@ -708,7 +775,7 @@ async fn huge_request() {
             response_writer: W,
         ) -> Result<ResponseSent, W::Error> {
             if let Some(expected_body) = &self.expected_body {
-                let mut buffer = vec![0; expected_body.len()];
+                let mut buffer = std::vec![0; expected_body.len()];
 
                 request
                     .body_connection
