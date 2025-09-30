@@ -34,7 +34,8 @@ async fn main() -> anyhow::Result<()> {
     );
 
     let config = picoserve::Config::new(picoserve::Timeouts {
-        start_read_request: Some(Duration::from_secs(5)),persistent_start_read_request: Some(Duration::from_secs(1)),
+        start_read_request: Some(Duration::from_secs(5)),
+        persistent_start_read_request: Some(Duration::from_secs(1)),
         read_request: Some(Duration::from_secs(1)),
         write: Some(Duration::from_secs(1)),
     })
@@ -55,8 +56,14 @@ async fn main() -> anyhow::Result<()> {
                 let config = config.clone();
 
                 tokio::task::spawn_local(async move {
-                    match picoserve::serve(&app, &config, &mut [0; 2048], stream).await {
-                        Ok(handled_requests_count) => {
+                    match picoserve::Server::new(&app, &config, &mut [0; 2048])
+                        .serve(stream)
+                        .await
+                    {
+                        Ok(picoserve::DisconnectionInfo {
+                            handled_requests_count,
+                            ..
+                        }) => {
                             println!(
                                 "{handled_requests_count} requests handled from {remote_address}"
                             )

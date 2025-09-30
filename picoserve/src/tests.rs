@@ -158,7 +158,7 @@ struct TestSocket<TX, RX> {
     rx: RX,
 }
 
-impl<TX: io::Write<Error = Infallible>, RX: io::Read<Error = Infallible>> io::Socket
+impl<TX: io::Write<Error = Infallible>, RX: io::Read<Error = Infallible>> io::Socket<TokioRuntime>
     for TestSocket<TX, RX>
 {
     type Error = Infallible;
@@ -170,7 +170,7 @@ impl<TX: io::Write<Error = Infallible>, RX: io::Read<Error = Infallible>> io::So
         (&mut self.rx, &mut self.tx)
     }
 
-    async fn shutdown<Timer: time::Timer>(
+    async fn shutdown<Timer: time::Timer<TokioRuntime>>(
         self,
         _timeouts: &Timeouts<Timer::Duration>,
         _timer: &mut Timer,
@@ -226,16 +226,12 @@ async fn run_single_request_test(
 
     let mut http_buffer = [0; 2048];
 
-    let server = std::pin::pin!(serve_and_shutdown(
-        app,
-        time::TokioTimer,
-        &config,
-        &mut http_buffer,
-        TestSocket {
+    let server = std::pin::pin!(
+        Server::new(app, &config, &mut http_buffer).serve(TestSocket {
             rx: request_rx,
             tx: response_tx,
-        },
-    ));
+        })
+    );
 
     let (mut request_sender, connection) = hyper::client::conn::http1::handshake(TestSocket {
         tx: request_tx,
@@ -256,7 +252,7 @@ async fn run_single_request_test(
     .await
     .unwrap();
 
-    assert_eq!(server_output.unwrap(), 1);
+    assert_eq!(server_output.unwrap().handled_requests_count, 1);
 
     let (parts, body) = response.unwrap().into_parts();
 
@@ -502,16 +498,10 @@ async fn only_one_request() {
 
     let mut http_buffer = [0; 2048];
 
-    let server = serve_and_shutdown(
-        &app,
-        time::TokioTimer,
-        &config,
-        &mut http_buffer,
-        TestSocket {
-            rx: request_rx,
-            tx: response_tx,
-        },
-    );
+    let server = Server::new(&app, &config, &mut http_buffer).serve(TestSocket {
+        rx: request_rx,
+        tx: response_tx,
+    });
 
     request_tx
         .0
@@ -525,7 +515,11 @@ async fn only_one_request() {
     drop(request_tx);
 
     assert_eq!(
-        server.now_or_never().expect("Server has stalled").unwrap(),
+        server
+            .now_or_never()
+            .expect("Server has stalled")
+            .unwrap()
+            .handled_requests_count,
         1
     );
 
@@ -547,19 +541,17 @@ async fn keep_alive() {
 
     let mut http_buffer = [0; 2048];
 
-    let server = serve_and_shutdown(
-        &app,
-        time::TokioTimer,
-        &config,
-        &mut http_buffer,
-        TestSocket {
-            rx: "GET / HTTP/1.1\r\n\r\nGET / HTTP/1.1\r\n\r\n".as_bytes(),
-            tx: std::vec::Vec::new(),
-        },
-    );
+    let server = Server::new(&app, &config, &mut http_buffer).serve(TestSocket {
+        rx: "GET / HTTP/1.1\r\n\r\nGET / HTTP/1.1\r\n\r\n".as_bytes(),
+        tx: std::vec::Vec::new(),
+    });
 
     assert_eq!(
-        server.now_or_never().expect("Server has stalled").unwrap(),
+        server
+            .now_or_never()
+            .expect("Server has stalled")
+            .unwrap()
+            .handled_requests_count,
         2
     );
 }
@@ -720,30 +712,28 @@ async fn upgrade_with_request_body() {
             {
                 let app = Router::new().route("/", routing::post_service(BodyCheck { read_body }));
 
-                let server = serve_and_shutdown(
-                    &app,
-                    time::TokioTimer,
-                    &config,
-                    &mut http_buffer,
-                    TestSocket {
-                        rx: VecSequence {
-                            current: VecRead(Vec::new()),
-                            rest_reversed: [
-                                &REQUEST_PAYLOAD[b..],
-                                &REQUEST_PAYLOAD[a..b],
-                                &REQUEST_PAYLOAD[..a],
-                            ]
-                            .into_iter()
-                            .filter(|s| !s.is_empty())
-                            .map(Vec::from)
-                            .collect(),
-                        },
-                        tx: Vec::new(),
+                let server = Server::new(&app, &config, &mut http_buffer).serve(TestSocket {
+                    rx: VecSequence {
+                        current: VecRead(Vec::new()),
+                        rest_reversed: [
+                            &REQUEST_PAYLOAD[b..],
+                            &REQUEST_PAYLOAD[a..b],
+                            &REQUEST_PAYLOAD[..a],
+                        ]
+                        .into_iter()
+                        .filter(|s| !s.is_empty())
+                        .map(Vec::from)
+                        .collect(),
                     },
-                );
+                    tx: Vec::new(),
+                });
 
                 assert_eq!(
-                    server.now_or_never().expect("Server has stalled").unwrap(),
+                    server
+                        .now_or_never()
+                        .expect("Server has stalled")
+                        .unwrap()
+                        .handled_requests_count,
                     1
                 );
             }

@@ -128,7 +128,7 @@ const WEB_TASK_POOL_SIZE: usize = 8;
 
 #[embassy_executor::task(pool_size = WEB_TASK_POOL_SIZE)]
 async fn web_task(
-    id: usize,
+    task_id: usize,
     stack: embassy_net::Stack<'static>,
     app: &'static AppRouter<AppProps>,
     config: &'static picoserve::Config<Duration>,
@@ -139,17 +139,10 @@ async fn web_task(
     let mut tcp_tx_buffer = [0; 1024];
     let mut http_buffer = [0; 2048];
 
-    picoserve::listen_and_serve(
-        id,
-        &app.shared().with_state(state),
-        config,
-        stack,
-        port,
-        &mut tcp_rx_buffer,
-        &mut tcp_tx_buffer,
-        &mut http_buffer,
-    )
-    .await
+    picoserve::Server::new(&app.shared().with_state(state), config, &mut http_buffer)
+        .listen_and_serve(task_id, stack, port, &mut tcp_rx_buffer, &mut tcp_tx_buffer)
+        .await
+        .into_never()
 }
 
 #[embassy_executor::main]
@@ -235,7 +228,7 @@ async fn main(spawner: embassy_executor::Spawner) {
         }
     );
 
-    for id in 0..WEB_TASK_POOL_SIZE {
-        spawner.must_spawn(web_task(id, stack, app, config, app_state));
+    for task_id in 0..WEB_TASK_POOL_SIZE {
+        spawner.must_spawn(web_task(task_id, stack, app, config, app_state));
     }
 }

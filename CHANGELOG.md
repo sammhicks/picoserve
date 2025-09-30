@@ -11,7 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - JSON and Websocket functionality are behind the `json` and `ws` features respectively.
 - Changed `UpgradedWebSocket<UnspecifiedProtocol, C>` to `UpgradedWebSocket<UnspecifiedProtocol, CallbackNotUsingState<C>>`.
-- Removed `serve_with_state` and `listen_and_serve_with_state`. See the migration guide below.
+- Removed `serve`, `serve_with_state`, `listen_and_serve`, and `listen_and_serve_with_state`. See the migration guide below.
+- `Timer` and `Socket` have a generic parameter of the runtime that they use. If you have a custom `Timer` or `Socket` running on `embassy`, use `picoserve::EmbassyRuntime` (which is hidden in docs) as the parameter.
 
 ### Fixed
 
@@ -22,11 +23,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Added support for Websockets which have access to the state with [`WebSocketUpgrade::on_upgrade_using_state`](https://docs.rs/picoserve/latest/picoserve/response/ws/struct.WebSocketUpgrade.html#method.on_upgrade_using_state).
 - Added support for the `OPTIONS` HTTP method.
+- Added [`Server`](https://docs.rs/picoserve/latest/picoserve/struct.Server.html), a HTTP Server.
+- Added support for graceful shutdown of connections using [`Server::with_graceful_shutdown`](https://docs.rs/picoserve/latest/picoserve/struct.Server.html#method.with_graceful_shutdown).
 
-### Migration Guide for `serve_with_state` and `listen_and_serve_with_state`.
+### Migration Guide.
 
-- If you construct the initial state on startup, call [`with_state`](https://docs.rs/picoserve/latest/picoserve/routing/struct.Router.html#method.with_state) on your current [`Router`](https://docs.rs/picoserve/latest/picoserve/routing/struct.Router.html), passing in the state by value. If you use [`AppWithStateBuilder`](https://docs.rs/picoserve/latest/picoserve/trait.AppWithStateBuilder.html), have the builder take the state by value and pass it into `with_state` during `build_app`, thus your builder type should implement [`AppBuilder`](https://docs.rs/picoserve/latest/picoserve/trait.AppBuilder.html) instead.
-- If you construct state separately from the app [`Router`](https://docs.rs/picoserve/latest/picoserve/routing/struct.Router.html), replace passing `&app` into `serve_with_state` or `listen_and_serve_with_state` with passing `&app.shared().with_state(&state)` into `serve` or `listen_and_serve`.
+There are two new big concepts:
+
+- [`Server`](https://docs.rs/picoserve/latest/picoserve/struct.Server.html), which replaces the `picoserve::serve` and `picoserve::listen_and_serve` functions.
+- [`Router::with_state`](https://docs.rs/picoserve/latest/picoserve/routing/struct.Router.html#method.with_state) and [`Router::shared`](https://docs.rs/picoserve/latest/picoserve/routing/struct.Router.html#method.shared), which, together with [`Server`](https://docs.rs/picoserve/latest/picoserve/struct.Server.html) replaces the `picoserve::*_with_state` functions.
+
+#### Server
+
+`Server` is a HTTP Server, and is able to either serve requests read from a given [`Socket`](https://docs.rs/picoserve/latest/picoserve/io/trait.Socket.html),
+or if the `embassy` feature is enabled, listen for incoming connections and serve requests on the connection.
+
+`Server` is designed to be very lightweight, and is typically just a reference to a [`Router`](https://docs.rs/picoserve/latest/picoserve/routing/struct.Router.html). As such a typical usecase will have a single `Router` shared between tasks, but each task has its own `Server`.
+
+#### `Router::with_state`
+
+`Server` only accepts a `Router` with no state (or rather a state of `()`).
+
+A `Router` with a state can be converted into a stateless `Router` using `Router::with_state`,
+either passing the state itself if the `Router` should own the state,
+or passing in a reference to the state if the `Router` should borrow the state, i.e. the `Router` and state are stored separately.
+
+#### Migration recipies
+
+##### `serve` or `listen_and_serve`
+
+Create a `Server` and call `serve` or `listen_and_serve`.
+
+##### `serve_with_state` or `listen_and_serve_with_state` where the state is created at the same time as the `Router`
+
+Call `with_state` on the `Router` after the routes have been declared, and pass in the state.
+
+If you used `AppWithStateBuilder`, have the state be one of the fields of your builder type, and have it implement `AppBuilder` instead.
+
+The "state" example demonstrates this pattern.
+
+##### `serve_with_state` or `listen_and_serve_with_state` where the state is created separately to the `Router`, such as having the remote address.
+
+Create and store the `Router` as previous.
+
+When you create the `Server`, pass in `&app.shared().with_state(state)` as the `router` to `Server::new`, where `app` is the stored `Router`.
+
+The `Router` returned by `Router::shared` is lightweight and cheaply created and copied, so calling it per connection is cheap.
+
+The "state_local" example demonstrates this pattern.
 
 ## [0.16.0] - 2025-05-13
 

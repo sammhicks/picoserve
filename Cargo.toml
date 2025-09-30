@@ -8,6 +8,7 @@ members = [
     "examples/custom_extractor",
     "examples/form",
     "examples/query",
+    "examples/graceful_shutdown",
     "examples/hello_world",
     "examples/hello_world_single_thread",
     "examples/huge_requests",

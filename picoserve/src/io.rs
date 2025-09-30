@@ -4,6 +4,7 @@ use core::fmt;
 
 pub use embedded_io_async::{self, Error, ErrorKind, ErrorType, Read, Write};
 
+/// An extension trait for [`Read`] which allows discarding of all incoming data until the client closes the connection.
 pub trait ReadExt: Read {
     async fn discard_all_data(&mut self) -> Result<(), Self::Error> {
         let mut buffer = [0; 128];
@@ -96,7 +97,7 @@ pub trait WriteExt: Write {
 impl<W: Write> WriteExt for W {}
 
 /// A connection socket, which can be split into its read and write half, and shut down when finished.
-pub trait Socket: Sized {
+pub trait Socket<Runtime>: Sized {
     /// Error type of all the IO operations on this type.
     type Error: embedded_io_async::Error;
 
@@ -114,7 +115,7 @@ pub trait Socket: Sized {
     fn split(&mut self) -> (Self::ReadHalf<'_>, Self::WriteHalf<'_>);
 
     /// Perform a graceful shutdown
-    async fn shutdown<Timer: crate::Timer>(
+    async fn shutdown<Timer: crate::Timer<Runtime>>(
         self,
         timeouts: &crate::Timeouts<Timer::Duration>,
         timer: &mut Timer,
@@ -154,7 +155,7 @@ pub(crate) mod tokio_support {
         }
     }
 
-    impl super::Socket for tokio::net::TcpStream {
+    impl super::Socket<crate::TokioRuntime> for tokio::net::TcpStream {
         type Error = TokioIoError;
         type ReadHalf<'a> = TokioIo<tokio::net::tcp::ReadHalf<'a>>;
         type WriteHalf<'a> = TokioIo<tokio::net::tcp::WriteHalf<'a>>;
@@ -165,7 +166,7 @@ pub(crate) mod tokio_support {
             (TokioIo(read_half), TokioIo(write_half))
         }
 
-        async fn shutdown<Timer: crate::Timer>(
+        async fn shutdown<Timer: crate::Timer<crate::TokioRuntime>>(
             mut self,
             timeouts: &crate::Timeouts<Timer::Duration>,
             timer: &mut Timer,
@@ -200,7 +201,7 @@ pub(crate) mod tokio_support {
 }
 
 #[cfg(feature = "embassy")]
-impl<'s> Socket for embassy_net::tcp::TcpSocket<'s> {
+impl<'s> Socket<super::EmbassyRuntime> for embassy_net::tcp::TcpSocket<'s> {
     type Error = embassy_net::tcp::Error;
     type ReadHalf<'a> = embassy_net::tcp::TcpReader<'a> where 's: 'a;
     type WriteHalf<'a> = embassy_net::tcp::TcpWriter<'a> where 's: 'a;
@@ -209,7 +210,7 @@ impl<'s> Socket for embassy_net::tcp::TcpSocket<'s> {
         embassy_net::tcp::TcpSocket::split(self)
     }
 
-    async fn shutdown<Timer: crate::Timer>(
+    async fn shutdown<Timer: crate::Timer<super::EmbassyRuntime>>(
         mut self,
         timeouts: &crate::Timeouts<Timer::Duration>,
         timer: &mut Timer,

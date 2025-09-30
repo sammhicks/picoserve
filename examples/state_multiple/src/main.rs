@@ -92,8 +92,14 @@ async fn main() -> anyhow::Result<()> {
                 let config = config.clone();
 
                 tokio::task::spawn_local(async move {
-                    match picoserve::serve(&app, &config, &mut [0; 2048], stream).await {
-                        Ok(handled_requests_count) => {
+                    match picoserve::Server::new(&app, &config, &mut [0; 2048])
+                        .serve(stream)
+                        .await
+                    {
+                        Ok(picoserve::DisconnectionInfo {
+                            handled_requests_count,
+                            ..
+                        }) => {
                             println!(
                                 "{handled_requests_count} requests handled from {remote_address}"
                             )

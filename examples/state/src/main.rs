@@ -31,12 +31,14 @@ async fn set_counter(value: i32, State(state): State<SharedCounter>) -> impl Int
 async fn main() -> anyhow::Result<()> {
     let port = 8000;
 
+    let state: SharedCounter = Rc::new(RefCell::new(Counter { counter: 0 }));
+
     let app = std::rc::Rc::new(
         picoserve::Router::new()
             .route("/", get(get_counter))
             .route("/increment", get(increment_counter))
             .route(("/set", parse_path_segment()), get(set_counter))
-            .with_state(Rc::new(RefCell::new(Counter { counter: 0 }))),
+            .with_state(state),
     );
 
     let config = picoserve::Config::new(picoserve::Timeouts {
@@ -62,8 +64,14 @@ async fn main() -> anyhow::Result<()> {
                 let config = config.clone();
 
                 tokio::task::spawn_local(async move {
-                    match picoserve::serve(&app, &config, &mut [0; 2048], stream).await {
-                        Ok(handled_requests_count) => {
+                    match picoserve::Server::new(&app, &config, &mut [0; 2048])
+                        .serve(stream)
+                        .await
+                    {
+                        Ok(picoserve::DisconnectionInfo {
+                            handled_requests_count,
+                            ..
+                        }) => {
                             println!(
                                 "{handled_requests_count} requests handled from {remote_address}"
                             )

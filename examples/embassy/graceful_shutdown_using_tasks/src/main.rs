@@ -9,15 +9,22 @@ use embassy_rp::{
     pio::Pio,
 };
 
-use defmt_rtt as _;
+use embassy_sync::watch::Watch;
 use embassy_time::Duration;
-use panic_probe as _;
+use panic_persist as _;
 use picoserve::{make_static, routing::get, AppBuilder, AppRouter};
 use rand::Rng;
 
 embassy_rp::bind_interrupts!(struct Irqs {
     PIO0_IRQ_0 => embassy_rp::pio::InterruptHandler<embassy_rp::peripherals::PIO0>;
+    USBCTRL_IRQ => embassy_rp::usb::InterruptHandler<embassy_rp::peripherals::USB>;
 });
+
+#[embassy_executor::task]
+async fn logger_task(usb: embassy_rp::Peri<'static, embassy_rp::peripherals::USB>) {
+    let driver = embassy_rp::usb::Driver::new(usb, Irqs);
+    embassy_usb_logger::run!(1024, log::LevelFilter::Info, driver);
+}
 
 #[embassy_executor::task]
 async fn wifi_task(
@@ -31,17 +38,69 @@ async fn net_task(mut stack: embassy_net::Runner<'static, cyw43::NetDriver<'stat
     stack.run().await
 }
 
-struct AppProps;
+struct AppProps {
+    spawner: embassy_executor::Spawner,
+}
 
 impl AppBuilder for AppProps {
     type PathRouter = impl picoserve::routing::PathRouter;
 
     fn build_app(self) -> picoserve::Router<Self::PathRouter> {
-        picoserve::Router::new().route("/", get(|| async move { "Hello World" }))
+        let Self { spawner } = self;
+
+        picoserve::Router::new()
+            .route(
+                "/",
+                get(|| async {
+                    "Hello World\n\nNavigate to /suspend to temporarily shutdown the server."
+                }),
+            )
+            .route(
+                "/suspend",
+                get(move || async move {
+                    match spawner.spawn(suspend_server()) {
+                        Ok(()) => "Server suspended",
+                        Err(_) => "Failed to suspend server",
+                    }
+                }),
+            )
     }
 }
 
 const WEB_TASK_POOL_SIZE: usize = 8;
+
+#[derive(Clone)]
+enum ServerState {
+    Running,
+    Shutdown,
+}
+
+impl ServerState {
+    fn is_running(&self) -> bool {
+        matches!(self, Self::Running)
+    }
+
+    fn is_shutdown(&self) -> bool {
+        matches!(self, Self::Shutdown)
+    }
+}
+
+static SERVER_STATE: Watch<
+    embassy_sync::blocking_mutex::raw::ThreadModeRawMutex,
+    ServerState,
+    { 2 * WEB_TASK_POOL_SIZE },
+> = Watch::new_with(ServerState::Running);
+
+#[embassy_executor::task]
+async fn suspend_server() {
+    log::info!("Shutting down server");
+    SERVER_STATE.sender().send(ServerState::Shutdown);
+
+    embassy_time::Timer::after_secs(5).await;
+
+    log::info!("Resuming server");
+    SERVER_STATE.sender().send(ServerState::Running);
+}
 
 #[embassy_executor::task(pool_size = WEB_TASK_POOL_SIZE)]
 async fn web_task(
@@ -55,15 +114,32 @@ async fn web_task(
     let mut tcp_tx_buffer = [0; 1024];
     let mut http_buffer = [0; 2048];
 
-    picoserve::Server::new(app, config, &mut http_buffer)
-        .listen_and_serve(task_id, stack, port, &mut tcp_rx_buffer, &mut tcp_tx_buffer)
-        .await
-        .into_never()
+    let mut server_state = SERVER_STATE.receiver().unwrap();
+
+    loop {
+        log::info!("{}: Waiting for startup", task_id);
+
+        server_state.get_and(ServerState::is_running).await;
+
+        picoserve::Server::new(app, config, &mut http_buffer)
+            .with_graceful_shutdown(server_state.get_and(ServerState::is_shutdown))
+            .listen_and_serve(task_id, stack, port, &mut tcp_rx_buffer, &mut tcp_tx_buffer)
+            .await;
+    }
 }
 
 #[embassy_executor::main]
 async fn main(spawner: embassy_executor::Spawner) {
     let p = embassy_rp::init(Default::default());
+
+    spawner.must_spawn(logger_task(p.USB));
+
+    if let Some(panic_message) = panic_persist::get_panic_message_utf8() {
+        loop {
+            log::error!("{panic_message}");
+            embassy_time::Timer::after_secs(5).await;
+        }
+    }
 
     let fw = include_bytes!("../../cyw43-firmware/43439A0.bin");
     let clm = include_bytes!("../../cyw43-firmware/43439A0_clm.bin");
@@ -96,7 +172,7 @@ async fn main(spawner: embassy_executor::Spawner) {
             dns_servers: Default::default(),
         }),
         make_static!(
-            embassy_net::StackResources::<WEB_TASK_POOL_SIZE>,
+            embassy_net::StackResources<WEB_TASK_POOL_SIZE>,
             embassy_net::StackResources::new()
         ),
         embassy_rp::clocks::RoscRng.gen(),
@@ -112,10 +188,10 @@ async fn main(spawner: embassy_executor::Spawner) {
         )
         .await;
 
-    let app = make_static!(AppRouter<AppProps>, AppProps.build_app());
+    let app = make_static!(AppRouter<AppProps>, AppProps { spawner }.build_app());
 
     let config = make_static!(
-        picoserve::Config::<Duration>,
+        picoserve::Config<Duration>,
         picoserve::Config::new(picoserve::Timeouts {
             start_read_request: Some(Duration::from_secs(5)),
             persistent_start_read_request: Some(Duration::from_secs(1)),

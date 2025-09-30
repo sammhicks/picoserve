@@ -1,7 +1,7 @@
 //! [Timer] for creating timeouts during request parsing and request handling.
 
 /// A timer which can be used to abort futures if they take to long to resolve.
-pub trait Timer {
+pub trait Timer<Runtime> {
     /// The measure of time duration for this timer.
     type Duration: Clone;
     /// The error returned if a future fails to resolve in time.
@@ -15,7 +15,7 @@ pub trait Timer {
     ) -> Result<F::Output, Self::TimeoutError>;
 }
 
-pub(crate) trait TimerExt: Timer {
+pub(crate) trait TimerExt<Runtime>: Timer<Runtime> {
     async fn run_with_maybe_timeout<F: core::future::Future>(
         &mut self,
         duration: Option<Self::Duration>,
@@ -29,13 +29,14 @@ pub(crate) trait TimerExt: Timer {
     }
 }
 
-impl<T: Timer> TimerExt for T {}
+impl<Runtime, T: Timer<Runtime>> TimerExt<Runtime> for T {}
 
 #[cfg(any(feature = "tokio", test))]
-pub(crate) struct TokioTimer;
+#[doc(hidden)]
+pub struct TokioTimer;
 
 #[cfg(any(feature = "tokio", test))]
-impl Timer for TokioTimer {
+impl Timer<super::TokioRuntime> for TokioTimer {
     type Duration = std::time::Duration;
     type TimeoutError = tokio::time::error::Elapsed;
 
@@ -49,10 +50,11 @@ impl Timer for TokioTimer {
 }
 
 #[cfg(feature = "embassy")]
-pub(crate) struct EmbassyTimer;
+#[doc(hidden)]
+pub struct EmbassyTimer;
 
 #[cfg(feature = "embassy")]
-impl Timer for EmbassyTimer {
+impl Timer<super::EmbassyRuntime> for EmbassyTimer {
     type Duration = embassy_time::Duration;
     type TimeoutError = embassy_time::TimeoutError;
 
@@ -65,20 +67,21 @@ impl Timer for EmbassyTimer {
     }
 }
 
-pub(crate) struct WriteWithTimeout<'t, W: embedded_io_async::Write, T: Timer> {
+pub(crate) struct WriteWithTimeout<'t, Runtime, W: embedded_io_async::Write, T: Timer<Runtime>> {
     pub inner: W,
     pub timer: &'t mut T,
     pub timeout_duration: Option<T::Duration>,
+    pub _runtime: core::marker::PhantomData<fn(&Runtime)>,
 }
 
-impl<'t, W: embedded_io_async::Write, T: Timer> embedded_io_async::ErrorType
-    for WriteWithTimeout<'t, W, T>
+impl<'t, Runtime, W: embedded_io_async::Write, T: Timer<Runtime>> embedded_io_async::ErrorType
+    for WriteWithTimeout<'t, Runtime, W, T>
 {
     type Error = super::Error<W::Error>;
 }
 
-impl<'t, W: embedded_io_async::Write, T: Timer> embedded_io_async::Write
-    for WriteWithTimeout<'t, W, T>
+impl<'t, Runtime, W: embedded_io_async::Write, T: Timer<Runtime>> embedded_io_async::Write
+    for WriteWithTimeout<'t, Runtime, W, T>
 {
     async fn write(&mut self, buf: &[u8]) -> Result<usize, Self::Error> {
         self.timer

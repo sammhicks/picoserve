@@ -6,15 +6,13 @@
     clippy::multiple_unsafe_ops_per_block,
     clippy::undocumented_unsafe_blocks
 )]
+#![cfg_attr(docsrs, feature(doc_auto_cfg))]
 
 //! An async `no_std` HTTP server suitable for bare-metal environments, heavily inspired by [axum](https://github.com/tokio-rs/axum).
 //!
 //! It was designed with [embassy](https://embassy.dev/) on the Raspberry Pi Pico W in mind, but should work with other embedded runtimes and hardware.
 //!
 //! For examples on how to use picoserve, see the [examples](https://github.com/sammhicks/picoserve/tree/main/examples) directory.
-
-#[cfg(all(feature = "tokio", feature = "embassy"))]
-compile_error!("You cannot enable both tokio and embassy support");
 
 #[cfg(any(feature = "alloc", test))]
 extern crate alloc;
@@ -39,6 +37,8 @@ pub mod url_encoded;
 
 #[cfg(test)]
 mod tests;
+
+use core::marker::PhantomData;
 
 pub use logging::LogDisplay;
 pub use routing::Router;
@@ -198,17 +198,33 @@ impl<R: embedded_io_async::Read> embedded_io_async::Read for MapReadErrorReader<
     }
 }
 
-async fn serve_and_shutdown<T: Timer, P: routing::PathRouter, S: io::Socket>(
+/// Information gathered once a [`Server`] has disconnection,
+/// such as how many requests were handled and the shutdown reason if the server has graceful shutdown enabled.
+pub struct DisconnectionInfo<S> {
+    pub handled_requests_count: u64,
+    pub shutdown_reason: Option<S>,
+}
+
+async fn serve_and_shutdown<
+    Runtime,
+    T: Timer<Runtime>,
+    P: routing::PathRouter,
+    S: io::Socket<Runtime>,
+    ShutdownSignal: core::future::Future,
+>(
     app: &Router<P>,
-    mut timer: T,
+    timer: &mut T,
     config: &Config<T::Duration>,
-    buffer: &mut [u8],
+    http_buffer: &mut [u8],
     mut socket: S,
-) -> Result<u64, Error<S::Error>> {
+    shutdown_signal: ShutdownSignal,
+) -> Result<DisconnectionInfo<ShutdownSignal::Output>, Error<S::Error>> {
+    let mut shutdown_signal = core::pin::pin!(shutdown_signal);
+
     let result = async {
         let (reader, mut writer) = socket.split();
 
-        let mut reader = request::Reader::new(MapReadErrorReader(reader), buffer);
+        let mut reader = request::Reader::new(MapReadErrorReader(reader), http_buffer);
 
         for request_count in 0.. {
             match timer
@@ -218,14 +234,27 @@ async fn serve_and_shutdown<T: Timer, P: routing::PathRouter, S: io::Socket>(
                     } else {
                         config.timeouts.persistent_start_read_request.clone()
                     },
-                    reader.request_is_pending(),
+                    futures::select_either(shutdown_signal.as_mut(), reader.request_is_pending()),
                 )
                 .await
             {
-                Ok(Ok(true)) => (),
-                Ok(Ok(false)) | Err(_) => return Ok(request_count),
-                Ok(Err(err)) => return Err(err),
+                Ok(futures::Either::First(shutdown_reason)) => {
+                    return Ok(DisconnectionInfo {
+                        handled_requests_count: request_count,
+                        shutdown_reason: Some(shutdown_reason),
+                    })
+                }
+                Ok(futures::Either::Second(Ok(true))) => (),
+                Ok(futures::Either::Second(Ok(false))) | Err(_) => {
+                    return Ok(DisconnectionInfo {
+                        handled_requests_count: request_count,
+                        shutdown_reason: None,
+                    })
+                }
+                Ok(futures::Either::Second(Err(err))) => return Err(err),
             };
+
+            let request_count = request_count + 1;
 
             match timer
                 .run_with_maybe_timeout(config.timeouts.read_request.clone(), reader.read())
@@ -242,8 +271,9 @@ async fn serve_and_shutdown<T: Timer, P: routing::PathRouter, S: io::Socket>(
 
                     let mut writer = time::WriteWithTimeout {
                         inner: &mut writer,
-                        timer: &mut timer,
+                        timer,
                         timeout_duration: config.timeouts.write.clone(),
+                        _runtime: PhantomData,
                     };
 
                     let ResponseSent(()) = app
@@ -254,7 +284,10 @@ async fn serve_and_shutdown<T: Timer, P: routing::PathRouter, S: io::Socket>(
                         .await?;
 
                     if let KeepAlive::Close = connection_header {
-                        return Ok(request_count + 1);
+                        return Ok(DisconnectionInfo {
+                            handled_requests_count: request_count,
+                            shutdown_reason: None,
+                        });
                     }
                 }
                 Ok(Err(err)) => {
@@ -281,17 +314,23 @@ async fn serve_and_shutdown<T: Timer, P: routing::PathRouter, S: io::Socket>(
                         .map_err(|_| Error::WriteTimeout)?
                         .map_err(Error::Write)?;
 
-                    return Ok(request_count + 1);
+                    return Ok(DisconnectionInfo {
+                        handled_requests_count: request_count,
+                        shutdown_reason: None,
+                    });
                 }
                 Err(..) => return Err(Error::ReadTimeout),
             }
         }
 
-        Ok(0)
+        Ok(DisconnectionInfo {
+            handled_requests_count: 0,
+            shutdown_reason: None,
+        })
     }
     .await;
 
-    let shutdown_result = socket.shutdown(&config.timeouts, &mut timer).await;
+    let shutdown_result = socket.shutdown(&config.timeouts, timer).await;
 
     let request_count = result?;
 
@@ -300,82 +339,251 @@ async fn serve_and_shutdown<T: Timer, P: routing::PathRouter, S: io::Socket>(
     Ok(request_count)
 }
 
-#[cfg(any(feature = "tokio", test))]
-/// Serve `app` with incoming requests. App has a no state.
-pub async fn serve<P: routing::PathRouter>(
-    app: &Router<P>,
-    config: &Config<std::time::Duration>,
-    buffer: &mut [u8],
-    stream: tokio::net::TcpStream,
-) -> Result<u64, Error<io::tokio_support::TokioIoError>> {
-    serve_and_shutdown(app, time::TokioTimer, config, buffer, stream).await
+/// Indicates that graceful shutdown is not enabled, so the [`Server`] cannot report a graceful shutdown reason.
+pub enum NoGracefulShutdown {}
+
+impl NoGracefulShutdown {
+    /// Covert [`NoGracefulShutdown`] into another "never" type.
+    pub fn into_never<T>(self) -> T {
+        match self {}
+    }
 }
 
-#[cfg(feature = "embassy")]
-/// Serve `app` with requests incoming over `socket`.
-pub async fn serve<P: routing::PathRouter, S: io::Socket>(
-    app: &Router<P>,
-    config: &Config<embassy_time::Duration>,
-    buffer: &mut [u8],
-    socket: S,
-) -> Result<u64, Error<S::Error>> {
-    serve_and_shutdown(app, time::EmbassyTimer, config, buffer, socket).await
+/// A HTTP Server.
+pub struct Server<
+    'a,
+    Runtime,
+    T: Timer<Runtime>,
+    P: routing::PathRouter,
+    ShutdownSignal: core::future::Future,
+> {
+    app: &'a Router<P>,
+    timer: T,
+    config: &'a Config<T::Duration>,
+    http_buffer: &'a mut [u8],
+    shutdown_signal: ShutdownSignal,
+    _runtime: PhantomData<fn(&Runtime)>,
 }
 
-#[cfg(feature = "embassy")]
-/// Serve `app` with incoming requests.
-/// `task_id` is printed in log messages.
-pub async fn listen_and_serve<P: routing::PathRouter>(
-    task_id: impl LogDisplay,
-    app: &Router<P>,
-    config: &Config<embassy_time::Duration>,
-    stack: embassy_net::Stack<'_>,
-    port: u16,
-    tcp_rx_buffer: &mut [u8],
-    tcp_tx_buffer: &mut [u8],
-    http_buffer: &mut [u8],
-) -> ! {
-    loop {
-        let mut socket = embassy_net::tcp::TcpSocket::new(stack, tcp_rx_buffer, tcp_tx_buffer);
-
-        log_info!("{}: Listening on TCP:{}...", task_id, port);
-
-        if let Err(err) = socket.accept(port).await {
-            log_warn!("{}: accept error: {:?}", task_id, err);
-            continue;
+impl<'a, Runtime, T: Timer<Runtime>, P: routing::PathRouter>
+    Server<'a, Runtime, T, P, core::future::Pending<NoGracefulShutdown>>
+{
+    /// Create a new [`Router`] with a custom timer.
+    ///
+    /// Normally the functions behind the `embassy` feature will be used.
+    pub fn custom(
+        app: &'a Router<P>,
+        timer: T,
+        config: &'a Config<T::Duration>,
+        http_buffer: &'a mut [u8],
+    ) -> Self {
+        Self {
+            app,
+            timer,
+            config,
+            http_buffer,
+            shutdown_signal: core::future::pending(),
+            _runtime: PhantomData,
         }
+    }
 
-        let remote_endpoint = socket.remote_endpoint();
+    /// Prepares a server to handle graceful shutdown when the provided future completes.
+    ///
+    /// Note that requests currently being handled will be awaited, including long-standing requests such as websockets.
+    /// You must ensure that long-standing requests are signalled to abort.
+    pub fn with_graceful_shutdown<ShutdownSignal: core::future::Future>(
+        self,
+        shutdown_signal: ShutdownSignal,
+    ) -> Server<'a, Runtime, T, P, ShutdownSignal> {
+        let Self {
+            app,
+            timer,
+            config,
+            http_buffer,
+            shutdown_signal: _,
+            _runtime,
+        } = self;
 
-        log_info!(
-            "{}: Received connection from {:?}",
-            task_id,
-            remote_endpoint
-        );
-
-        match serve(app, config, http_buffer, socket).await {
-            Ok(handled_requests_count) => {
-                log_info!(
-                    "{} requests handled from {:?}",
-                    handled_requests_count,
-                    remote_endpoint
-                );
-            }
-            Err(err) => log_error!("{}", crate::logging::Debug2Format(&err)),
+        Server {
+            app,
+            timer,
+            config,
+            http_buffer,
+            shutdown_signal,
+            _runtime: PhantomData,
         }
     }
 }
 
-#[cfg(not(any(feature = "tokio", feature = "embassy", test)))]
-/// Serve `app` with incoming requests.
-pub async fn serve<T: Timer, P: routing::PathRouter, S: io::Socket>(
-    app: &Router<P>,
-    timer: T,
-    config: &Config<T::Duration>,
-    buffer: &mut [u8],
-    socket: S,
-) -> Result<u64, Error<S::Error>> {
-    serve_and_shutdown(app, timer, config, buffer, socket).await
+impl<
+        'a,
+        Runtime,
+        T: Timer<Runtime>,
+        P: routing::PathRouter,
+        ShutdownSignal: core::future::Future,
+    > Server<'a, Runtime, T, P, ShutdownSignal>
+{
+    /// Serve requests read from the connected socket.
+    pub async fn serve<S: io::Socket<Runtime>>(
+        self,
+        socket: S,
+    ) -> Result<DisconnectionInfo<ShutdownSignal::Output>, Error<S::Error>> {
+        let Self {
+            app,
+            mut timer,
+            config,
+            http_buffer,
+            shutdown_signal,
+            _runtime,
+        } = self;
+
+        serve_and_shutdown(
+            app,
+            &mut timer,
+            config,
+            http_buffer,
+            socket,
+            shutdown_signal,
+        )
+        .await
+    }
+}
+
+#[cfg(any(feature = "tokio", test))]
+#[doc(hidden)]
+pub struct TokioRuntime;
+
+#[cfg(any(feature = "tokio", test))]
+impl<'a, P: routing::PathRouter>
+    Server<'a, TokioRuntime, time::TokioTimer, P, core::future::Pending<NoGracefulShutdown>>
+{
+    /// Create a new server using the `tokio` runtime, and typically with a `tokio::net::TcpSocket` as the socket.
+    pub fn new(
+        app: &'a Router<P>,
+        config: &'a Config<std::time::Duration>,
+        http_buffer: &'a mut [u8],
+    ) -> Self {
+        Self {
+            app,
+            timer: time::TokioTimer,
+            config,
+            http_buffer,
+            shutdown_signal: core::future::pending(),
+            _runtime: PhantomData,
+        }
+    }
+}
+
+#[cfg(feature = "embassy")]
+#[doc(hidden)]
+pub struct EmbassyRuntime;
+
+#[cfg(feature = "embassy")]
+impl<'a, P: routing::PathRouter>
+    Server<'a, EmbassyRuntime, time::EmbassyTimer, P, core::future::Pending<NoGracefulShutdown>>
+{
+    /// Create a new server using the `embassy` runtime.
+    pub fn new(
+        app: &'a Router<P>,
+        config: &'a Config<embassy_time::Duration>,
+        http_buffer: &'a mut [u8],
+    ) -> Self {
+        Self {
+            app,
+            timer: time::EmbassyTimer,
+            config,
+            http_buffer,
+            shutdown_signal: core::future::pending(),
+            _runtime: PhantomData,
+        }
+    }
+}
+
+#[cfg(feature = "embassy")]
+impl<'a, P: routing::PathRouter, ShutdownSignal: core::future::Future>
+    Server<'a, EmbassyRuntime, time::EmbassyTimer, P, ShutdownSignal>
+{
+    /// Listen for incoming connections, and serve requests read from the connection.
+    ///
+    /// This will serve at most 1 connection at a time, so you will typically have multiple tasks running `listen_and_serve`.
+    pub async fn listen_and_serve(
+        self,
+        task_id: impl LogDisplay,
+        stack: embassy_net::Stack<'_>,
+        port: u16,
+        tcp_rx_buffer: &mut [u8],
+        tcp_tx_buffer: &mut [u8],
+    ) -> ShutdownSignal::Output {
+        let Self {
+            app,
+            mut timer,
+            config,
+            http_buffer,
+            shutdown_signal,
+            _runtime,
+        } = self;
+
+        let mut shutdown_signal = core::pin::pin!(shutdown_signal);
+
+        loop {
+            let socket = match futures::select_either(shutdown_signal.as_mut(), async {
+                let mut socket =
+                    embassy_net::tcp::TcpSocket::new(stack, tcp_rx_buffer, tcp_tx_buffer);
+
+                log_info!("{}: Listening on TCP:{}...", task_id, port);
+
+                socket.accept(port).await.map(|()| socket)
+            })
+            .await
+            {
+                futures::Either::First(shutdown) => return shutdown,
+                futures::Either::Second(Err(error)) => {
+                    log_warn!("{}: accept error: {:?}", task_id, error);
+                    continue;
+                }
+                futures::Either::Second(Ok(socket)) => socket,
+            };
+
+            let remote_endpoint = socket.remote_endpoint();
+
+            log_info!(
+                "{}: Received connection from {:?}",
+                task_id,
+                remote_endpoint
+            );
+
+            return match serve_and_shutdown(
+                app,
+                &mut timer,
+                config,
+                http_buffer,
+                socket,
+                shutdown_signal.as_mut(),
+            )
+            .await
+            {
+                Ok(DisconnectionInfo {
+                    handled_requests_count,
+                    shutdown_reason,
+                }) => {
+                    log_info!(
+                        "{} requests handled from {:?}",
+                        handled_requests_count,
+                        remote_endpoint
+                    );
+
+                    match shutdown_reason {
+                        Some(shutdown_reason) => shutdown_reason,
+                        None => continue,
+                    }
+                }
+                Err(err) => {
+                    log_error!("{}", crate::logging::Debug2Format(&err));
+                    continue;
+                }
+            };
+        }
+    }
 }
 
 /// A helper trait which simplifies creating a static [Router] with no state.

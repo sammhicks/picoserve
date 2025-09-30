@@ -1,6 +1,11 @@
 use core::future::Future;
 
-pub async fn select<A: Future, B: Future<Output = A::Output>>(a: A, b: B) -> A::Output {
+pub enum Either<A, B> {
+    First(A),
+    Second(B),
+}
+
+pub async fn select_either<A: Future, B: Future>(a: A, b: B) -> Either<A::Output, B::Output> {
     let mut a = core::pin::pin!(a);
     let mut b = core::pin::pin!(b);
 
@@ -8,18 +13,24 @@ pub async fn select<A: Future, B: Future<Output = A::Output>>(a: A, b: B) -> A::
         use core::task::Poll;
 
         match a.as_mut().poll(cx) {
-            Poll::Ready(output) => return Poll::Ready(output),
+            Poll::Ready(output) => return Poll::Ready(Either::First(output)),
             Poll::Pending => (),
         }
 
         match b.as_mut().poll(cx) {
-            Poll::Ready(output) => return Poll::Ready(output),
+            Poll::Ready(output) => return Poll::Ready(Either::Second(output)),
             Poll::Pending => (),
         }
 
         Poll::Pending
     })
     .await
+}
+
+pub async fn select<A: Future, B: Future<Output = A::Output>>(a: A, b: B) -> A::Output {
+    match select_either(a, b).await {
+        Either::First(output) | Either::Second(output) => output,
+    }
 }
 
 #[cfg(test)]
