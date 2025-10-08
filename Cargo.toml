@@ -9,6 +9,8 @@ members = [
     "examples/form",
     "examples/query",
     "examples/graceful_shutdown",
+    "examples/graceful_shutdown_server_sent_events",
+    "examples/graceful_shutdown_web_sockets",
     "examples/hello_world",
     "examples/hello_world_single_thread",
     "examples/huge_requests",
@@ -30,6 +32,7 @@ exclude = [
 
 [workspace.dependencies]
 anyhow = "1.0.86"
+futures-util = "0.3.31"
 heapless = { version = "0.8.0", features = ["serde"] }
 serde = { version = "1.0.204", features = ["derive"] }
 thiserror = { version = "2.0.9", default-features = false }

@@ -9,7 +9,7 @@ pub trait Timer<Runtime> {
 
     /// Drive the future, failing if it takes to long to resolve.
     async fn run_with_timeout<F: core::future::Future>(
-        &mut self,
+        &self,
         duration: Self::Duration,
         future: F,
     ) -> Result<F::Output, Self::TimeoutError>;
@@ -17,7 +17,7 @@ pub trait Timer<Runtime> {
 
 pub(crate) trait TimerExt<Runtime>: Timer<Runtime> {
     async fn run_with_maybe_timeout<F: core::future::Future>(
-        &mut self,
+        &self,
         duration: Option<Self::Duration>,
         future: F,
     ) -> Result<F::Output, Self::TimeoutError> {
@@ -41,7 +41,7 @@ impl Timer<super::TokioRuntime> for TokioTimer {
     type TimeoutError = tokio::time::error::Elapsed;
 
     async fn run_with_timeout<F: core::future::Future>(
-        &mut self,
+        &self,
         duration: Self::Duration,
         future: F,
     ) -> Result<F::Output, Self::TimeoutError> {
@@ -59,7 +59,7 @@ impl Timer<super::EmbassyRuntime> for EmbassyTimer {
     type TimeoutError = embassy_time::TimeoutError;
 
     async fn run_with_timeout<F: core::future::Future>(
-        &mut self,
+        &self,
         duration: Self::Duration,
         future: F,
     ) -> Result<F::Output, Self::TimeoutError> {
@@ -69,7 +69,7 @@ impl Timer<super::EmbassyRuntime> for EmbassyTimer {
 
 pub(crate) struct WriteWithTimeout<'t, Runtime, W: embedded_io_async::Write, T: Timer<Runtime>> {
     pub inner: W,
-    pub timer: &'t mut T,
+    pub timer: &'t T,
     pub timeout_duration: Option<T::Duration>,
     pub _runtime: core::marker::PhantomData<fn(&Runtime)>,
 }

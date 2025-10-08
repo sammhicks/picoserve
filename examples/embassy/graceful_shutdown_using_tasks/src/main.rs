@@ -113,6 +113,7 @@ async fn web_task(
     let mut tcp_rx_buffer = [0; 1024];
     let mut tcp_tx_buffer = [0; 1024];
     let mut http_buffer = [0; 2048];
+    let shutdown_timeout = embassy_time::Duration::from_secs(3);
 
     let mut server_state = SERVER_STATE.receiver().unwrap();
 
@@ -122,7 +123,10 @@ async fn web_task(
         server_state.get_and(ServerState::is_running).await;
 
         picoserve::Server::new(app, config, &mut http_buffer)
-            .with_graceful_shutdown(server_state.get_and(ServerState::is_shutdown))
+            .with_graceful_shutdown(
+                server_state.get_and(ServerState::is_shutdown),
+                shutdown_timeout,
+            )
             .listen_and_serve(task_id, stack, port, &mut tcp_rx_buffer, &mut tcp_tx_buffer)
             .await;
     }

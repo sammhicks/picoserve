@@ -7,6 +7,6 @@ edition = "2021"
 
 [dependencies]
 anyhow = { workspace = true }
-futures-util = "0.3.31"
+futures-util = { workspace = true }
 picoserve = { path = "../../picoserve", features = ["tokio"] }
 tokio = { workspace = true, features = ["sync"] }

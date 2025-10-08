@@ -1,0 +1,14 @@
+body,
+main,
+fieldset {
+    display: flex;
+    flex-flow: column nowrap;
+}
+
+body {
+    align-items: center;
+}
+
+main {
+    gap: 1rem;
+}

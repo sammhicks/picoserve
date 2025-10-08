@@ -88,7 +88,7 @@ impl ServerState {
 static SERVER_STATE: Watch<
     embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex,
     ServerState,
-    { 2 * WEB_TASK_POOL_SIZE + 1 },
+    { WEB_TASK_POOL_SIZE + 1 },
 > = Watch::new_with(ServerState::Running);
 
 #[embassy_executor::task]
@@ -194,8 +194,8 @@ async fn main(spawner: embassy_executor::Spawner) {
 
         server_state.get_and(ServerState::is_running).await;
 
-        let tasks = embassy_futures::join::join_array::<_, WEB_TASK_POOL_SIZE>(
-            core::array::from_fn(|task_id| {
+        embassy_futures::join::join_array::<_, WEB_TASK_POOL_SIZE>(core::array::from_fn(
+            |task_id| {
                 let mut server_state = SERVER_STATE.receiver().unwrap();
 
                 async move {
@@ -203,9 +203,13 @@ async fn main(spawner: embassy_executor::Spawner) {
                     let mut tcp_rx_buffer = [0; 1024];
                     let mut tcp_tx_buffer = [0; 1024];
                     let mut http_buffer = [0; 2048];
+                    let shutdown_timeout = embassy_time::Duration::from_secs(3);
 
                     picoserve::Server::new(app, config, &mut http_buffer)
-                        .with_graceful_shutdown(server_state.get_and(ServerState::is_shutdown))
+                        .with_graceful_shutdown(
+                            server_state.get_and(ServerState::is_shutdown),
+                            shutdown_timeout,
+                        )
                         .listen_and_serve(
                             task_id,
                             stack,
@@ -215,21 +219,8 @@ async fn main(spawner: embassy_executor::Spawner) {
                         )
                         .await;
                 }
-            }),
-        );
-
-        embassy_futures::select::select(
-            async {
-                server_state.get_and(ServerState::is_shutdown).await;
-
-                log::info!("Shutdown signal received, waiting for tasks to shutdown");
-
-                embassy_time::Timer::after_secs(3).await;
-
-                log::info!("Killing tasks");
             },
-            tasks,
-        )
+        ))
         .await;
     }
 }

@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Graceful shutdown demo</title>
+    <link rel="stylesheet" href="index.css">
+</head>
+
+<body>
+    <main>
+        <fieldset>
+            <legend>Counter produced by Websockets</legend>
+            <output id="counterOutput"></output>
+        </fieldset>
+
+        <fieldset>
+            <legend>Text echo using Websockets</legend>
+            <input id="echoInput" autocomplete="false">
+            <output id="echoOutput"></output>
+        </fieldset>
+
+        <fieldset>
+            <legend>Shutdown</legend>
+            <button id="shutdownButton">Shutdown Server</button>
+            <output id="shutdownMessage"></output>
+            <output id="disconnectionMessage"></output>
+        </fieldset>
+    </main>
+
+    <script src="index.js"></script>
+</body>
+
+</html>

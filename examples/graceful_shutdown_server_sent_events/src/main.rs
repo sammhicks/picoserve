@@ -1,6 +1,9 @@
 use std::time::Duration;
 
-use picoserve::routing::get;
+use picoserve::{
+    response,
+    routing::{get, get_service, post},
+};
 
 #[derive(Clone)]
 enum ServerState {
@@ -18,11 +21,47 @@ async fn main() -> anyhow::Result<()> {
         picoserve::Router::new()
             .route(
                 "/",
-                get(|| async { "Hello World\n\nNavigate to /shutdown to shutdown the server.\n" }),
+                get_service(response::File::html(include_str!("index.html"))),
+            )
+            .route(
+                "/index.css",
+                get_service(response::File::css(include_str!("index.css"))),
+            )
+            .route(
+                "/index.js",
+                get_service(response::File::javascript(include_str!("index.js"))),
+            )
+            .route(
+                "/counter",
+                get(|| {
+                    struct Counter;
+
+                    impl picoserve::response::sse::EventSource for Counter {
+                        async fn write_events<W: picoserve::io::Write>(
+                            self,
+                            mut writer: picoserve::response::sse::EventWriter<'_, W>,
+                        ) -> Result<(), W::Error> {
+                            let mut ticker =
+                                tokio::time::interval(std::time::Duration::from_millis(300));
+
+                            for tick in 0_u32.. {
+                                ticker.tick().await;
+
+                                writer
+                                    .write_event("tick", format_args!("Count: {tick}"))
+                                    .await?;
+                            }
+
+                            Ok(())
+                        }
+                    }
+
+                    picoserve::response::sse::EventStream(Counter)
+                }),
             )
             .route(
                 "/shutdown",
-                get(move || {
+                post(move || {
                     let _ = update_server_state.send(ServerState::Shutdown);
                     async { "Shutting Down\n" }
                 }),

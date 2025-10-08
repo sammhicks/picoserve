@@ -4,7 +4,7 @@ use core::{fmt, ops::Range};
 
 use embedded_io_async::Read;
 
-use super::url_encoded::UrlEncodedString;
+use crate::{sync::oneshot_broadcast, url_encoded::UrlEncodedString};
 
 struct Subslice<'a> {
     buffer: &'a [u8],
@@ -562,6 +562,7 @@ pub struct RequestBodyConnection<'r, R: Read> {
     buffer: &'r mut [u8],
     buffer_usage: usize,
     has_been_upgraded: &'r mut bool,
+    shutdown_signal: oneshot_broadcast::Listener<'r, ()>,
 }
 
 impl<'r, R: Read> RequestBodyConnection<'r, R> {
@@ -595,6 +596,7 @@ impl<'r, R: Read> RequestBodyConnection<'r, R> {
                     buffer_usage: self.buffer_usage,
                 },
                 has_been_upgraded: self.has_been_upgraded,
+                shutdown_signal: self.shutdown_signal,
             });
         }
 
@@ -630,6 +632,7 @@ impl<'r, R: Read> RequestBodyConnection<'r, R> {
                 buffer_usage: 0,
             },
             has_been_upgraded: self.has_been_upgraded,
+            shutdown_signal: self.shutdown_signal,
         })
     }
 }
@@ -640,6 +643,17 @@ pub struct Request<'r, R: Read> {
     pub parts: RequestParts<'r>,
     /// The request body and underlying connection
     pub body_connection: RequestBodyConnection<'r, R>,
+}
+
+impl<'r, R: Read> Request<'r, R> {
+    pub(crate) fn with_shutdown_signal(
+        mut self,
+        signal: oneshot_broadcast::Listener<'r, ()>,
+    ) -> Self {
+        self.body_connection.shutdown_signal = signal;
+
+        self
+    }
 }
 
 /// Errors arising while reading a HTTP Request
@@ -876,6 +890,7 @@ impl<'b, R: Read> Reader<'b, R> {
                 buffer: body_buffer,
                 buffer_usage: self.buffer_usage - parts_length,
                 has_been_upgraded: &mut self.has_been_upgraded,
+                shutdown_signal: oneshot_broadcast::Listener::never(),
             },
         };
 

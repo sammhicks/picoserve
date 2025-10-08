@@ -24,6 +24,7 @@ use core::fmt;
 
 use crate::{
     io::{Read, Write},
+    sync::oneshot_broadcast,
     KeepAlive, ResponseSent,
 };
 
@@ -116,6 +117,7 @@ impl<'r, R: Read> Read for UpgradedConnection<'r, R> {
 pub struct Connection<'r, R: Read> {
     pub(crate) reader: BufferedReader<'r, R>,
     pub(crate) has_been_upgraded: &'r mut bool,
+    pub(crate) shutdown_signal: oneshot_broadcast::Listener<'r, ()>,
 }
 
 impl<'r, R: Read> Connection<'r, R> {
@@ -171,6 +173,7 @@ impl<'r, E: crate::io::Error> Connection<'r, EmptyReader<E>> {
                 buffer_usage: 0,
             },
             has_been_upgraded,
+            shutdown_signal: oneshot_broadcast::Listener::never(),
         }
     }
 }

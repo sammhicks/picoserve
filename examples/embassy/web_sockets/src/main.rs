@@ -102,7 +102,11 @@ impl ws::WebSocketCallback for WebsocketEcho {
         let mut buffer = [0; 1024];
 
         let close_reason = loop {
-            match rx.next_message(&mut buffer).await {
+            match rx
+                .next_message(&mut buffer, core::future::pending())
+                .await?
+                .ignore_never_b()
+            {
                 Ok(ws::Message::Text(data)) => tx.send_text(data).await,
                 Ok(ws::Message::Binary(data)) => tx.send_binary(data).await,
                 Ok(ws::Message::Close(reason)) => {
@@ -111,19 +115,10 @@ impl ws::WebSocketCallback for WebsocketEcho {
                 }
                 Ok(ws::Message::Ping(data)) => tx.send_pong(data).await,
                 Ok(ws::Message::Pong(_)) => continue,
-                Err(err) => {
-                    log::error!("Websocket Error: {err:?}");
+                Err(error) => {
+                    log::error!("Websocket Error: {error:?}");
 
-                    let code = match err {
-                        ws::ReadMessageError::Io(err) => return Err(err),
-                        ws::ReadMessageError::ReadFrameError(_)
-                        | ws::ReadMessageError::MessageStartsWithContinuation
-                        | ws::ReadMessageError::UnexpectedMessageStart => 1002,
-                        ws::ReadMessageError::ReservedOpcode(_) => 1003,
-                        ws::ReadMessageError::TextIsNotUtf8 => 1007,
-                    };
-
-                    break Some((code, "Websocket Error"));
+                    break Some((error.code(), "Websocket Error"));
                 }
             }?;
         };

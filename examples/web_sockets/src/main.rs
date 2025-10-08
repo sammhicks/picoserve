@@ -27,37 +27,45 @@ impl ws::WebSocketCallbackWithState<AppState> for WebsocketHandler {
         let mut message_buffer = [0; 128];
 
         let close_reason = loop {
-            tokio::select! {
-                message_changed = messages_rx.recv() => match message_changed {
-                    Ok(message) => tx.send_display(format_args!("Message: {message}")).await?,
-                    Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => tx.send_display(format_args!("Missed {n} messages")).await?,
-                    Err(tokio::sync::broadcast::error::RecvError::Closed) => break None,
-                },
-                new_message = rx.next_message(&mut message_buffer) => match new_message {
-                    Ok(Message::Text(new_message)) => { let _ = messages_tx.send(new_message.into()); },
-                    Ok(Message::Binary(message)) => println!("Ignoring binary message: {message:?}"),
-                    Ok(ws::Message::Close(reason)) => {
-                        eprintln!("Websocket close reason: {reason:?}");
-                        break None;
-                    }
-                    Ok(Message::Ping(ping)) => tx.send_pong(ping).await?,
-                    Ok(Message::Pong(_)) => (),
-                    Err(err) => {
-                        eprintln!("Websocket Error: {err:?}");
-
-                        let code = match err {
-                            ws::ReadMessageError::Io(err) => return Err(err),
-                            ws::ReadMessageError::ReadFrameError(_)
-                            | ws::ReadMessageError::MessageStartsWithContinuation
-                            | ws::ReadMessageError::UnexpectedMessageStart => 1002,
-                            ws::ReadMessageError::ReservedOpcode(_) => 1003,
-                            ws::ReadMessageError::TextIsNotUtf8 => 1007,
-                        };
-
-                        break Some((code, "Websocket Error"));
-                    }
+            let message = match rx
+                .next_message(&mut message_buffer, messages_rx.recv())
+                .await?
+            {
+                picoserve::futures::Either::First(Ok(message)) => message,
+                picoserve::futures::Either::First(Err(error)) => {
+                    eprintln!("Websocket error: {error:?}");
+                    break Some((error.code(), "Websocket Error"));
                 }
-            }
+                picoserve::futures::Either::Second(message_changed) => match message_changed {
+                    Ok(message) => {
+                        tx.send_display(format_args!("Message: {message}")).await?;
+                        continue;
+                    }
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
+                        tx.send_display(format_args!("Missed {n} messages")).await?;
+                        continue;
+                    }
+                    Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                        break Some((1011, "Server has an error"));
+                    }
+                },
+            };
+
+            println!("Message: {message:?}");
+            match message {
+                Message::Text(new_message) => {
+                    let _ = messages_tx.send(new_message.into());
+                }
+                Message::Binary(message) => {
+                    println!("Ignoring binary message: {message:?}")
+                }
+                ws::Message::Close(reason) => {
+                    eprintln!("Websocket close reason: {reason:?}");
+                    break None;
+                }
+                Message::Ping(ping) => tx.send_pong(ping).await?,
+                Message::Pong(_) => (),
+            };
         };
 
         tx.close(close_reason).await

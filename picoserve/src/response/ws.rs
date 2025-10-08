@@ -7,6 +7,7 @@ use picoserve_derive::ErrorWithStatusCode;
 use crate::{
     self as picoserve,
     extract::FromRequestParts,
+    futures::Either,
     io::{Read, Write, WriteExt},
 };
 
@@ -214,9 +215,7 @@ pub struct Frame {
 /// Errors arising when reading a frame.
 #[derive(Debug)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub enum ReadFrameError<E> {
-    /// IO Error while reading.
-    Io(E),
+pub enum ReadFrameError {
     /// EOF received which reading the frame.
     UnexpectedEof,
     /// The message length is too large to be represented as a usize.
@@ -225,23 +224,12 @@ pub enum ReadFrameError<E> {
     OutOfSpace,
 }
 
-impl<E> From<embedded_io_async::ReadExactError<E>> for ReadFrameError<E> {
-    fn from(value: embedded_io_async::ReadExactError<E>) -> Self {
-        match value {
-            embedded_io_async::ReadExactError::UnexpectedEof => Self::UnexpectedEof,
-            embedded_io_async::ReadExactError::Other(err) => Self::Io(err),
-        }
-    }
-}
-
 /// Errors arising when reading a message.
 #[derive(Debug)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub enum ReadMessageError<E> {
-    /// IO Error while reading.
-    Io(E),
-    /// IO Error while reading a frame.
-    ReadFrameError(ReadFrameError<E>),
+pub enum ReadMessageError {
+    /// Error while reading a frame.
+    ReadFrameError(ReadFrameError),
     /// The opcode is a reserved value.
     ReservedOpcode(u8),
     /// The first frame received was a continuation frame.
@@ -252,9 +240,75 @@ pub enum ReadMessageError<E> {
     TextIsNotUtf8,
 }
 
-impl<E> From<core::str::Utf8Error> for ReadMessageError<E> {
+impl ReadMessageError {
+    pub fn code(&self) -> u16 {
+        match self {
+            Self::ReadFrameError(_)
+            | Self::MessageStartsWithContinuation
+            | Self::UnexpectedMessageStart => 1002,
+            Self::ReservedOpcode(_) => 1003,
+            Self::TextIsNotUtf8 => 1007,
+        }
+    }
+}
+
+enum InternalError<IoError, Error> {
+    Io(IoError),
+    Other(Error),
+}
+
+impl<IoError, Error> From<Error> for InternalError<IoError, Error> {
+    fn from(error: Error) -> Self {
+        Self::Other(error)
+    }
+}
+
+impl<IoError> From<embedded_io_async::ReadExactError<IoError>>
+    for InternalError<IoError, ReadFrameError>
+{
+    fn from(value: embedded_io_async::ReadExactError<IoError>) -> Self {
+        match value {
+            embedded_io_async::ReadExactError::UnexpectedEof => {
+                Self::Other(ReadFrameError::UnexpectedEof)
+            }
+            embedded_io_async::ReadExactError::Other(error) => Self::Io(error),
+        }
+    }
+}
+
+impl<IOError> From<InternalError<IOError, ReadFrameError>>
+    for InternalError<IOError, ReadMessageError>
+{
+    fn from(error: InternalError<IOError, ReadFrameError>) -> Self {
+        match error {
+            InternalError::Io(error) => InternalError::Io(error),
+            InternalError::Other(error) => {
+                InternalError::Other(ReadMessageError::ReadFrameError(error))
+            }
+        }
+    }
+}
+
+impl<IoError> From<core::str::Utf8Error> for InternalError<IoError, ReadMessageError> {
     fn from(_: core::str::Utf8Error) -> Self {
-        Self::TextIsNotUtf8
+        ReadMessageError::TextIsNotUtf8.into()
+    }
+}
+
+trait InternalResultExt<T, S, IoError, Error> {
+    fn into_nested_result(self) -> Result<Either<Result<T, Error>, S>, IoError>;
+}
+
+impl<T, S, IoError, Error> InternalResultExt<T, S, IoError, Error>
+    for Result<Either<T, S>, InternalError<IoError, Error>>
+{
+    fn into_nested_result(self) -> Result<Either<Result<T, Error>, S>, IoError> {
+        match self {
+            Ok(Either::First(value)) => Ok(Either::First(Ok(value))),
+            Ok(Either::Second(signal)) => Ok(Either::Second(signal)),
+            Err(InternalError::Io(error)) => Err(error),
+            Err(InternalError::Other(error)) => Ok(Either::First(Err(error))),
+        }
     }
 }
 
@@ -282,23 +336,39 @@ pub enum Message<'a> {
     Pong(&'a [u8]),
 }
 
+async fn next_byte<R: Read>(
+    reader: &mut R,
+) -> Result<u8, embedded_io_async::ReadExactError<R::Error>> {
+    let mut buffer = 0;
+
+    reader
+        .read_exact(core::slice::from_mut(&mut buffer))
+        .await
+        .map(|()| buffer)
+}
+
 /// A source of Web Socket Frames.
 pub struct SocketRx<R: Read> {
     reader: R,
 }
 
 impl<R: Read> SocketRx<R> {
-    /// Read the next frame. If the frame is not final, then before calling next_message,
-    /// next_frame must be repeatedly called until a final frame is received.
-    pub async fn next_frame(
+    async fn next_frame_internal<Signal: core::future::Future>(
         &mut self,
         buffer: &mut [u8],
-    ) -> Result<Frame, ReadFrameError<R::Error>> {
-        let [first, second] = {
-            let mut header = [0; 2];
-            self.reader.read_exact(&mut header).await?;
-            header
+        other_signal: Signal,
+    ) -> Result<Either<Frame, Signal::Output>, InternalError<R::Error, ReadFrameError>> {
+        let first = match crate::futures::select_either(
+            core::pin::pin!(other_signal),
+            next_byte(&mut self.reader),
+        )
+        .await
+        {
+            Either::First(signal) => return Ok(Either::Second(signal)),
+            Either::Second(b) => b?,
         };
+
+        let second = next_byte(&mut self.reader).await?;
 
         let is_final = first & 0x80 != 0;
 
@@ -345,33 +415,46 @@ impl<R: Read> SocketRx<R> {
             }
         }
 
-        Ok(Frame {
+        Ok(Either::First(Frame {
             is_final,
             opcode,
             length,
-        })
+        }))
     }
 
-    /// Read the next message. Frame data is concatenated together.
-    pub async fn next_message<'a>(
+    /// Read the next frame unless `signal` resolves before receiving the start of the frame. `signal` **must** be cancel-safe.
+    /// If the frame is not final, then before calling next_message,
+    /// next_frame must be repeatedly called until a final frame is received.
+    ///
+    /// `next_frame` is *not* cancel-safe.
+    pub async fn next_frame<Signal: core::future::Future>(
+        &mut self,
+        buffer: &mut [u8],
+        signal: Signal,
+    ) -> Result<Either<Result<Frame, ReadFrameError>, Signal::Output>, R::Error> {
+        self.next_frame_internal(buffer, signal)
+            .await
+            .into_nested_result()
+    }
+
+    async fn next_message_internal<'a, Signal: core::future::Future>(
         &mut self,
         buffer: &'a mut [u8],
-    ) -> Result<Message<'a>, ReadMessageError<R::Error>> {
+        signal: Signal,
+    ) -> Result<Either<Message<'a>, Signal::Output>, InternalError<R::Error, ReadMessageError>>
+    {
         let Frame {
             is_final: is_single_frame,
             opcode,
             length: mut message_length,
-        } = self.next_frame(buffer).await.map_err(|err| {
-            if let ReadFrameError::Io(io_err) = err {
-                ReadMessageError::Io(io_err)
-            } else {
-                ReadMessageError::ReadFrameError(err)
-            }
-        })?;
+        } = match self.next_frame_internal(buffer, signal).await? {
+            Either::First(frame) => frame,
+            Either::Second(signal) => return Ok(Either::Second(signal)),
+        };
 
         let opcode = match opcode {
             Opcode::Data(Data::Continue) => {
-                return Err(ReadMessageError::MessageStartsWithContinuation)
+                return Err(ReadMessageError::MessageStartsWithContinuation.into())
             }
             Opcode::Data(Data::Text) => MessageOpcode::Text,
             Opcode::Data(Data::Binary) => MessageOpcode::Binary,
@@ -379,7 +462,7 @@ impl<R: Read> SocketRx<R> {
             Opcode::Control(Control::Ping) => MessageOpcode::Ping,
             Opcode::Control(Control::Pong) => MessageOpcode::Pong,
             Opcode::Data(Data::Reserved(opcode)) | Opcode::Control(Control::Reserved(opcode)) => {
-                return Err(ReadMessageError::ReservedOpcode(opcode))
+                return Err(ReadMessageError::ReservedOpcode(opcode).into())
             }
         };
 
@@ -390,9 +473,9 @@ impl<R: Read> SocketRx<R> {
                     opcode,
                     length,
                 } = self
-                    .next_frame(&mut buffer[message_length..])
-                    .await
-                    .map_err(ReadMessageError::ReadFrameError)?;
+                    .next_frame_internal(&mut buffer[message_length..], core::future::pending())
+                    .await?
+                    .ignore_never_b();
 
                 match opcode {
                     Opcode::Data(Data::Continue) => (),
@@ -401,11 +484,11 @@ impl<R: Read> SocketRx<R> {
                     | Opcode::Control(Control::Close)
                     | Opcode::Control(Control::Ping)
                     | Opcode::Control(Control::Pong) => {
-                        return Err(ReadMessageError::UnexpectedMessageStart)
+                        return Err(ReadMessageError::UnexpectedMessageStart.into())
                     }
                     Opcode::Data(Data::Reserved(opcode))
                     | Opcode::Control(Control::Reserved(opcode)) => {
-                        return Err(ReadMessageError::ReservedOpcode(opcode))
+                        return Err(ReadMessageError::ReservedOpcode(opcode).into())
                     }
                 }
 
@@ -419,7 +502,7 @@ impl<R: Read> SocketRx<R> {
 
         let data = &buffer[..message_length];
 
-        Ok(match opcode {
+        Ok(Either::First(match opcode {
             MessageOpcode::Text => Message::Text(core::str::from_utf8(data)?),
             MessageOpcode::Binary => Message::Binary(data),
             MessageOpcode::Close => Message::Close(match data {
@@ -431,7 +514,18 @@ impl<R: Read> SocketRx<R> {
             }),
             MessageOpcode::Ping => Message::Ping(data),
             MessageOpcode::Pong => Message::Pong(data),
-        })
+        }))
+    }
+
+    /// Read the next message unless `signal` resolves before receiving the start of the message. `signal` **must** be cancel-safe. Frame data is concatenated together.
+    pub async fn next_message<'a, Signal: core::future::Future>(
+        &mut self,
+        buffer: &'a mut [u8],
+        signal: Signal,
+    ) -> Result<Either<Result<Message<'a>, ReadMessageError>, Signal::Output>, R::Error> {
+        self.next_message_internal(buffer, signal)
+            .await
+            .into_nested_result()
     }
 }
 
@@ -559,7 +653,7 @@ impl<'w, W: Write> Write for FrameWriter<'w, W> {
     }
 }
 
-/// Implement [WebSocketCallback] to handle and sent web socket messages.
+/// Implement [WebSocketCallback] to handle and send web socket messages.
 pub trait WebSocketCallback {
     /// Run the WebSocket connection, reading and writing to the socket.
     async fn run<R: Read, W: Write<Error = R::Error>>(
@@ -569,6 +663,38 @@ pub trait WebSocketCallback {
     ) -> Result<(), W::Error>;
 }
 
+impl<C: WebSocketCallback> WebSocketCallbackWithShutdownSignal for C {
+    async fn run_with_shutdown_signal<
+        R: Read,
+        W: Write<Error = R::Error>,
+        S: core::future::Future<Output = ()> + Clone + Unpin,
+    >(
+        self,
+        rx: SocketRx<R>,
+        tx: SocketTx<W>,
+        _shutdown_signal: S,
+    ) -> Result<(), W::Error> {
+        self.run(rx, tx).await
+    }
+}
+
+/// A [WebSocketCallback] which is signalled when the server shuts down gracefully.
+pub trait WebSocketCallbackWithShutdownSignal {
+    /// Run the WebSocket connection, reading and writing to the socket.
+    /// If the server has graceful shutdown configured, `shutdown_signal` resolves when the server shuts down.
+    async fn run_with_shutdown_signal<
+        R: Read,
+        W: Write<Error = R::Error>,
+        S: core::future::Future<Output = ()> + Clone + Unpin,
+    >(
+        self,
+        rx: SocketRx<R>,
+        tx: SocketTx<W>,
+        shutdown_signal: S,
+    ) -> Result<(), W::Error>;
+}
+
+/// A [WebSocketCallback] with access to the server state.
 pub trait WebSocketCallbackWithState<State> {
     /// Run the WebSocket connection, reading and writing to the socket.
     async fn run_with_state<R: Read, W: Write<Error = R::Error>>(
@@ -587,6 +713,40 @@ impl<State, C: WebSocketCallback> WebSocketCallbackWithState<State> for C {
         tx: SocketTx<W>,
     ) -> Result<(), W::Error> {
         self.run(rx, tx).await
+    }
+}
+
+/// A [WebSocketCallback] with access to the server state, and which is signalled when the server shuts down gracefully..
+pub trait WebSocketCallbackWithStateAndShutdownSignal<State> {
+    /// Run the WebSocket connection, reading and writing to the socket.
+    async fn run_with_state_and_shutdown_signal<
+        R: Read,
+        W: Write<Error = R::Error>,
+        S: core::future::Future<Output = ()> + Clone + Unpin,
+    >(
+        self,
+        state: &State,
+        rx: SocketRx<R>,
+        tx: SocketTx<W>,
+        shutdown_signal: S,
+    ) -> Result<(), W::Error>;
+}
+
+impl<State, C: WebSocketCallbackWithState<State>> WebSocketCallbackWithStateAndShutdownSignal<State>
+    for C
+{
+    async fn run_with_state_and_shutdown_signal<
+        R: Read,
+        W: Write<Error = R::Error>,
+        S: core::future::Future<Output = ()> + Clone + Unpin,
+    >(
+        self,
+        state: &State,
+        rx: SocketRx<R>,
+        tx: SocketTx<W>,
+        _shutdown_signal: S,
+    ) -> Result<(), W::Error> {
+        self.run_with_state(state, rx, tx).await
     }
 }
 
@@ -621,12 +781,12 @@ impl<C> UpgradedWebSocket<UnspecifiedProtocol, C> {
 }
 
 /// Indicates that the callback doesn't use the server state
-pub struct CallbackNotUsingState<C: WebSocketCallback> {
+pub struct CallbackNotUsingState<C: WebSocketCallbackWithShutdownSignal> {
     callback: C,
 }
 
 /// Indicates that the callback uses the server state of type `State`
-pub struct CallbackUsingState<State, C: WebSocketCallbackWithState<State>> {
+pub struct CallbackUsingState<State, C: WebSocketCallbackWithStateAndShutdownSignal<State>> {
     callback: C,
     state: PhantomData<fn(&State)>,
 }
@@ -634,7 +794,9 @@ pub struct CallbackUsingState<State, C: WebSocketCallbackWithState<State>> {
 impl WebSocketUpgrade {
     /// Handle the websocket upgrade. The returned [UpgradedWebSocket] should be returned by the request handler,
     /// and thus returned to the client.
-    pub fn on_upgrade<C: WebSocketCallback>(
+    ///
+    /// `on_upgrade` also accepts a [`WebSocketCallback`], as all [`WebSocketCallback`] also implement [`WebSocketCallbackWithShutdownSignal`].
+    pub fn on_upgrade<C: WebSocketCallbackWithShutdownSignal>(
         self,
         callback: C,
     ) -> UpgradedWebSocket<UnspecifiedProtocol, CallbackNotUsingState<C>> {
@@ -648,7 +810,9 @@ impl WebSocketUpgrade {
 
     /// Handle the websocket upgrade, which requires access to the state. The returned [UpgradedWebSocket] should be returned by the request handler,
     /// and thus returned to the client.
-    pub fn on_upgrade_using_state<State, C: WebSocketCallbackWithState<State>>(
+    ///
+    /// `on_upgrade` also accepts a [`WebSocketCallbackWithState`], as all [`WebSocketCallbackWithState`] also implement [`WebSocketCallbackWithStateAndShutdownSignal`].
+    pub fn on_upgrade_using_state<State, C: WebSocketCallbackWithStateAndShutdownSignal<State>>(
         self,
         callback: C,
     ) -> UpgradedWebSocket<UnspecifiedProtocol, CallbackUsingState<State, C>> {
@@ -692,7 +856,7 @@ fn websocket_response<'a, B: super::Body + 'a>(
     )
 }
 
-impl<P: WebSocketProtocol, C: WebSocketCallback> super::IntoResponse
+impl<P: WebSocketProtocol, C: WebSocketCallbackWithShutdownSignal> super::IntoResponse
     for UpgradedWebSocket<P, CallbackNotUsingState<C>>
 {
     async fn write_to<R: Read, W: super::ResponseWriter<Error = R::Error>>(
@@ -700,12 +864,12 @@ impl<P: WebSocketProtocol, C: WebSocketCallback> super::IntoResponse
         connection: super::Connection<'_, R>,
         response_writer: W,
     ) -> Result<crate::ResponseSent, W::Error> {
-        struct Body<C: WebSocketCallback> {
+        struct Body<C: WebSocketCallbackWithShutdownSignal> {
             upgrade_token: crate::extract::UpgradeToken,
             callback: CallbackNotUsingState<C>,
         }
 
-        impl<C: WebSocketCallback> super::Body for Body<C> {
+        impl<C: WebSocketCallbackWithShutdownSignal> super::Body for Body<C> {
             async fn write_response_body<
                 R: embedded_io_async::Read,
                 W: embedded_io_async::Write<Error = R::Error>,
@@ -714,13 +878,16 @@ impl<P: WebSocketProtocol, C: WebSocketCallback> super::IntoResponse
                 connection: super::Connection<'_, R>,
                 writer: W,
             ) -> Result<(), W::Error> {
+                let shutdown_signal = connection.shutdown_signal.clone();
+
                 self.callback
                     .callback
-                    .run(
+                    .run_with_shutdown_signal(
                         SocketRx {
                             reader: connection.upgrade(self.upgrade_token),
                         },
                         SocketTx { writer },
+                        shutdown_signal,
                     )
                     .await
             }
@@ -749,7 +916,7 @@ impl<P: WebSocketProtocol, C: WebSocketCallback> super::IntoResponse
     }
 }
 
-impl<State, P: WebSocketProtocol, C: WebSocketCallbackWithState<State>>
+impl<State, P: WebSocketProtocol, C: WebSocketCallbackWithStateAndShutdownSignal<State>>
     super::IntoResponseWithState<State> for UpgradedWebSocket<P, CallbackUsingState<State, C>>
 {
     async fn write_to_with_state<R: Read, W: super::ResponseWriter<Error = R::Error>>(
@@ -758,13 +925,15 @@ impl<State, P: WebSocketProtocol, C: WebSocketCallbackWithState<State>>
         connection: super::Connection<'_, R>,
         response_writer: W,
     ) -> Result<crate::ResponseSent, W::Error> {
-        struct Body<'s, State, C: WebSocketCallbackWithState<State>> {
+        struct Body<'s, State, C: WebSocketCallbackWithStateAndShutdownSignal<State>> {
             state: &'s State,
             upgrade_token: crate::extract::UpgradeToken,
             callback: CallbackUsingState<State, C>,
         }
 
-        impl<'s, State, C: WebSocketCallbackWithState<State>> super::Body for Body<'s, State, C> {
+        impl<'s, State, C: WebSocketCallbackWithStateAndShutdownSignal<State>> super::Body
+            for Body<'s, State, C>
+        {
             async fn write_response_body<
                 R: embedded_io_async::Read,
                 W: embedded_io_async::Write<Error = R::Error>,
@@ -773,14 +942,17 @@ impl<State, P: WebSocketProtocol, C: WebSocketCallbackWithState<State>>
                 connection: super::Connection<'_, R>,
                 writer: W,
             ) -> Result<(), W::Error> {
+                let shutdown_signal = connection.shutdown_signal.clone();
+
                 self.callback
                     .callback
-                    .run_with_state(
+                    .run_with_state_and_shutdown_signal(
                         self.state,
                         SocketRx {
                             reader: connection.upgrade(self.upgrade_token),
                         },
                         SocketTx { writer },
+                        shutdown_signal,
                     )
                     .await
             }

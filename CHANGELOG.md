@@ -10,15 +10,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Breaking
 
 - JSON and Websocket functionality are behind the `json` and `ws` features respectively.
-- Changed `UpgradedWebSocket<UnspecifiedProtocol, C>` to `UpgradedWebSocket<UnspecifiedProtocol, CallbackNotUsingState<C>>`.
+- Changed [`UpgradedWebSocket<UnspecifiedProtocol, C>`](https://docs.rs/picoserve/latest/picoserve/response/ws/struct.UpgradedWebSocket.html) to `UpgradedWebSocket<UnspecifiedProtocol, CallbackNotUsingState<C>>`.
 - Removed `serve`, `serve_with_state`, `listen_and_serve`, and `listen_and_serve_with_state`. See the migration guide below.
-- `Timer` and `Socket` have a generic parameter of the runtime that they use. If you have a custom `Timer` or `Socket` running on `embassy`, use `picoserve::EmbassyRuntime` (which is hidden in docs) as the parameter.
+- [`Timer`](https://docs.rs/picoserve/latest/picoserve/time/trait.Timer.html) and [`Socket`](https://docs.rs/picoserve/latest/picoserve/io/trait.Socket.html) have a generic parameter of the runtime that they use. If you have a custom `Timer` or `Socket` running on `embassy`, use `picoserve::EmbassyRuntime` (which is hidden in docs) as the parameter.
+- [`Timer::run_with_timeout`](https://docs.rs/picoserve/latest/picoserve/time/trait.Timer.html#tymethod.run_with_timeout) now takes `&self`, not `&mut self`.
+- [`SocketRx::next_frame`](https://docs.rs/picoserve/latest/picoserve/response/ws/struct.SocketRx.html#method.next_frame) and [`SocketRx::next_message`](https://docs.rs/picoserve/latest/picoserve/response/ws/struct.SocketRx.html#method.next_message) take a signal to simplify awaiting multiple sources and help avoiding the case where a read is dropped partway through reading a frame due to the usage of `select!` or similar.
 
 ### Fixed
 
 - Fixed [`from_request`](https://docs.rs/picoserve/latest/picoserve/macro.from_request.html) and [`from_request_parts`](https://docs.rs/picoserve/latest/picoserve/macro.from_request_parts.html) macros.
 - Fixed lifetime of [`HeaderValue::as_str`](https://docs.rs/picoserve/latest/picoserve/request/struct.HeaderValue.html#method.as_str).
 - Fixed routing logic of [`Router::nest`](https://docs.rs/picoserve/latest/picoserve/routing/struct.Router.html#method.nest) and [`Router::nest_service`](https://docs.rs/picoserve/latest/picoserve/routing/struct.Router.html#method.nest_service), where previously a path of `"/path"` was incorrectly routed to a nest with a prefix of `"/path"`, leaving an invalid path of `""`.
+- Removed race condition bug in Websockets example.
 
 ### Added
 - Added support for Websockets which have access to the state with [`WebSocketUpgrade::on_upgrade_using_state`](https://docs.rs/picoserve/latest/picoserve/response/ws/struct.WebSocketUpgrade.html#method.on_upgrade_using_state).

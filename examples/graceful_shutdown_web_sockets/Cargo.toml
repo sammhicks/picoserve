@@ -1,5 +1,5 @@
 [package]
-name = "web_sockets"
+name = "graceful_shutdown_web_sockets"
 version = "0.1.0"
 edition = "2021"
 
@@ -8,5 +8,6 @@ edition = "2021"
 [dependencies]
 anyhow = { workspace = true }
 futures-util = { workspace = true }
-picoserve = { path = "../../picoserve", features = ["tokio", "ws"] }
+picoserve = { path = "../../picoserve", features = ["tokio", "ws", "json"] }
+serde = { workspace = true }
 tokio = { workspace = true, features = ["sync"] }

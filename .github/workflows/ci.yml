@@ -1,4 +1,4 @@
-name: Rust
+name: Cargo Build & Test
 
 on:
   push:
@@ -11,19 +11,19 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  build:
-
+  build_and_test:
+    name: Build and Test picoserve
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v4
-    - name: Build
-      run: cargo build --verbose --all
-    - name: Build embassy examples
-      working-directory: ./examples/embassy
-      run: cargo build --verbose
-    - name: Build embassy defmt example
-      working-directory: ./examples/embassy/hello_world_defmt
-      run: cargo build --verbose
-    - name: Run tests
-      run: cargo test --verbose
+      - uses: actions/checkout@v4
+      - name: Build
+        run: cargo build --verbose --all
+      - name: Build embassy examples
+        working-directory: ./examples/embassy
+        run: cargo build --verbose
+      - name: Build embassy defmt example
+        working-directory: ./examples/embassy/hello_world_defmt
+        run: cargo build --verbose
+      - name: Run tests
+        run: cargo test --verbose

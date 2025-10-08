@@ -16,13 +16,13 @@ let ws = new WebSocket(websocketUri, ["echo", "ignored_protocol"]);
 
 ws.addEventListener("close", function (ev) {
     ws.close();
-    output.innerText = "Events Closed";
+    output.innerText = `Websockets Closed: ${ev.reason} (${ev.code})`;
 })
 
 ws.addEventListener("error", function (ev) {
     ws.close();
     console.error(ev);
-    output.innerText = "Events Error";
+    output.innerText = "Websockets Error";
 });
 
 ws.addEventListener("message", function (ev) {

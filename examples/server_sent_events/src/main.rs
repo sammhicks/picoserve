@@ -40,7 +40,7 @@ struct Events(tokio::sync::watch::Receiver<String>);
 impl response::sse::EventSource for Events {
     async fn write_events<W: picoserve::io::Write>(
         mut self,
-        mut writer: response::sse::EventWriter<W>,
+        mut writer: response::sse::EventWriter<'_, W>,
     ) -> Result<(), W::Error> {
         loop {
             match tokio::time::timeout(std::time::Duration::from_secs(15), self.0.changed()).await {
@@ -70,6 +70,14 @@ async fn main() -> anyhow::Result<()> {
                     get_service(response::File::html(include_str!("index.html"))),
                 )
                 .route(
+                    "/index.css",
+                    get_service(response::File::css(include_str!("index.css"))),
+                )
+                .route(
+                    "/index.js",
+                    get_service(response::File::javascript(include_str!("index.js"))),
+                )
+                .route(
                     "/set_message",
                     post(move |NewMessage(message)| {
                         std::future::ready(messages_tx.send(message).map_err(|_| {
@@ -80,36 +88,6 @@ async fn main() -> anyhow::Result<()> {
                 .route(
                     "/events",
                     get(move || response::EventStream(Events(messages_rx.clone()))),
-                )
-                .nest_service(
-                    "/static",
-                    const {
-                        response::Directory {
-                            files: &[],
-                            sub_directories: &[
-                                (
-                                    "styles",
-                                    response::Directory {
-                                        files: &[(
-                                            "index.css",
-                                            response::File::css(include_str!("index.css")),
-                                        )],
-                                        ..response::Directory::DEFAULT
-                                    },
-                                ),
-                                (
-                                    "scripts",
-                                    response::Directory {
-                                        files: &[(
-                                            "index.js",
-                                            response::File::css(include_str!("index.js")),
-                                        )],
-                                        ..response::Directory::DEFAULT
-                                    },
-                                ),
-                            ],
-                        }
-                    },
                 ),
         );
 

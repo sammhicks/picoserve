@@ -5,7 +5,28 @@ pub enum Either<A, B> {
     Second(B),
 }
 
-pub async fn select_either<A: Future, B: Future>(a: A, b: B) -> Either<A::Output, B::Output> {
+impl<A> Either<A, core::convert::Infallible> {
+    pub fn ignore_never_b(self) -> A {
+        match self {
+            Self::First(a) => a,
+            Self::Second(b) => match b {},
+        }
+    }
+}
+
+impl<B> Either<core::convert::Infallible, B> {
+    pub fn ignore_never_a(self) -> B {
+        match self {
+            Self::First(a) => match a {},
+            Self::Second(b) => b,
+        }
+    }
+}
+
+pub(crate) async fn select_either<A: Future, B: Future>(
+    a: A,
+    b: B,
+) -> Either<A::Output, B::Output> {
     let mut a = core::pin::pin!(a);
     let mut b = core::pin::pin!(b);
 
@@ -27,7 +48,7 @@ pub async fn select_either<A: Future, B: Future>(a: A, b: B) -> Either<A::Output
     .await
 }
 
-pub async fn select<A: Future, B: Future<Output = A::Output>>(a: A, b: B) -> A::Output {
+pub(crate) async fn select<A: Future, B: Future<Output = A::Output>>(a: A, b: B) -> A::Output {
     match select_either(a, b).await {
         Either::First(output) | Either::Second(output) => output,
     }
@@ -45,7 +66,7 @@ mod tests {
 
     #[test]
     #[ntest::timeout(1000)]
-    fn first() {
+    fn select_first() {
         let Success = select(async { Success }, pending())
             .now_or_never()
             .expect("Future must resolve");
@@ -53,7 +74,7 @@ mod tests {
 
     #[test]
     #[ntest::timeout(1000)]
-    fn second() {
+    fn select_second() {
         let Success = select(pending(), async { Success })
             .now_or_never()
             .expect("Future must resolve");
@@ -61,7 +82,7 @@ mod tests {
 
     #[test]
     #[ntest::timeout(1000)]
-    fn neither() {
+    fn select_neither() {
         enum Never {}
 
         assert!(select(pending::<Never>(), pending::<Never>())

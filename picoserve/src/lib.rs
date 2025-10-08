@@ -27,11 +27,12 @@ mod json;
 mod logging;
 
 pub mod extract;
-mod futures;
+pub mod futures;
 pub mod io;
 pub mod request;
 pub mod response;
 pub mod routing;
+mod sync;
 pub mod time;
 pub mod url_encoded;
 
@@ -45,6 +46,8 @@ pub use routing::Router;
 pub use time::Timer;
 
 use time::TimerExt;
+
+use crate::sync::oneshot_broadcast;
 
 /// A Marker showing that the response has been sent.
 pub struct ResponseSent(());
@@ -210,7 +213,8 @@ async fn serve_and_shutdown<
     T: Timer<Runtime>,
     P: routing::PathRouter,
     S: io::Socket<Runtime>,
-    ShutdownSignal: core::future::Future,
+    ShutdownReason,
+    ShutdownSignal: core::future::Future<Output = (ShutdownReason, Option<T::Duration>)>,
 >(
     app: &Router<P>,
     timer: &mut T,
@@ -218,10 +222,13 @@ async fn serve_and_shutdown<
     http_buffer: &mut [u8],
     mut socket: S,
     shutdown_signal: ShutdownSignal,
-) -> Result<DisconnectionInfo<ShutdownSignal::Output>, Error<S::Error>> {
+) -> Result<DisconnectionInfo<ShutdownReason>, Error<S::Error>> {
     let mut shutdown_signal = core::pin::pin!(shutdown_signal);
 
-    let result = async {
+    let mut shutdown_broadcast = oneshot_broadcast::Signal::core();
+    let shutdown_broadcast = shutdown_broadcast.make_signal();
+
+    let result: Result<DisconnectionInfo<ShutdownReason>, Error<S::Error>> = async {
         let (reader, mut writer) = socket.split();
 
         let mut reader = request::Reader::new(MapReadErrorReader(reader), http_buffer);
@@ -238,7 +245,7 @@ async fn serve_and_shutdown<
                 )
                 .await
             {
-                Ok(futures::Either::First(shutdown_reason)) => {
+                Ok(futures::Either::First((shutdown_reason, _))) => {
                     return Ok(DisconnectionInfo {
                         handled_requests_count: request_count,
                         shutdown_reason: Some(shutdown_reason),
@@ -253,8 +260,6 @@ async fn serve_and_shutdown<
                 }
                 Ok(futures::Either::Second(Err(err))) => return Err(err),
             };
-
-            let request_count = request_count + 1;
 
             match timer
                 .run_with_maybe_timeout(config.timeouts.read_request.clone(), reader.read())
@@ -276,19 +281,52 @@ async fn serve_and_shutdown<
                         _runtime: PhantomData,
                     };
 
-                    let ResponseSent(()) = app
-                        .handle_request(
-                            request,
-                            response::ResponseStream::new(&mut writer, connection_header),
-                        )
-                        .await?;
+                    let mut handle_request = core::pin::pin!(app.handle_request(
+                        request.with_shutdown_signal(shutdown_broadcast.listen()),
+                        response::ResponseStream::new(&mut writer, connection_header),
+                    ));
 
-                    if let KeepAlive::Close = connection_header {
-                        return Ok(DisconnectionInfo {
-                            handled_requests_count: request_count,
-                            shutdown_reason: None,
-                        });
-                    }
+                    return Ok(
+                        match crate::futures::select_either(
+                            shutdown_signal.as_mut(),
+                            handle_request.as_mut(),
+                        )
+                        .await
+                        {
+                            futures::Either::First((shutdown_reason, shutdown_timeout)) => {
+                                shutdown_broadcast.notify(());
+
+                                let handled_requests_count = if let Ok(handle_request_response) =
+                                    timer
+                                        .run_with_maybe_timeout(shutdown_timeout, handle_request)
+                                        .await
+                                {
+                                    let ResponseSent(()) = handle_request_response?;
+
+                                    request_count + 1
+                                } else {
+                                    request_count
+                                };
+
+                                DisconnectionInfo {
+                                    handled_requests_count,
+                                    shutdown_reason: Some(shutdown_reason),
+                                }
+                            }
+                            futures::Either::Second(response_sent) => {
+                                let ResponseSent(()) = response_sent?;
+
+                                if let KeepAlive::KeepAlive = connection_header {
+                                    continue;
+                                }
+
+                                DisconnectionInfo {
+                                    handled_requests_count: request_count + 1,
+                                    shutdown_reason: None,
+                                }
+                            }
+                        },
+                    );
                 }
                 Ok(Err(err)) => {
                     use response::IntoResponse;
@@ -366,7 +404,7 @@ pub struct Server<
 }
 
 impl<'a, Runtime, T: Timer<Runtime>, P: routing::PathRouter>
-    Server<'a, Runtime, T, P, core::future::Pending<NoGracefulShutdown>>
+    Server<'a, Runtime, T, P, core::future::Pending<(NoGracefulShutdown, Option<T::Duration>)>>
 {
     /// Create a new [`Router`] with a custom timer.
     ///
@@ -389,12 +427,18 @@ impl<'a, Runtime, T: Timer<Runtime>, P: routing::PathRouter>
 
     /// Prepares a server to handle graceful shutdown when the provided future completes.
     ///
-    /// Note that requests currently being handled will be awaited, including long-standing requests such as websockets.
-    /// You must ensure that long-standing requests are signalled to abort.
+    /// If `shutdown_timeout` is not None and the request handler does not complete within that time, it is killed abruptly.
     pub fn with_graceful_shutdown<ShutdownSignal: core::future::Future>(
         self,
         shutdown_signal: ShutdownSignal,
-    ) -> Server<'a, Runtime, T, P, ShutdownSignal> {
+        shutdown_timeout: impl Into<Option<T::Duration>>,
+    ) -> Server<
+        'a,
+        Runtime,
+        T,
+        P,
+        impl core::future::Future<Output = (ShutdownSignal::Output, Option<T::Duration>)>,
+    > {
         let Self {
             app,
             timer,
@@ -404,12 +448,18 @@ impl<'a, Runtime, T: Timer<Runtime>, P: routing::PathRouter>
             _runtime,
         } = self;
 
+        let shutdown_timeout = shutdown_timeout.into();
+
         Server {
             app,
             timer,
             config,
             http_buffer,
-            shutdown_signal,
+            shutdown_signal: async move {
+                let shutdown_reason = shutdown_signal.await;
+
+                (shutdown_reason, shutdown_timeout)
+            },
             _runtime: PhantomData,
         }
     }
@@ -420,14 +470,15 @@ impl<
         Runtime,
         T: Timer<Runtime>,
         P: routing::PathRouter,
-        ShutdownSignal: core::future::Future,
+        ShutdownReason,
+        ShutdownSignal: core::future::Future<Output = (ShutdownReason, Option<T::Duration>)>,
     > Server<'a, Runtime, T, P, ShutdownSignal>
 {
     /// Serve requests read from the connected socket.
     pub async fn serve<S: io::Socket<Runtime>>(
         self,
         socket: S,
-    ) -> Result<DisconnectionInfo<ShutdownSignal::Output>, Error<S::Error>> {
+    ) -> Result<DisconnectionInfo<ShutdownReason>, Error<S::Error>> {
         let Self {
             app,
             mut timer,
@@ -455,7 +506,13 @@ pub struct TokioRuntime;
 
 #[cfg(any(feature = "tokio", test))]
 impl<'a, P: routing::PathRouter>
-    Server<'a, TokioRuntime, time::TokioTimer, P, core::future::Pending<NoGracefulShutdown>>
+    Server<
+        'a,
+        TokioRuntime,
+        time::TokioTimer,
+        P,
+        core::future::Pending<(NoGracefulShutdown, Option<std::time::Duration>)>,
+    >
 {
     /// Create a new server using the `tokio` runtime, and typically with a `tokio::net::TcpSocket` as the socket.
     pub fn new(
@@ -480,7 +537,13 @@ pub struct EmbassyRuntime;
 
 #[cfg(feature = "embassy")]
 impl<'a, P: routing::PathRouter>
-    Server<'a, EmbassyRuntime, time::EmbassyTimer, P, core::future::Pending<NoGracefulShutdown>>
+    Server<
+        'a,
+        EmbassyRuntime,
+        time::EmbassyTimer,
+        P,
+        core::future::Pending<(NoGracefulShutdown, Option<embassy_time::Duration>)>,
+    >
 {
     /// Create a new server using the `embassy` runtime.
     pub fn new(
@@ -500,8 +563,12 @@ impl<'a, P: routing::PathRouter>
 }
 
 #[cfg(feature = "embassy")]
-impl<'a, P: routing::PathRouter, ShutdownSignal: core::future::Future>
-    Server<'a, EmbassyRuntime, time::EmbassyTimer, P, ShutdownSignal>
+impl<
+        'a,
+        P: routing::PathRouter,
+        ShutdownReason,
+        ShutdownSignal: core::future::Future<Output = (ShutdownReason, Option<embassy_time::Duration>)>,
+    > Server<'a, EmbassyRuntime, time::EmbassyTimer, P, ShutdownSignal>
 {
     /// Listen for incoming connections, and serve requests read from the connection.
     ///
@@ -513,7 +580,7 @@ impl<'a, P: routing::PathRouter, ShutdownSignal: core::future::Future>
         port: u16,
         tcp_rx_buffer: &mut [u8],
         tcp_tx_buffer: &mut [u8],
-    ) -> ShutdownSignal::Output {
+    ) -> ShutdownReason {
         let Self {
             app,
             mut timer,
@@ -536,7 +603,7 @@ impl<'a, P: routing::PathRouter, ShutdownSignal: core::future::Future>
             })
             .await
             {
-                futures::Either::First(shutdown) => return shutdown,
+                futures::Either::First((shutdown_reason, _)) => return shutdown_reason,
                 futures::Either::Second(Err(error)) => {
                     log_warn!("{}: accept error: {:?}", task_id, error);
                     continue;
