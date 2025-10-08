@@ -130,7 +130,7 @@ impl<'r, State> FromRequest<'r, State> for &'r mut [u8] {
 
         request_body.read_all().await.map_err(|err| {
             log_error!(
-                "Failed to read body: {}",
+                "Failed to read body: {:?}",
                 crate::logging::Debug2Format(&err)
             );
             FailedToExtractEntireBodyError::IoError

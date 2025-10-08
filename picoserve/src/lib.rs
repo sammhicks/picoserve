@@ -658,7 +658,7 @@ impl<
                     }
                 }
                 Err(err) => {
-                    log_error!("{}", crate::logging::Debug2Format(&err));
+                    log_error!("{:?}", crate::logging::Debug2Format(&err));
                     continue;
                 }
             };
