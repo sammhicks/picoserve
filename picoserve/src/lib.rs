@@ -56,6 +56,8 @@ pub struct ResponseSent(());
 #[derive(Debug)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum Error<E: embedded_io_async::Error> {
+    /// Bad Request from the client
+    BadRequest,
     /// Error while reading from the socket.
     Read(E),
     /// Timeout while reading from the socket.
@@ -69,8 +71,9 @@ pub enum Error<E: embedded_io_async::Error> {
 impl<E: embedded_io_async::Error> embedded_io_async::Error for Error<E> {
     fn kind(&self) -> embedded_io_async::ErrorKind {
         match self {
-            Error::ReadTimeout | Error::WriteTimeout => embedded_io_async::ErrorKind::TimedOut,
-            Error::Read(err) | Error::Write(err) => err.kind(),
+            Self::BadRequest => embedded_io_async::ErrorKind::InvalidData,
+            Self::ReadTimeout | Self::WriteTimeout => embedded_io_async::ErrorKind::TimedOut,
+            Self::Read(err) | Self::Write(err) => err.kind(),
         }
     }
 }
@@ -208,6 +211,22 @@ pub struct DisconnectionInfo<S> {
     pub shutdown_reason: Option<S>,
 }
 
+impl<S> DisconnectionInfo<S> {
+    fn no_shutdown_reason(handled_requests_count: u64) -> Self {
+        Self {
+            handled_requests_count,
+            shutdown_reason: None,
+        }
+    }
+
+    fn with_shutdown_reason(handled_requests_count: u64, shutdown_reason: S) -> Self {
+        Self {
+            handled_requests_count,
+            shutdown_reason: Some(shutdown_reason),
+        }
+    }
+}
+
 async fn serve_and_shutdown<
     Runtime,
     T: Timer<Runtime>,
@@ -233,7 +252,18 @@ async fn serve_and_shutdown<
 
         let mut reader = request::Reader::new(MapReadErrorReader(reader), http_buffer);
 
-        for request_count in 0.. {
+        let mut request_count_iter = {
+            let mut n = 0_u64;
+            move || {
+                let request_count = n;
+                n = n.saturating_add(1);
+                request_count
+            }
+        };
+
+        loop {
+            let request_count = request_count_iter();
+
             match timer
                 .run_with_maybe_timeout(
                     if request_count == 0 {
@@ -246,17 +276,14 @@ async fn serve_and_shutdown<
                 .await
             {
                 Ok(futures::Either::First((shutdown_reason, _))) => {
-                    return Ok(DisconnectionInfo {
-                        handled_requests_count: request_count,
-                        shutdown_reason: Some(shutdown_reason),
-                    })
+                    return Ok(DisconnectionInfo::with_shutdown_reason(
+                        request_count,
+                        shutdown_reason,
+                    ));
                 }
                 Ok(futures::Either::Second(Ok(true))) => (),
                 Ok(futures::Either::Second(Ok(false))) | Err(_) => {
-                    return Ok(DisconnectionInfo {
-                        handled_requests_count: request_count,
-                        shutdown_reason: None,
-                    })
+                    return Ok(DisconnectionInfo::no_shutdown_reason(request_count))
                 }
                 Ok(futures::Either::Second(Err(err))) => return Err(err),
             };
@@ -296,22 +323,19 @@ async fn serve_and_shutdown<
                             futures::Either::First((shutdown_reason, shutdown_timeout)) => {
                                 shutdown_broadcast.notify(());
 
-                                let handled_requests_count = if let Ok(handle_request_response) =
-                                    timer
+                                DisconnectionInfo::with_shutdown_reason(
+                                    if let Ok(handle_request_response) = timer
                                         .run_with_maybe_timeout(shutdown_timeout, handle_request)
                                         .await
-                                {
-                                    let ResponseSent(()) = handle_request_response?;
+                                    {
+                                        let ResponseSent(()) = handle_request_response?;
 
-                                    request_count + 1
-                                } else {
-                                    request_count
-                                };
-
-                                DisconnectionInfo {
-                                    handled_requests_count,
-                                    shutdown_reason: Some(shutdown_reason),
-                                }
+                                        request_count + 1
+                                    } else {
+                                        request_count
+                                    },
+                                    shutdown_reason,
+                                )
                             }
                             futures::Either::Second(response_sent) => {
                                 let ResponseSent(()) = response_sent?;
@@ -320,10 +344,7 @@ async fn serve_and_shutdown<
                                     continue;
                                 }
 
-                                DisconnectionInfo {
-                                    handled_requests_count: request_count + 1,
-                                    shutdown_reason: None,
-                                }
+                                DisconnectionInfo::no_shutdown_reason(request_count + 1)
                             }
                         },
                     );
@@ -352,19 +373,11 @@ async fn serve_and_shutdown<
                         .map_err(|_| Error::WriteTimeout)?
                         .map_err(Error::Write)?;
 
-                    return Ok(DisconnectionInfo {
-                        handled_requests_count: request_count,
-                        shutdown_reason: None,
-                    });
+                    return Err(Error::BadRequest);
                 }
                 Err(..) => return Err(Error::ReadTimeout),
             }
         }
-
-        Ok(DisconnectionInfo {
-            handled_requests_count: 0,
-            shutdown_reason: None,
-        })
     }
     .await;
 
