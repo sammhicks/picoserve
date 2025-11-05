@@ -30,6 +30,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added [`Server`](https://docs.rs/picoserve/latest/picoserve/struct.Server.html), a HTTP Server.
 - Added support for graceful shutdown of connections using [`Server::with_graceful_shutdown`](https://docs.rs/picoserve/latest/picoserve/struct.Server.html#method.with_graceful_shutdown).
 
+### Changed
+- `embassy` sockets have tcp keepalive and timeout set to 30s and 45s respectively, thus helping prevent broken connections lingering.
+
 ### Migration Guide.
 
 There are two new big concepts:

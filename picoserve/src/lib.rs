@@ -606,7 +606,7 @@ impl<
         let mut shutdown_signal = core::pin::pin!(shutdown_signal);
 
         loop {
-            let socket = match futures::select_either(shutdown_signal.as_mut(), async {
+            let mut socket = match futures::select_either(shutdown_signal.as_mut(), async {
                 let mut socket =
                     embassy_net::tcp::TcpSocket::new(stack, tcp_rx_buffer, tcp_tx_buffer);
 
@@ -631,6 +631,9 @@ impl<
                 task_id,
                 remote_endpoint
             );
+
+            socket.set_keep_alive(Some(embassy_time::Duration::from_secs(30)));
+            socket.set_timeout(Some(embassy_time::Duration::from_secs(45)));
 
             return match serve_and_shutdown(
                 app,
