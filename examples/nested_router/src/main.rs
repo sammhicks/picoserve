@@ -14,7 +14,7 @@ fn api_router() -> picoserve::Router<impl picoserve::routing::PathRouter<AppStat
     picoserve::Router::new().route(
         "/value",
         get(|State(AppState { value })| picoserve::response::Json(*value.borrow())).post(
-            |State(AppState { value }), picoserve::extract::Json::<_, 0>(new_value)| async move {
+            |State(AppState { value }), picoserve::extract::Json(new_value)| async move {
                 *value.borrow_mut() = new_value
             },
         ),

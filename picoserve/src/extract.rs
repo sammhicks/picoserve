@@ -25,10 +25,13 @@ pub mod json {
     pub use crate::json::Json;
 
     pub use serde_json_core::str;
+
+    /// A JSON encoded value. `UNESCAPE_BUFFER_SIZE` is the size of the temporary buffer used for unescaping strings.
+    pub struct JsonWithUnescapeBufferSize<T, const UNESCAPE_BUFFER_SIZE: usize>(pub T);
 }
 
 #[cfg(feature = "json")]
-pub use crate::json::Json;
+pub use json::{Json, JsonWithUnescapeBufferSize};
 
 mod private {
     pub struct ViaRequest;
@@ -412,7 +415,7 @@ pub enum JsonRejection {
 
 #[cfg(feature = "json")]
 impl<'r, State, T: serde::Deserialize<'r>, const UNESCAPE_BUFFER_SIZE: usize>
-    FromRequest<'r, State, T> for Json<T, UNESCAPE_BUFFER_SIZE>
+    FromRequest<'r, State, T> for JsonWithUnescapeBufferSize<T, UNESCAPE_BUFFER_SIZE>
 {
     type Rejection = JsonRejection;
 
@@ -430,6 +433,21 @@ impl<'r, State, T: serde::Deserialize<'r>, const UNESCAPE_BUFFER_SIZE: usize>
         )
         .map(|(value, _)| Self(value))
         .map_err(JsonRejection::DeserializationError)
+    }
+}
+
+#[cfg(feature = "json")]
+impl<'r, State, T: serde::Deserialize<'r>> FromRequest<'r, State, T> for Json<T> {
+    type Rejection = JsonRejection;
+
+    async fn from_request<R: Read>(
+        state: &'r State,
+        request_parts: RequestParts<'r>,
+        request_body: RequestBody<'r, R>,
+    ) -> Result<Self, Self::Rejection> {
+        JsonWithUnescapeBufferSize::<T, 32>::from_request(state, request_parts, request_body)
+            .await
+            .map(|JsonWithUnescapeBufferSize(payload)| Self(payload))
     }
 }
 

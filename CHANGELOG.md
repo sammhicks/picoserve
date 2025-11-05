@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Breaking
 
 - JSON and Websocket functionality are behind the `json` and `ws` features respectively.
+- ['Json'](https://docs.rs/picoserve/latest/picoserve/extract/struct.Json.html) no longer has a constant of the string unescape buffer size, use ['JsonWithUnescapeBufferSize'](https://docs.rs/picoserve/latest/picoserve/extract/json/struct.JsonWithUnescapeBufferSize.html) to specify this.
 - Changed [`UpgradedWebSocket<UnspecifiedProtocol, C>`](https://docs.rs/picoserve/latest/picoserve/response/ws/struct.UpgradedWebSocket.html) to `UpgradedWebSocket<UnspecifiedProtocol, CallbackNotUsingState<C>>`.
 - Removed `serve`, `serve_with_state`, `listen_and_serve`, and `listen_and_serve_with_state`. See the migration guide below.
 - [`Timer`](https://docs.rs/picoserve/latest/picoserve/time/trait.Timer.html) and [`Socket`](https://docs.rs/picoserve/latest/picoserve/io/trait.Socket.html) have a generic parameter of the runtime that they use. If you have a custom `Timer` or `Socket` running on `embassy`, use `picoserve::EmbassyRuntime` (which is hidden in docs) as the parameter.
