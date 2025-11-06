@@ -739,7 +739,7 @@ impl<'b, R: Read> Reader<'b, R> {
         Ok(b)
     }
 
-    async fn read_line(&mut self) -> Result<Subslice, ReadError<R::Error>> {
+    async fn read_line(&mut self) -> Result<Subslice<'_>, ReadError<R::Error>> {
         let start_index = self.read_position;
 
         loop {
@@ -759,7 +759,9 @@ impl<'b, R: Read> Reader<'b, R> {
         }
     }
 
-    async fn read_request_line(&mut self) -> Result<RequestLine<Subslice>, ReadError<R::Error>> {
+    async fn read_request_line(
+        &mut self,
+    ) -> Result<RequestLine<Subslice<'_>>, ReadError<R::Error>> {
         fn slice_from_str<'a>(slice: &Subslice<'a>, s: &str) -> Subslice<'a> {
             let Range { start, end } = s.as_bytes().as_ptr_range();
 
@@ -794,7 +796,7 @@ impl<'b, R: Read> Reader<'b, R> {
         })
     }
 
-    async fn read_headers(&mut self) -> Result<Subslice, ReadError<R::Error>> {
+    async fn read_headers(&mut self) -> Result<Subslice<'_>, ReadError<R::Error>> {
         let start_index = self.read_position;
 
         let mut end_index = loop {
