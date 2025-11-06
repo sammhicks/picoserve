@@ -1,23 +1,33 @@
-use std::{cell::RefCell, rc::Rc, time::Duration};
+use std::{cell::RefCell, time::Duration};
 
 use picoserve::{
-    extract::State,
+    response::with_state::WithStateUpdate,
     routing::{get, get_service},
 };
 
-#[derive(Clone)]
 struct AppState {
-    value: Rc<RefCell<i32>>,
+    value: RefCell<i32>,
 }
 
 fn api_router() -> picoserve::Router<impl picoserve::routing::PathRouter<AppState>, AppState> {
     picoserve::Router::new().route(
         "/value",
-        get(|State(AppState { value })| picoserve::response::Json(*value.borrow())).post(
-            |State(AppState { value }), picoserve::extract::Json(new_value)| async move {
-                *value.borrow_mut() = new_value
-            },
-        ),
+        get({
+            struct GetValue(i32);
+
+            impl picoserve::extract::FromRef<AppState> for GetValue {
+                fn from_ref(input: &AppState) -> Self {
+                    Self(*input.value.borrow())
+                }
+            }
+
+            async |picoserve::extract::State(GetValue(value))| picoserve::response::Json(value)
+        })
+        .post(|picoserve::extract::Json(new_value)| async move {
+            ().with_state_update(async move |state: &AppState| {
+                *state.value.borrow_mut() = new_value
+            })
+        }),
     )
 }
 
@@ -26,7 +36,7 @@ async fn main() -> anyhow::Result<()> {
     let port = 8000;
 
     let app_state = AppState {
-        value: Rc::new(RefCell::new(0)),
+        value: RefCell::new(0),
     };
 
     let app = std::rc::Rc::new(

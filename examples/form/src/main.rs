@@ -15,7 +15,7 @@ async fn main() -> anyhow::Result<()> {
     let app = std::rc::Rc::new(picoserve::Router::new().route(
         "/",
         get_service(picoserve::response::File::html(include_str!("index.html"))).post(
-            |picoserve::extract::Form(FormValue { a, b })| {
+            async |picoserve::extract::Form(FormValue { a, b })| {
                 picoserve::response::DebugValue((("a", a), ("b", b)))
             },
         ),

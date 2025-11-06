@@ -981,12 +981,3 @@ impl<State, P: WebSocketProtocol, C: WebSocketCallbackWithStateAndShutdownSignal
             .await
     }
 }
-
-impl<P: WebSocketProtocol, C> core::future::IntoFuture for UpgradedWebSocket<P, C> {
-    type Output = Self;
-    type IntoFuture = core::future::Ready<Self>;
-
-    fn into_future(self) -> Self::IntoFuture {
-        core::future::ready(self)
-    }
-}

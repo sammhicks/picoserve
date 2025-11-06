@@ -128,7 +128,7 @@ async fn main() -> anyhow::Result<()> {
             )
             .route(
                 "/ws",
-                get(move |upgrade: ws::WebSocketUpgrade| {
+                get(async move |upgrade: ws::WebSocketUpgrade| {
                     if let Some(protocols) = upgrade.protocols() {
                         println!("Protocols:");
                         for protocol in protocols {

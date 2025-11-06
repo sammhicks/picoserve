@@ -62,34 +62,33 @@ async fn main() -> anyhow::Result<()> {
 
     let (messages_tx, messages_rx) = tokio::sync::watch::channel(String::new());
 
-    let app =
-        std::rc::Rc::new(
-            picoserve::Router::new()
-                .route(
-                    "/",
-                    get_service(response::File::html(include_str!("index.html"))),
-                )
-                .route(
-                    "/index.css",
-                    get_service(response::File::css(include_str!("index.css"))),
-                )
-                .route(
-                    "/index.js",
-                    get_service(response::File::javascript(include_str!("index.js"))),
-                )
-                .route(
-                    "/set_message",
-                    post(move |NewMessage(message)| {
-                        std::future::ready(messages_tx.send(message).map_err(|_| {
-                            (StatusCode::INTERNAL_SERVER_ERROR, "Failed to send message")
-                        }))
-                    }),
-                )
-                .route(
-                    "/events",
-                    get(move || response::EventStream(Events(messages_rx.clone()))),
-                ),
-        );
+    let app = std::rc::Rc::new(
+        picoserve::Router::new()
+            .route(
+                "/",
+                get_service(response::File::html(include_str!("index.html"))),
+            )
+            .route(
+                "/index.css",
+                get_service(response::File::css(include_str!("index.css"))),
+            )
+            .route(
+                "/index.js",
+                get_service(response::File::javascript(include_str!("index.js"))),
+            )
+            .route(
+                "/set_message",
+                post(async move |NewMessage(message)| {
+                    messages_tx
+                        .send(message)
+                        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "Failed to send message"))
+                }),
+            )
+            .route(
+                "/events",
+                get(async move || response::EventStream(Events(messages_rx.clone()))),
+            ),
+    );
 
     let config = picoserve::Config::new(picoserve::Timeouts {
         start_read_request: Some(Duration::from_secs(5)),

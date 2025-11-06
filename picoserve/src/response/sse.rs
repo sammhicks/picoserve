@@ -223,15 +223,6 @@ impl<S: EventSource> super::IntoResponse for EventStream<S> {
     }
 }
 
-impl<S: EventSource> core::future::IntoFuture for EventStream<S> {
-    type Output = Self;
-    type IntoFuture = core::future::Ready<Self>;
-
-    fn into_future(self) -> Self::IntoFuture {
-        core::future::ready(self)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

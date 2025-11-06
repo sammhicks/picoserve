@@ -520,12 +520,3 @@ impl<T: serde::Serialize> super::IntoResponse for Json<T> {
             .await
     }
 }
-
-impl<T: serde::Serialize> core::future::IntoFuture for Json<T> {
-    type Output = Self;
-    type IntoFuture = core::future::Ready<Self>;
-
-    fn into_future(self) -> Self::IntoFuture {
-        core::future::ready(self)
-    }
-}

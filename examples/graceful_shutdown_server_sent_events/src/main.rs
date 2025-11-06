@@ -33,7 +33,7 @@ async fn main() -> anyhow::Result<()> {
             )
             .route(
                 "/counter",
-                get(|| {
+                get(async || {
                     struct Counter;
 
                     impl picoserve::response::sse::EventSource for Counter {

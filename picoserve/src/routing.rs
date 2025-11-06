@@ -5,7 +5,7 @@
 //!     + [File](crate::response::fs::File)
 //!     + [Directory](crate::response::fs::File)
 
-use core::{fmt, future::IntoFuture, marker::PhantomData, str::FromStr};
+use core::{fmt, marker::PhantomData, str::FromStr};
 
 use crate::{
     extract::{FromRequest, FromRequestParts},
@@ -81,10 +81,8 @@ pub trait RequestHandlerFunction<State, PathParameters, T> {
     ) -> Result<ResponseSent, W::Error>;
 }
 
-impl<State, FunctionReturn: IntoFuture, H: Fn() -> FunctionReturn>
+impl<State, FunctionReturn: IntoResponseWithState<State>, H: AsyncFn() -> FunctionReturn>
     RequestHandlerFunction<State, NoPathParameters, (FunctionReturn,)> for H
-where
-    FunctionReturn::Output: IntoResponseWithState<State>,
 {
     async fn call_handler_func<R: Read, W: ResponseWriter<Error = R::Error>>(
         &self,
@@ -104,10 +102,12 @@ where
     }
 }
 
-impl<State, PathParameter, FunctionReturn: IntoFuture, H: Fn(PathParameter) -> FunctionReturn>
-    RequestHandlerFunction<State, OnePathParameter<PathParameter>, (FunctionReturn,)> for H
-where
-    FunctionReturn::Output: IntoResponseWithState<State>,
+impl<
+        State,
+        PathParameter,
+        FunctionReturn: IntoResponseWithState<State>,
+        H: AsyncFn(PathParameter) -> FunctionReturn,
+    > RequestHandlerFunction<State, OnePathParameter<PathParameter>, (FunctionReturn,)> for H
 {
     async fn call_handler_func<R: Read, W: ResponseWriter<Error = R::Error>>(
         &self,
@@ -130,11 +130,9 @@ where
 impl<
         State,
         PathParameters,
-        FunctionReturn: IntoFuture,
-        H: Fn(PathParameters) -> FunctionReturn,
+        FunctionReturn: IntoResponseWithState<State>,
+        H: AsyncFn(PathParameters) -> FunctionReturn,
     > RequestHandlerFunction<State, ManyPathParameters<PathParameters>, (FunctionReturn,)> for H
-where
-    FunctionReturn::Output: IntoResponseWithState<State>,
 {
     async fn call_handler_func<R: Read, W: ResponseWriter<Error = R::Error>>(
         &self,
@@ -157,10 +155,8 @@ where
 macro_rules! declare_handler_func {
     ($($($name:ident)*;)*) => {
         $(
-            impl<State, FunctionReturn: IntoFuture, $($name: for<'a> FromRequestParts<'a, State>,)* M, E: for<'a> FromRequest<'a, State, M>, H: Fn($($name,)* E,) -> FunctionReturn>
+            impl<State, FunctionReturn: IntoResponseWithState<State>, $($name: for<'a> FromRequestParts<'a, State>,)* M, E: for<'a> FromRequest<'a, State, M>, H: AsyncFn($($name,)* E,) -> FunctionReturn>
                 RequestHandlerFunction<State, NoPathParameters, (M, $($name,)* E, FunctionReturn,)> for H
-            where
-                FunctionReturn::Output: IntoResponseWithState<State>,
             {
                 async fn call_handler_func<R: Read, W: ResponseWriter<Error = R::Error>>(
                     &self,
@@ -185,10 +181,8 @@ macro_rules! declare_handler_func {
                 }
             }
 
-            impl<State, PathParameter, FunctionReturn: IntoFuture, $($name: for<'a> FromRequestParts<'a, State>,)* M, E: for<'a> FromRequest<'a, State, M>, H: Fn(PathParameter, $($name,)* E,) -> FunctionReturn>
+            impl<State, PathParameter, FunctionReturn: IntoResponseWithState<State>, $($name: for<'a> FromRequestParts<'a, State>,)* M, E: for<'a> FromRequest<'a, State, M>, H: AsyncFn(PathParameter, $($name,)* E,) -> FunctionReturn>
                 RequestHandlerFunction<State, OnePathParameter<PathParameter>, (M, $($name,)* E, FunctionReturn,)> for H
-            where
-                FunctionReturn::Output: IntoResponseWithState<State>,
             {
                 #[allow(unused_variables)]
                 async fn call_handler_func<R: Read, W: ResponseWriter<Error = R::Error>>(
@@ -215,10 +209,8 @@ macro_rules! declare_handler_func {
                 }
             }
 
-            impl<State, PathParameters, FunctionReturn: IntoFuture, $($name: for<'a> FromRequestParts<'a, State>,)* M, E: for<'a> FromRequest<'a, State, M>, H: Fn(PathParameters, $($name,)* E,) -> FunctionReturn>
+            impl<State, PathParameters, FunctionReturn: IntoResponseWithState<State>, $($name: for<'a> FromRequestParts<'a, State>,)* M, E: for<'a> FromRequest<'a, State, M>, H: AsyncFn(PathParameters, $($name,)* E,) -> FunctionReturn>
                 RequestHandlerFunction<State, ManyPathParameters<PathParameters>, (M, $($name,)* E, FunctionReturn)> for H
-            where
-                FunctionReturn::Output: IntoResponseWithState<State>,
             {
                 #[allow(unused_variables)]
                 async fn call_handler_func<R: Read, W: ResponseWriter<Error = R::Error>>(

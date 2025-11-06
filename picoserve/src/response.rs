@@ -741,15 +741,6 @@ impl<D: fmt::Debug> IntoResponse for DebugValue<D> {
     }
 }
 
-impl<D: fmt::Debug> core::future::IntoFuture for DebugValue<D> {
-    type Output = Self;
-    type IntoFuture = core::future::Ready<Self>;
-
-    fn into_future(self) -> Self::IntoFuture {
-        core::future::ready(self)
-    }
-}
-
 /// Response that redirects the request to another location.
 pub struct Redirect {
     status_code: StatusCode,
@@ -779,15 +770,6 @@ impl IntoResponse for Redirect {
         )
             .write_to(connection, response_writer)
             .await
-    }
-}
-
-impl core::future::IntoFuture for Redirect {
-    type Output = Self;
-    type IntoFuture = core::future::Ready<Self>;
-
-    fn into_future(self) -> Self::IntoFuture {
-        core::future::ready(self)
     }
 }
 

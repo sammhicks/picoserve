@@ -64,7 +64,7 @@ impl AppBuilder for AppProps {
             )
             .route(
                 "/ws",
-                get(|upgrade: picoserve::response::WebSocketUpgrade| {
+                get(async |upgrade: picoserve::response::WebSocketUpgrade| {
                     upgrade.on_upgrade(WebsocketEcho).with_protocol("echo")
                 }),
             )

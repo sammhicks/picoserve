@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Breaking
 
+- Changed MSRV to 1.85.
+- Request Handlers closures must be async closures, not just return futures.
+- Removed trivial `IntoFuture` implementations for response types.
 - JSON and Websocket functionality are behind the `json` and `ws` features respectively.
 - ['Json'](https://docs.rs/picoserve/latest/picoserve/extract/struct.Json.html) no longer has a constant of the string unescape buffer size, use ['JsonWithUnescapeBufferSize'](https://docs.rs/picoserve/latest/picoserve/extract/json/struct.JsonWithUnescapeBufferSize.html) to specify this.
 - Changed [`UpgradedWebSocket<UnspecifiedProtocol, C>`](https://docs.rs/picoserve/latest/picoserve/response/ws/struct.UpgradedWebSocket.html) to `UpgradedWebSocket<UnspecifiedProtocol, CallbackNotUsingState<C>>`.
@@ -30,6 +33,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added [`Server`](https://docs.rs/picoserve/latest/picoserve/struct.Server.html), a HTTP Server.
 - Added support for graceful shutdown of connections using [`Server::with_graceful_shutdown`](https://docs.rs/picoserve/latest/picoserve/struct.Server.html#method.with_graceful_shutdown).
 - Added mime-type constants to [`File`](https://docs.rs/picoserve/latest/picoserve/response/fs/struct.File.html).
+- Added [`WithStateUpdate`](https://docs.rs/picoserve/latest/picoserve/response/with_state/trait.WithStateUpdate.html) for easily adding state updates to responses.
 
 ### Changed
 - `embassy` sockets have tcp keepalive and timeout set to 30s and 45s respectively, thus helping prevent broken connections lingering.

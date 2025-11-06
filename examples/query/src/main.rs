@@ -20,7 +20,7 @@ async fn main() -> anyhow::Result<()> {
             )
             .route(
                 "/get-thing",
-                get(|picoserve::extract::Query(QueryParams { a, b })| {
+                get(async |picoserve::extract::Query(QueryParams { a, b })| {
                     picoserve::response::DebugValue((("a", a), ("b", b)))
                 }),
             ),

@@ -1,43 +1,55 @@
-use std::{cell::RefCell, rc::Rc, time::Duration};
+use std::{cell::RefCell, time::Duration};
 
 use picoserve::{
     extract::State,
-    response::{IntoResponse, Redirect},
+    response::{with_state::WithStateUpdate, IntoResponse, IntoResponseWithState, Redirect},
     routing::{get, parse_path_segment},
 };
 
-#[derive(Clone, serde::Serialize)]
-struct Counter {
-    counter: i32,
+struct AppState {
+    value: RefCell<i32>,
 }
 
-type SharedCounter = Rc<RefCell<Counter>>;
-
-async fn get_counter(State(state): State<SharedCounter>) -> impl IntoResponse {
-    picoserve::response::Json(state.borrow().clone())
+#[derive(serde::Serialize)]
+struct AppStateValue {
+    value: i32,
 }
 
-async fn increment_counter(State(state): State<SharedCounter>) -> impl IntoResponse {
-    state.borrow_mut().counter += 1;
-    Redirect::to(".")
+impl picoserve::extract::FromRef<AppState> for AppStateValue {
+    fn from_ref(AppState { value, .. }: &AppState) -> Self {
+        Self {
+            value: *value.borrow(),
+        }
+    }
 }
 
-async fn set_counter(value: i32, State(state): State<SharedCounter>) -> impl IntoResponse {
-    state.borrow_mut().counter = value;
-    Redirect::to(".")
+async fn get_value(State(value): State<AppStateValue>) -> impl IntoResponse {
+    picoserve::response::Json(value)
+}
+
+async fn increment_value() -> impl IntoResponseWithState<AppState> {
+    Redirect::to(".").with_state_update(async |state: &AppState| {
+        *state.value.borrow_mut() += 1;
+    })
+}
+
+async fn set_value(value: i32) -> impl IntoResponseWithState<AppState> {
+    Redirect::to("..").with_state_update(async move |state: &AppState| {
+        *state.value.borrow_mut() = value;
+    })
 }
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> anyhow::Result<()> {
     let port = 8000;
 
-    let state: SharedCounter = Rc::new(RefCell::new(Counter { counter: 0 }));
+    let state = AppState { value: 0.into() };
 
     let app = std::rc::Rc::new(
         picoserve::Router::new()
-            .route("/", get(get_counter))
-            .route("/increment", get(increment_counter))
-            .route(("/set", parse_path_segment()), get(set_counter))
+            .route("/", get(get_value))
+            .route("/increment", get(increment_value))
+            .route(("/set", parse_path_segment()), get(set_value))
             .with_state(state),
     );
 

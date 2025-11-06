@@ -83,7 +83,10 @@ async fn main() -> anyhow::Result<()> {
                     .serve(stream)
                     .await
                     {
-                        Ok(picoserve::DisconnectionInfo { handled_requests_count, .. }) => {
+                        Ok(picoserve::DisconnectionInfo {
+                            handled_requests_count,
+                            ..
+                        }) => {
                             println!(
                                 "{handled_requests_count} requests handled from {remote_address}"
                             )
