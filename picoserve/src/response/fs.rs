@@ -96,6 +96,10 @@ pub struct File {
 }
 
 impl File {
+    pub const MIME_HTML: &'static str = "text/html; charset=utf-8";
+    pub const MIME_CSS: &'static str = "text/css";
+    pub const MIME_JS: &'static str = "application/javascript; charset=utf-8";
+
     /// Create a file with the given content type but no additional headers.
     pub const fn with_content_type(content_type: &'static str, body: &'static [u8]) -> Self {
         Self {
@@ -122,17 +126,17 @@ impl File {
 
     /// A HyperText Markup Language file with a MIME type of "text/html; charset=utf-8"
     pub const fn html(body: &'static str) -> Self {
-        Self::with_content_type("text/html; charset=utf-8", body.as_bytes())
+        Self::with_content_type(Self::MIME_HTML, body.as_bytes())
     }
 
     /// Cascading StyleSheets file with a MIME type of "text/css"
     pub const fn css(body: &'static str) -> Self {
-        Self::with_content_type("text/css", body.as_bytes())
+        Self::with_content_type(Self::MIME_CSS, body.as_bytes())
     }
 
     /// A Javascript file with a MIME type of "application/javascript; charset=utf-8"
     pub const fn javascript(body: &'static str) -> Self {
-        Self::with_content_type("application/javascript; charset=utf-8", body.as_bytes())
+        Self::with_content_type(Self::MIME_JS, body.as_bytes())
     }
 }
 

@@ -29,6 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added support for the `OPTIONS` HTTP method.
 - Added [`Server`](https://docs.rs/picoserve/latest/picoserve/struct.Server.html), a HTTP Server.
 - Added support for graceful shutdown of connections using [`Server::with_graceful_shutdown`](https://docs.rs/picoserve/latest/picoserve/struct.Server.html#method.with_graceful_shutdown).
+- Added mime-type constants to [`File`](https://docs.rs/picoserve/latest/picoserve/response/fs/struct.File.html).
 
 ### Changed
 - `embassy` sockets have tcp keepalive and timeout set to 30s and 45s respectively, thus helping prevent broken connections lingering.
