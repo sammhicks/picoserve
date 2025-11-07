@@ -13,7 +13,7 @@ struct TimedResponseWriter<'r, W> {
     response_writer: W,
 }
 
-impl<'r, W: ResponseWriter> ResponseWriter for TimedResponseWriter<'r, W> {
+impl<W: ResponseWriter> ResponseWriter for TimedResponseWriter<'_, W> {
     type Error = W::Error;
 
     async fn write_response<

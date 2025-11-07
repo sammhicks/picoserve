@@ -441,6 +441,7 @@ impl<'a, Runtime, T: Timer<Runtime>, P: routing::PathRouter>
     /// Prepares a server to handle graceful shutdown when the provided future completes.
     ///
     /// If `shutdown_timeout` is not None and the request handler does not complete within that time, it is killed abruptly.
+    #[allow(clippy::type_complexity)]
     pub fn with_graceful_shutdown<ShutdownSignal: core::future::Future>(
         self,
         shutdown_signal: ShutdownSignal,
@@ -479,13 +480,12 @@ impl<'a, Runtime, T: Timer<Runtime>, P: routing::PathRouter>
 }
 
 impl<
-        'a,
         Runtime,
         T: Timer<Runtime>,
         P: routing::PathRouter,
         ShutdownReason,
         ShutdownSignal: core::future::Future<Output = (ShutdownReason, Option<T::Duration>)>,
-    > Server<'a, Runtime, T, P, ShutdownSignal>
+    > Server<'_, Runtime, T, P, ShutdownSignal>
 {
     /// Serve requests read from the connected socket.
     pub async fn serve<S: io::Socket<Runtime>>(

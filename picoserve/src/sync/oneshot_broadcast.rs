@@ -44,13 +44,13 @@ pub struct Listener<'a, T: Copy> {
     channel: Option<&'a SignalCore<T>>,
 }
 
-impl<'a, T: Copy> Listener<'a, T> {
+impl<T: Copy> Listener<'_, T> {
     pub fn never() -> Self {
         Self { channel: None }
     }
 }
 
-impl<'a, T: Copy> core::future::Future for Listener<'a, T> {
+impl<T: Copy> core::future::Future for Listener<'_, T> {
     type Output = T;
 
     fn poll(

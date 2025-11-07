@@ -32,7 +32,7 @@ pub struct ContentUsingStateWithState<'s, State, C: ContentUsingState<State>> {
     state: &'s State,
 }
 
-impl<'s, State, C: ContentUsingState<State>> Content for ContentUsingStateWithState<'s, State, C> {
+impl<State, C: ContentUsingState<State>> Content for ContentUsingStateWithState<'_, State, C> {
     fn content_type(&self) -> &'static str {
         self.content.content_type(self.state)
     }

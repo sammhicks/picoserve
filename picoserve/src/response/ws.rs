@@ -100,7 +100,7 @@ impl<'r, State> crate::extract::FromRequest<'r, State> for WebSocketUpgrade {
         if request_parts
             .headers()
             .get("upgrade")
-            .map_or(true, |upgrade| upgrade != "websocket")
+            .is_none_or(|upgrade| upgrade != "websocket")
         {
             return Err(WebSocketUpgradeRejection::InvalidUpgradeHeader);
         }
@@ -636,11 +636,11 @@ struct FrameWriter<'w, W: Write> {
     tx: &'w mut SocketTx<W>,
 }
 
-impl<'w, W: Write> embedded_io_async::ErrorType for FrameWriter<'w, W> {
+impl<W: Write> embedded_io_async::ErrorType for FrameWriter<'_, W> {
     type Error = W::Error;
 }
 
-impl<'w, W: Write> Write for FrameWriter<'w, W> {
+impl<W: Write> Write for FrameWriter<'_, W> {
     async fn write(&mut self, data: &[u8]) -> Result<usize, W::Error> {
         self.tx
             .write_frame(false, core::mem::replace(self.opcode, 0), data)
@@ -931,8 +931,8 @@ impl<State, P: WebSocketProtocol, C: WebSocketCallbackWithStateAndShutdownSignal
             callback: CallbackUsingState<State, C>,
         }
 
-        impl<'s, State, C: WebSocketCallbackWithStateAndShutdownSignal<State>> super::Body
-            for Body<'s, State, C>
+        impl<State, C: WebSocketCallbackWithStateAndShutdownSignal<State>> super::Body
+            for Body<'_, State, C>
         {
             async fn write_response_body<
                 R: embedded_io_async::Read,

@@ -267,7 +267,7 @@ struct SerializeCompound<'a, W: fmt::Write> {
     is_first: bool,
 }
 
-impl<'a, W: fmt::Write> serde::ser::SerializeSeq for SerializeCompound<'a, W> {
+impl<W: fmt::Write> serde::ser::SerializeSeq for SerializeCompound<'_, W> {
     type Ok = ();
     type Error = SerializeError;
 
@@ -291,7 +291,7 @@ impl<'a, W: fmt::Write> serde::ser::SerializeSeq for SerializeCompound<'a, W> {
     }
 }
 
-impl<'a, W: fmt::Write> serde::ser::SerializeTuple for SerializeCompound<'a, W> {
+impl<W: fmt::Write> serde::ser::SerializeTuple for SerializeCompound<'_, W> {
     type Ok = ();
     type Error = SerializeError;
 
@@ -307,7 +307,7 @@ impl<'a, W: fmt::Write> serde::ser::SerializeTuple for SerializeCompound<'a, W> 
     }
 }
 
-impl<'a, W: fmt::Write> serde::ser::SerializeTupleStruct for SerializeCompound<'a, W> {
+impl<W: fmt::Write> serde::ser::SerializeTupleStruct for SerializeCompound<'_, W> {
     type Ok = ();
     type Error = SerializeError;
 
@@ -323,7 +323,7 @@ impl<'a, W: fmt::Write> serde::ser::SerializeTupleStruct for SerializeCompound<'
     }
 }
 
-impl<'a, W: fmt::Write> serde::ser::SerializeTupleVariant for SerializeCompound<'a, W> {
+impl<W: fmt::Write> serde::ser::SerializeTupleVariant for SerializeCompound<'_, W> {
     type Ok = ();
     type Error = SerializeError;
 
@@ -340,7 +340,7 @@ impl<'a, W: fmt::Write> serde::ser::SerializeTupleVariant for SerializeCompound<
     }
 }
 
-impl<'a, W: fmt::Write> serde::ser::SerializeMap for SerializeCompound<'a, W> {
+impl<W: fmt::Write> serde::ser::SerializeMap for SerializeCompound<'_, W> {
     type Ok = ();
     type Error = SerializeError;
 
@@ -374,7 +374,7 @@ impl<'a, W: fmt::Write> serde::ser::SerializeMap for SerializeCompound<'a, W> {
     }
 }
 
-impl<'a, W: fmt::Write> serde::ser::SerializeStruct for SerializeCompound<'a, W> {
+impl<W: fmt::Write> serde::ser::SerializeStruct for SerializeCompound<'_, W> {
     type Ok = ();
     type Error = SerializeError;
 
@@ -401,7 +401,7 @@ impl<'a, W: fmt::Write> serde::ser::SerializeStruct for SerializeCompound<'a, W>
     }
 }
 
-impl<'a, W: fmt::Write> serde::ser::SerializeStructVariant for SerializeCompound<'a, W> {
+impl<W: fmt::Write> serde::ser::SerializeStructVariant for SerializeCompound<'_, W> {
     type Ok = ();
     type Error = SerializeError;
 

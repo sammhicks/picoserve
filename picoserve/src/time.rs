@@ -74,14 +74,14 @@ pub(crate) struct WriteWithTimeout<'t, Runtime, W: embedded_io_async::Write, T: 
     pub _runtime: core::marker::PhantomData<fn(&Runtime)>,
 }
 
-impl<'t, Runtime, W: embedded_io_async::Write, T: Timer<Runtime>> embedded_io_async::ErrorType
-    for WriteWithTimeout<'t, Runtime, W, T>
+impl<Runtime, W: embedded_io_async::Write, T: Timer<Runtime>> embedded_io_async::ErrorType
+    for WriteWithTimeout<'_, Runtime, W, T>
 {
     type Error = super::Error<W::Error>;
 }
 
-impl<'t, Runtime, W: embedded_io_async::Write, T: Timer<Runtime>> embedded_io_async::Write
-    for WriteWithTimeout<'t, Runtime, W, T>
+impl<Runtime, W: embedded_io_async::Write, T: Timer<Runtime>> embedded_io_async::Write
+    for WriteWithTimeout<'_, Runtime, W, T>
 {
     async fn write(&mut self, buf: &[u8]) -> Result<usize, Self::Error> {
         self.timer

@@ -58,7 +58,7 @@ impl<'a> UrlDecodedCharacters<'a> {
     }
 }
 
-impl<'a> Iterator for UrlDecodedCharacters<'a> {
+impl Iterator for UrlDecodedCharacters<'_> {
     type Item = Result<UrlDecodedCharacter, UrlEncodedCharacterDecodeError>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -211,7 +211,7 @@ struct NamedDecodeError<'a> {
 #[serde(from = "UrlEncodedRepresentation")]
 pub struct UrlEncodedString<'a>(pub &'a str);
 
-impl<'a> fmt::Debug for UrlEncodedString<'a> {
+impl fmt::Debug for UrlEncodedString<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.0.fmt(f)
     }
@@ -314,7 +314,7 @@ impl serde::de::Error for DeserializationError {
 #[cfg(feature = "std")]
 impl std::error::Error for DeserializationError {}
 
-impl<'de> From<NamedDecodeError<'de>> for DeserializationError {
+impl From<NamedDecodeError<'_>> for DeserializationError {
     fn from(NamedDecodeError { key, error }: NamedDecodeError) -> Self {
         Self::custom(format_args!("No space to decode {key}: {error}"))
     }

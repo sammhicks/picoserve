@@ -168,7 +168,7 @@ impl<State, PathParameters> crate::routing::RequestHandlerService<State, PathPar
 
         struct FileContent<'a>(&'a File);
 
-        impl<'a> super::Content for FileContent<'a> {
+        impl super::Content for FileContent<'_> {
             fn content_type(&self) -> &'static str {
                 self.0.content_type
             }

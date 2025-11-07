@@ -66,7 +66,7 @@ fn assert_implements_into_response_with_state<State, T: IntoResponseWithState<St
 
 struct MeasureFormatSize<'a>(&'a mut usize);
 
-impl<'a> fmt::Write for MeasureFormatSize<'a> {
+impl fmt::Write for MeasureFormatSize<'_> {
     fn write_str(&mut self, s: &str) -> fmt::Result {
         *self.0 += s.len();
 
@@ -81,7 +81,7 @@ pub(crate) struct BufferedReader<'r, R: Read> {
     pub(crate) buffer_usage: usize,
 }
 
-impl<'r, R: Read> BufferedReader<'r, R> {
+impl<R: Read> BufferedReader<'_, R> {
     async fn read_into(&mut self, buffer: &mut [u8]) -> Result<usize, R::Error> {
         let prefix = &self.buffer[self.read_position..self.buffer_usage];
 
@@ -103,11 +103,11 @@ pub struct UpgradedConnection<'r, R: Read> {
     reader: BufferedReader<'r, R>,
 }
 
-impl<'r, R: Read> crate::io::ErrorType for UpgradedConnection<'r, R> {
+impl<R: Read> crate::io::ErrorType for UpgradedConnection<'_, R> {
     type Error = R::Error;
 }
 
-impl<'r, R: Read> Read for UpgradedConnection<'r, R> {
+impl<R: Read> Read for UpgradedConnection<'_, R> {
     async fn read(&mut self, buffer: &mut [u8]) -> Result<usize, Self::Error> {
         self.reader.read_into(buffer).await
     }
@@ -194,7 +194,7 @@ pub trait ForEachHeader {
 
 struct BorrowedForEachHeader<'a, F: ForEachHeader>(&'a mut F);
 
-impl<'a, F: ForEachHeader> ForEachHeader for BorrowedForEachHeader<'a, F> {
+impl<F: ForEachHeader> ForEachHeader for BorrowedForEachHeader<'_, F> {
     type Output = ();
     type Error = F::Error;
 
@@ -217,7 +217,7 @@ pub trait HeadersIter {
     async fn for_each_header<F: ForEachHeader>(self, f: F) -> Result<F::Output, F::Error>;
 }
 
-impl<'a, V: fmt::Display> HeadersIter for (&'a str, V) {
+impl<V: fmt::Display> HeadersIter for (&str, V) {
     async fn for_each_header<F: ForEachHeader>(self, mut f: F) -> Result<F::Output, F::Error> {
         let (name, value) = self;
         f.call(name, value).await?;
@@ -225,7 +225,7 @@ impl<'a, V: fmt::Display> HeadersIter for (&'a str, V) {
     }
 }
 
-impl<'a, 'b, V: fmt::Display> HeadersIter for &'a [(&'b str, V)] {
+impl<V: fmt::Display> HeadersIter for &[(&str, V)] {
     async fn for_each_header<F: ForEachHeader>(self, mut f: F) -> Result<F::Output, F::Error> {
         for (name, value) in self {
             f.call(name, value).await?;
@@ -339,7 +339,7 @@ impl<C: Content> Body for ContentBody<C> {
     }
 }
 
-impl<'a> Content for &'a [u8] {
+impl Content for &[u8] {
     fn content_type(&self) -> &'static str {
         "application/octet-stream"
     }
@@ -362,7 +362,7 @@ impl Content for alloc::vec::Vec<u8> {
     content_methods!(as_slice);
 }
 
-impl<'a> Content for &'a str {
+impl Content for &str {
     fn content_type(&self) -> &'static str {
         "text/plain; charset=utf-8"
     }
@@ -385,7 +385,7 @@ impl Content for alloc::string::String {
     content_methods!(as_str);
 }
 
-impl<'a> Content for fmt::Arguments<'a> {
+impl Content for fmt::Arguments<'_> {
     fn content_type(&self) -> &'static str {
         "".content_type()
     }

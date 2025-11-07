@@ -133,14 +133,14 @@ pub struct HeaderName<'a> {
     name: &'a [u8],
 }
 
-impl<'a> fmt::Debug for HeaderName<'a> {
+impl fmt::Debug for HeaderName<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         escape_debug(self.name, f)
     }
 }
 
 #[cfg(feature = "defmt")]
-impl<'a> defmt::Format for HeaderName<'a> {
+impl defmt::Format for HeaderName<'_> {
     fn format(&self, fmt: defmt::Formatter) {
         self.name.format(fmt)
     }
@@ -156,13 +156,13 @@ impl<'a> HeaderName<'a> {
     }
 }
 
-impl<'a> PartialEq<str> for HeaderName<'a> {
+impl PartialEq<str> for HeaderName<'_> {
     fn eq(&self, other: &str) -> bool {
         eq_ignore_ascii_case(self.name, other.as_bytes())
     }
 }
 
-impl<'a> PartialEq<&str> for HeaderName<'a> {
+impl PartialEq<&str> for HeaderName<'_> {
     fn eq(&self, other: &&str) -> bool {
         eq_ignore_ascii_case(self.name, other.as_bytes())
     }
@@ -185,14 +185,14 @@ pub struct HeaderValue<'a> {
     pub(crate) value: &'a [u8],
 }
 
-impl<'a> fmt::Debug for HeaderValue<'a> {
+impl fmt::Debug for HeaderValue<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         escape_debug(self.value, f)
     }
 }
 
 #[cfg(feature = "defmt")]
-impl<'a> defmt::Format for HeaderValue<'a> {
+impl defmt::Format for HeaderValue<'_> {
     fn format(&self, fmt: defmt::Formatter) {
         self.value.format(fmt)
     }
@@ -215,13 +215,13 @@ impl<'a> HeaderValue<'a> {
     }
 }
 
-impl<'a> PartialEq<str> for HeaderValue<'a> {
+impl PartialEq<str> for HeaderValue<'_> {
     fn eq(&self, other: &str) -> bool {
         eq_ignore_ascii_case(self.value, other.as_bytes())
     }
 }
 
-impl<'a> PartialEq<&str> for HeaderValue<'a> {
+impl PartialEq<&str> for HeaderValue<'_> {
     fn eq(&self, other: &&str) -> bool {
         eq_ignore_ascii_case(self.value, other.as_bytes())
     }
@@ -289,7 +289,7 @@ impl<'a> IntoIterator for Headers<'a> {
     }
 }
 
-impl<'a, 'b> IntoIterator for &'b Headers<'a> {
+impl<'a> IntoIterator for &Headers<'a> {
     type Item = (HeaderName<'a>, HeaderValue<'a>);
     type IntoIter = HeadersIter<'a>;
 
@@ -298,7 +298,7 @@ impl<'a, 'b> IntoIterator for &'b Headers<'a> {
     }
 }
 
-impl<'a> fmt::Debug for Headers<'a> {
+impl fmt::Debug for Headers<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_list().entries(self.iter()).finish()
     }
@@ -308,7 +308,7 @@ impl<'a> fmt::Debug for Headers<'a> {
 #[derive(Debug, Clone, Copy)]
 pub struct Path<'r>(pub(crate) UrlEncodedString<'r>);
 
-impl<'r> fmt::Display for Path<'r> {
+impl fmt::Display for Path<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.encoded().fmt(f)
     }
@@ -386,7 +386,7 @@ impl<'r> Iterator for PathSegments<'r> {
     }
 }
 
-impl<'r> core::iter::FusedIterator for PathSegments<'r> {}
+impl core::iter::FusedIterator for PathSegments<'_> {}
 
 /// Represents an HTTP request.
 #[derive(Debug, Clone, Copy)]
@@ -439,18 +439,18 @@ pub struct RequestBodyReader<'r, R: Read> {
     read_position: &'r mut usize,
 }
 
-impl<'r, R: Read> crate::io::ErrorType for RequestBodyReader<'r, R> {
+impl<R: Read> crate::io::ErrorType for RequestBodyReader<'_, R> {
     type Error = R::Error;
 }
 
-impl<'r, R: Read> RequestBodyReader<'r, R> {
+impl<R: Read> RequestBodyReader<'_, R> {
     /// Returns the total length of the body
     pub const fn content_length(&self) -> usize {
         self.content_length
     }
 }
 
-impl<'r, R: Read> Read for RequestBodyReader<'r, R> {
+impl<R: Read> Read for RequestBodyReader<'_, R> {
     async fn read(&mut self, buf: &mut [u8]) -> Result<usize, Self::Error> {
         let read_size = if self.current_data.is_empty() {
             let max_read_size = buf.len().min(self.content_length - *self.read_position);

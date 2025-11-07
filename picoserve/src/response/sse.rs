@@ -10,7 +10,7 @@ pub trait EventData {
     async fn write_to<W: Write>(self, writer: &mut W) -> Result<(), W::Error>;
 }
 
-impl<'a> EventData for core::fmt::Arguments<'a> {
+impl EventData for core::fmt::Arguments<'_> {
     async fn write_to<W: Write>(self, writer: &mut W) -> Result<(), W::Error> {
         writer.write_fmt(self).await
     }
@@ -49,7 +49,7 @@ pub struct EventWriter<'a, W: Write> {
     event_writer_state: &'a EventWriterState,
 }
 
-impl<'a, W: Write> EventWriter<'a, W> {
+impl<W: Write> EventWriter<'_, W> {
     async fn do_write<F: core::future::Future>(
         event_writer_state: &EventWriterState,
         write_task: F,

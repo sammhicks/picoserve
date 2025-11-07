@@ -1065,7 +1065,7 @@ pub trait PathDescription<CurrentPathParameters>: PathDescriptionBase {
     }
 }
 
-impl<'a, CurrentPathParameters> PathDescription<CurrentPathParameters> for &'a str {
+impl<CurrentPathParameters> PathDescription<CurrentPathParameters> for &str {
     type Output = CurrentPathParameters;
 
     fn parse<'r, T, F: FnOnce(Self::Output, Path<'r>) -> Result<T, Self::Output>>(
@@ -1661,22 +1661,21 @@ impl<State, CurrentPathParameters, RouterInner: PathRouter<State, CurrentPathPar
             router: &'a RouterInner,
         }
 
-        impl<'a, RouterInner> Clone for SharedPathRouter<'a, RouterInner> {
+        impl<RouterInner> Clone for SharedPathRouter<'_, RouterInner> {
             fn clone(&self) -> Self {
                 *self
             }
         }
 
-        impl<'a, RouterInner> Copy for SharedPathRouter<'a, RouterInner> {}
+        impl<RouterInner> Copy for SharedPathRouter<'_, RouterInner> {}
 
-        impl<'a, RouterInner> Sealed for SharedPathRouter<'a, RouterInner> {}
+        impl<RouterInner> Sealed for SharedPathRouter<'_, RouterInner> {}
 
         impl<
-                'a,
                 State,
                 CurrentPathParameters,
                 RouterInner: PathRouter<State, CurrentPathParameters>,
-            > PathRouter<State, CurrentPathParameters> for SharedPathRouter<'a, RouterInner>
+            > PathRouter<State, CurrentPathParameters> for SharedPathRouter<'_, RouterInner>
         {
             async fn call_path_router<R: Read, W: ResponseWriter<Error = R::Error>>(
                 &self,

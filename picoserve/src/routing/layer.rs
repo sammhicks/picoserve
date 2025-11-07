@@ -64,7 +64,7 @@ struct NextMethodRouterLayer<'a, R: Read, N> {
     request: Request<'a, R>,
 }
 
-impl<'a, R: Read, N> Sealed for NextMethodRouterLayer<'a, R, N> {}
+impl<R: Read, N> Sealed for NextMethodRouterLayer<'_, R, N> {}
 
 impl<'a, R: Read, State, PathParameters, N: MethodHandler<State, PathParameters>>
     Next<'a, R, State, PathParameters> for NextMethodRouterLayer<'a, R, N>
@@ -129,7 +129,7 @@ struct NextPathRouterLayer<'a, R: Read, N> {
     request: Request<'a, R>,
 }
 
-impl<'a, R: Read, N> Sealed for NextPathRouterLayer<'a, R, N> {}
+impl<R: Read, N> Sealed for NextPathRouterLayer<'_, R, N> {}
 
 impl<'a, R: Read, State, CurrentPathParameters, N: PathRouter<State, CurrentPathParameters>>
     Next<'a, R, State, CurrentPathParameters> for NextPathRouterLayer<'a, R, N>
