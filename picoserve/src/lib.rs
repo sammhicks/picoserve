@@ -6,7 +6,7 @@
     clippy::multiple_unsafe_ops_per_block,
     clippy::undocumented_unsafe_blocks
 )]
-#![cfg_attr(docsrs, feature(doc_auto_cfg))]
+#![cfg_attr(docsrs, feature(doc_cfg))]
 
 //! An async `no_std` HTTP server suitable for bare-metal environments, heavily inspired by [axum](https://github.com/tokio-rs/axum).
 //!
