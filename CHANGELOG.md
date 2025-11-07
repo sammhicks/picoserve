@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## Unreleased
+## [0.17.0] - 2025-11-07
 
 ### Breaking
 
@@ -13,27 +13,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Request Handlers closures must be async closures, not just return futures.
 - Removed trivial `IntoFuture` implementations for response types.
 - JSON and Websocket functionality are behind the `json` and `ws` features respectively.
-- ['Json'](https://docs.rs/picoserve/latest/picoserve/extract/struct.Json.html) no longer has a constant of the string unescape buffer size, use ['JsonWithUnescapeBufferSize'](https://docs.rs/picoserve/latest/picoserve/extract/json/struct.JsonWithUnescapeBufferSize.html) to specify this.
-- Changed [`UpgradedWebSocket<UnspecifiedProtocol, C>`](https://docs.rs/picoserve/latest/picoserve/response/ws/struct.UpgradedWebSocket.html) to `UpgradedWebSocket<UnspecifiedProtocol, CallbackNotUsingState<C>>`.
+- ['Json'](https://docs.rs/picoserve/0.17.0/picoserve/extract/struct.Json.html) no longer has a constant of the string unescape buffer size, use ['JsonWithUnescapeBufferSize'](https://docs.rs/picoserve/0.17.0/picoserve/extract/json/struct.JsonWithUnescapeBufferSize.html) to specify this.
+- Changed [`UpgradedWebSocket<UnspecifiedProtocol, C>`](https://docs.rs/picoserve/0.17.0/picoserve/response/ws/struct.UpgradedWebSocket.html) to `UpgradedWebSocket<UnspecifiedProtocol, CallbackNotUsingState<C>>`.
 - Removed `serve`, `serve_with_state`, `listen_and_serve`, and `listen_and_serve_with_state`. See the migration guide below.
-- [`Timer`](https://docs.rs/picoserve/latest/picoserve/time/trait.Timer.html) and [`Socket`](https://docs.rs/picoserve/latest/picoserve/io/trait.Socket.html) have a generic parameter of the runtime that they use. If you have a custom `Timer` or `Socket` running on `embassy`, use `picoserve::EmbassyRuntime` (which is hidden in docs) as the parameter.
-- [`Timer::run_with_timeout`](https://docs.rs/picoserve/latest/picoserve/time/trait.Timer.html#tymethod.run_with_timeout) now takes `&self`, not `&mut self`.
-- [`SocketRx::next_frame`](https://docs.rs/picoserve/latest/picoserve/response/ws/struct.SocketRx.html#method.next_frame) and [`SocketRx::next_message`](https://docs.rs/picoserve/latest/picoserve/response/ws/struct.SocketRx.html#method.next_message) take a signal to simplify awaiting multiple sources and help avoiding the case where a read is dropped partway through reading a frame due to the usage of `select!` or similar.
+- [`Timer`](https://docs.rs/picoserve/0.17.0/picoserve/time/trait.Timer.html) and [`Socket`](https://docs.rs/picoserve/0.17.0/picoserve/io/trait.Socket.html) have a generic parameter of the runtime that they use. If you have a custom `Timer` or `Socket` running on `embassy`, use `picoserve::EmbassyRuntime` (which is hidden in docs) as the parameter.
+- [`Timer::run_with_timeout`](https://docs.rs/picoserve/0.17.0/picoserve/time/trait.Timer.html#tymethod.run_with_timeout) now takes `&self`, not `&mut self`.
+- [`SocketRx::next_frame`](https://docs.rs/picoserve/0.17.0/picoserve/response/ws/struct.SocketRx.html#method.next_frame) and [`SocketRx::next_message`](https://docs.rs/picoserve/0.17.0/picoserve/response/ws/struct.SocketRx.html#method.next_message) take a signal to simplify awaiting multiple sources and help avoiding the case where a read is dropped partway through reading a frame due to the usage of `select!` or similar.
 
 ### Fixed
 
-- Fixed [`from_request`](https://docs.rs/picoserve/latest/picoserve/macro.from_request.html) and [`from_request_parts`](https://docs.rs/picoserve/latest/picoserve/macro.from_request_parts.html) macros.
-- Fixed lifetime of [`HeaderValue::as_str`](https://docs.rs/picoserve/latest/picoserve/request/struct.HeaderValue.html#method.as_str).
-- Fixed routing logic of [`Router::nest`](https://docs.rs/picoserve/latest/picoserve/routing/struct.Router.html#method.nest) and [`Router::nest_service`](https://docs.rs/picoserve/latest/picoserve/routing/struct.Router.html#method.nest_service), where previously a path of `"/path"` was incorrectly routed to a nest with a prefix of `"/path"`, leaving an invalid path of `""`.
+- Fixed [`from_request`](https://docs.rs/picoserve/0.17.0/picoserve/macro.from_request.html) and [`from_request_parts`](https://docs.rs/picoserve/0.17.0/picoserve/macro.from_request_parts.html) macros.
+- Fixed lifetime of [`HeaderValue::as_str`](https://docs.rs/picoserve/0.17.0/picoserve/request/struct.HeaderValue.html#method.as_str).
+- Fixed routing logic of [`Router::nest`](https://docs.rs/picoserve/0.17.0/picoserve/routing/struct.Router.html#method.nest) and [`Router::nest_service`](https://docs.rs/picoserve/0.17.0/picoserve/routing/struct.Router.html#method.nest_service), where previously a path of `"/path"` was incorrectly routed to a nest with a prefix of `"/path"`, leaving an invalid path of `""`.
 - Removed race condition bug in Websockets example.
 
 ### Added
-- Added support for Websockets which have access to the state with [`WebSocketUpgrade::on_upgrade_using_state`](https://docs.rs/picoserve/latest/picoserve/response/ws/struct.WebSocketUpgrade.html#method.on_upgrade_using_state).
+- Added support for Websockets which have access to the state with [`WebSocketUpgrade::on_upgrade_using_state`](https://docs.rs/picoserve/0.17.0/picoserve/response/ws/struct.WebSocketUpgrade.html#method.on_upgrade_using_state).
 - Added support for the `OPTIONS` HTTP method.
-- Added [`Server`](https://docs.rs/picoserve/latest/picoserve/struct.Server.html), a HTTP Server.
-- Added support for graceful shutdown of connections using [`Server::with_graceful_shutdown`](https://docs.rs/picoserve/latest/picoserve/struct.Server.html#method.with_graceful_shutdown).
-- Added mime-type constants to [`File`](https://docs.rs/picoserve/latest/picoserve/response/fs/struct.File.html).
-- Added [`WithStateUpdate`](https://docs.rs/picoserve/latest/picoserve/response/with_state/trait.WithStateUpdate.html) for easily adding state updates to responses.
+- Added [`Server`](https://docs.rs/picoserve/0.17.0/picoserve/struct.Server.html), a HTTP Server.
+- Added support for graceful shutdown of connections using [`Server::with_graceful_shutdown`](https://docs.rs/picoserve/0.17.0/picoserve/struct.Server.html#method.with_graceful_shutdown).
+- Added mime-type constants to [`File`](https://docs.rs/picoserve/0.17.0/picoserve/response/fs/struct.File.html).
+- Added [`WithStateUpdate`](https://docs.rs/picoserve/0.17.0/picoserve/response/with_state/trait.WithStateUpdate.html) for easily adding state updates to responses.
 
 ### Changed
 - `embassy` sockets have tcp keepalive and timeout set to 30s and 45s respectively, thus helping prevent broken connections lingering.
@@ -42,15 +42,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 There are two new big concepts:
 
-- [`Server`](https://docs.rs/picoserve/latest/picoserve/struct.Server.html), which replaces the `picoserve::serve` and `picoserve::listen_and_serve` functions.
-- [`Router::with_state`](https://docs.rs/picoserve/latest/picoserve/routing/struct.Router.html#method.with_state) and [`Router::shared`](https://docs.rs/picoserve/latest/picoserve/routing/struct.Router.html#method.shared), which, together with [`Server`](https://docs.rs/picoserve/latest/picoserve/struct.Server.html) replaces the `picoserve::*_with_state` functions.
+- [`Server`](https://docs.rs/picoserve/0.17.0/picoserve/struct.Server.html), which replaces the `picoserve::serve` and `picoserve::listen_and_serve` functions.
+- [`Router::with_state`](https://docs.rs/picoserve/0.17.0/picoserve/routing/struct.Router.html#method.with_state) and [`Router::shared`](https://docs.rs/picoserve/0.17.0/picoserve/routing/struct.Router.html#method.shared), which, together with [`Server`](https://docs.rs/picoserve/0.17.0/picoserve/struct.Server.html) replaces the `picoserve::*_with_state` functions.
+
+Also, handler functions must now be async closures, rather than closures that return a `Future`.
 
 #### Server
 
-`Server` is a HTTP Server, and is able to either serve requests read from a given [`Socket`](https://docs.rs/picoserve/latest/picoserve/io/trait.Socket.html),
+`Server` is a HTTP Server, and is able to either serve requests read from a given [`Socket`](https://docs.rs/picoserve/0.17.0/picoserve/io/trait.Socket.html),
 or if the `embassy` feature is enabled, listen for incoming connections and serve requests on the connection.
 
-`Server` is designed to be very lightweight, and is typically just a reference to a [`Router`](https://docs.rs/picoserve/latest/picoserve/routing/struct.Router.html). As such a typical usecase will have a single `Router` shared between tasks, but each task has its own `Server`.
+`Server` is designed to be very lightweight, and is typically just a reference to a [`Router`](https://docs.rs/picoserve/0.17.0/picoserve/routing/struct.Router.html). As such a typical usecase will have a single `Router` shared between tasks, but each task has its own `Server`.
 
 #### `Router::with_state`
 
