@@ -1540,7 +1540,63 @@ impl<State, CurrentPathParameters, Service: PathRouterService<State, CurrentPath
 impl<State, CurrentPathParameters, RouterInner: PathRouter<State, CurrentPathParameters>>
     Router<RouterInner, State, CurrentPathParameters>
 {
-    /// Add another route to the router
+    /// Add another route to the router.
+    ///
+    /// ```rust
+    /// use picoserve::routing::get;
+    ///
+    /// let app = picoserve::Router::new()
+    ///     .route("/", get(async || "Hello World"))
+    ///     .route("/server-name", get(async || "My Server"));
+    ///
+    /// picoserve::doctests_utils::router(app);
+    /// ```
+    ///
+    /// If the [`MethodHandler`] is created in a separate function, it can return `impl MethodHandler`:
+    ///
+    /// ```rust
+    /// use picoserve::routing::get;
+    ///
+    /// fn server_name_handler() -> impl picoserve::routing::MethodHandler {
+    ///     get(async || "My Server")
+    /// }
+    ///
+    /// let app = picoserve::Router::new()
+    ///     .route("/", get(async || "Hello World"))
+    ///     .route("/server-name", server_name_handler());
+    ///
+    /// picoserve::doctests_utils::router(app);
+    ///
+    /// ```
+    ///
+    /// Note that if the [`MethodHandler`] accepts path parameters, you'll need to explicitly declare their type.
+    ///
+    /// ```rust
+    /// use picoserve::routing::{get, parse_path_segment};
+    ///
+    /// struct UserId(usize);
+    ///
+    /// impl core::str::FromStr for UserId {
+    ///     type Err = core::num::ParseIntError;
+    ///
+    ///     fn from_str(s: &str) -> Result<Self, Self::Err> {
+    ///         s.parse().map(Self)
+    ///     }
+    /// }
+    ///
+    /// struct AppState {}
+    ///
+    /// // Replace AppState with your state type, or `()` if there is no state.
+    /// fn user_name_handler() -> impl picoserve::routing::MethodHandler<AppState, (UserId,)> {
+    ///     get(async |user_id: UserId| {})
+    /// }
+    ///
+    /// let app = picoserve::Router::new()
+    ///     .route(("/user", parse_path_segment::<UserId>(), "/name"), user_name_handler());
+    ///
+    /// picoserve::doctests_utils::router_with_state(app);
+    /// ```
+    ///
     pub fn route<PD: PathDescription<CurrentPathParameters>>(
         self,
         path_description: PD,
@@ -1561,7 +1617,59 @@ impl<State, CurrentPathParameters, RouterInner: PathRouter<State, CurrentPathPar
         }
     }
 
-    /// Nest a [Router] at some path
+    /// Nest a [Router] at some path.
+    ///
+    /// After removing the prefix described by `path_description`, the rest of the path is passed to `router`.
+    ///
+    /// ```rust
+    /// use picoserve::routing::get;
+    ///
+    /// let app = picoserve::Router::new().nest(
+    ///     "/server-info",
+    ///     picoserve::Router::new().route("/name", get(async move || "My Server")),
+    /// );
+    ///
+    /// picoserve::doctests_utils::router(app);
+    /// ```
+    ///
+    /// The nested router can also be declared separately.
+    ///
+    /// ```rust
+    /// use picoserve::routing::get;
+    ///
+    /// fn server_info() -> picoserve::Router<impl picoserve::routing::PathRouter> {
+    ///     picoserve::Router::new().route("/name", get(async move || "My Server"))
+    /// }
+    ///
+    /// let app = picoserve::Router::new().nest("/server-info", server_info());
+    /// ```
+    ///
+    /// Note that if the nested [`Router`] inherits path parameters from its parent, you'll need to explicitly declare their type.
+    ///
+    /// ```rust
+    /// use picoserve::routing::{get, parse_path_segment};
+    ///
+    /// struct UserId(usize);
+    ///
+    /// impl core::str::FromStr for UserId {
+    ///     type Err = core::num::ParseIntError;
+    ///
+    ///     fn from_str(s: &str) -> Result<Self, Self::Err> {
+    ///         s.parse().map(Self)
+    ///     }
+    /// }
+    ///
+    /// struct AppState {}
+    ///
+    /// // Replace AppState with your state type, or `()` if there is no state.
+    /// fn user_info() -> picoserve::Router<impl picoserve::routing::PathRouter<AppState, (UserId,)>, AppState, (UserId,)> {
+    ///     picoserve::Router::new().route("/name", get(async |user_id: UserId| {}))
+    /// }
+    ///
+    /// let app = picoserve::Router::new().nest(("/user", parse_path_segment::<UserId>()), user_info());
+    ///
+    /// picoserve::doctests_utils::router_with_state(app);
+    /// ```
     pub fn nest<PD: PathDescription<CurrentPathParameters>>(
         self,
         path_description: PD,
@@ -1582,7 +1690,7 @@ impl<State, CurrentPathParameters, RouterInner: PathRouter<State, CurrentPathPar
         }
     }
 
-    /// Nest a [PathRouterService] at some path, like [nest](Self::nest) but accepts an arbitary service
+    /// Nest a [PathRouterService] at some path, like [nest](Self::nest) but accepts an arbitary service.
     pub fn nest_service<PD: PathDescription<CurrentPathParameters>>(
         self,
         path_description: PD,

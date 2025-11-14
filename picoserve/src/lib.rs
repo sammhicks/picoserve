@@ -39,6 +39,9 @@ pub mod url_encoded;
 #[cfg(test)]
 mod tests;
 
+#[doc(hidden)]
+pub mod doctests_utils;
+
 use core::marker::PhantomData;
 
 pub use logging::LogDisplay;
