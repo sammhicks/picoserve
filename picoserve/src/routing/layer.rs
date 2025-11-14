@@ -4,10 +4,14 @@ use crate::{
     ResponseSent,
 };
 
-use super::{sealed::Sealed, MethodHandler, PathRouter, ResponseWriter};
+use super::{MethodHandler, PathRouter, ResponseWriter};
+
+mod sealed {
+    pub trait NextIsSealed {}
+}
 
 /// The remainer of a middleware stack, including the handler.
-pub trait Next<'a, R: Read + 'a, State, PathParameters>: Sealed + Sized {
+pub trait Next<'a, R: Read + 'a, State, PathParameters>: sealed::NextIsSealed + Sized {
     /// Run the next layer, writing the final response to the [ResponseWriter]
     async fn run<W: ResponseWriter<Error = R::Error>>(
         self,
@@ -64,7 +68,7 @@ struct NextMethodRouterLayer<'a, R: Read, N> {
     request: Request<'a, R>,
 }
 
-impl<R: Read, N> Sealed for NextMethodRouterLayer<'_, R, N> {}
+impl<R: Read, N> sealed::NextIsSealed for NextMethodRouterLayer<'_, R, N> {}
 
 impl<'a, R: Read, State, PathParameters, N: MethodHandler<State, PathParameters>>
     Next<'a, R, State, PathParameters> for NextMethodRouterLayer<'a, R, N>
@@ -90,7 +94,7 @@ pub(crate) struct MethodRouterLayer<L, I> {
     pub(crate) inner: I,
 }
 
-impl<L, I> Sealed for MethodRouterLayer<L, I> {}
+impl<L, I> super::sealed::MethodHandlerIsSealed for MethodRouterLayer<L, I> {}
 
 impl<
         L: Layer<State, PathParameters>,
@@ -129,7 +133,7 @@ struct NextPathRouterLayer<'a, R: Read, N> {
     request: Request<'a, R>,
 }
 
-impl<R: Read, N> Sealed for NextPathRouterLayer<'_, R, N> {}
+impl<R: Read, N> sealed::NextIsSealed for NextPathRouterLayer<'_, R, N> {}
 
 impl<'a, R: Read, State, CurrentPathParameters, N: PathRouter<State, CurrentPathParameters>>
     Next<'a, R, State, CurrentPathParameters> for NextPathRouterLayer<'a, R, N>
@@ -161,7 +165,7 @@ pub(crate) struct PathRouterLayer<L, I> {
     pub(crate) inner: I,
 }
 
-impl<L, I> Sealed for PathRouterLayer<L, I> {}
+impl<L, I> super::sealed::PathRouterIsSealed for PathRouterLayer<L, I> {}
 
 impl<
         L: Layer<State, CurrentPathParameters>,
