@@ -52,8 +52,7 @@ use time::TimerExt;
 
 use crate::sync::oneshot_broadcast;
 
-/// A Marker showing that the response has been sent.
-pub struct ResponseSent(());
+pub use response::response_stream::ResponseSent;
 
 /// Errors arising while handling a request.
 #[derive(Debug)]
@@ -331,7 +330,7 @@ async fn serve_and_shutdown<
                                         .run_with_maybe_timeout(shutdown_timeout, handle_request)
                                         .await
                                     {
-                                        let ResponseSent(()) = handle_request_response?;
+                                        let ResponseSent(_) = handle_request_response?;
 
                                         request_count + 1
                                     } else {
@@ -341,7 +340,7 @@ async fn serve_and_shutdown<
                                 )
                             }
                             futures::Either::Second(response_sent) => {
-                                let ResponseSent(()) = response_sent?;
+                                let ResponseSent(_) = response_sent?;
 
                                 if let KeepAlive::KeepAlive = connection_header {
                                     continue;
@@ -364,7 +363,7 @@ async fn serve_and_shutdown<
                         request::ReadError::IO(err) => return Err(err),
                     };
 
-                    let ResponseSent(()) = timer
+                    let ResponseSent(_) = timer
                         .run_with_maybe_timeout(
                             config.timeouts.write.clone(),
                             (response::StatusCode::BAD_REQUEST, message).write_to(

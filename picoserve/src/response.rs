@@ -43,6 +43,9 @@ pub mod json;
 #[cfg(feature = "ws")]
 pub mod ws;
 
+pub(crate) mod response_stream;
+pub(crate) use response_stream::ResponseStream;
+
 pub use fs::{Directory, File};
 pub use sse::EventStream;
 pub use status::StatusCode;
@@ -518,80 +521,6 @@ pub trait ResponseWriter: Sized {
         connection: Connection<'_, R>,
         response: Response<H, B>,
     ) -> Result<ResponseSent, Self::Error>;
-}
-
-pub(crate) struct ResponseStream<W: Write> {
-    writer: W,
-    connection_header: super::KeepAlive,
-}
-
-impl<W: Write> ResponseStream<W> {
-    pub fn new(writer: W, connection_header: super::KeepAlive) -> Self {
-        Self {
-            writer,
-            connection_header,
-        }
-    }
-}
-
-impl<W: Write> ResponseWriter for ResponseStream<W> {
-    type Error = W::Error;
-
-    async fn write_response<R: Read<Error = Self::Error>, H: HeadersIter, B: Body>(
-        mut self,
-        connection: Connection<'_, R>,
-        Response {
-            status_code,
-            headers,
-            body,
-        }: Response<H, B>,
-    ) -> Result<ResponseSent, Self::Error> {
-        struct HeadersWriter<WW: Write> {
-            writer: WW,
-            connection_header: Option<KeepAlive>,
-        }
-
-        impl<WW: Write> ForEachHeader for HeadersWriter<WW> {
-            type Output = ();
-            type Error = WW::Error;
-
-            async fn call<Value: fmt::Display>(
-                &mut self,
-                name: &str,
-                value: Value,
-            ) -> Result<(), Self::Error> {
-                if name.eq_ignore_ascii_case("connection") {
-                    self.connection_header = None;
-                }
-                write!(self.writer, "{name}: {value}\r\n").await
-            }
-
-            async fn finalize(mut self) -> Result<(), Self::Error> {
-                if let Some(connection_header) = self.connection_header {
-                    self.call("Connection", connection_header).await?;
-                }
-
-                Ok(())
-            }
-        }
-
-        use crate::io::WriteExt;
-        write!(self.writer, "HTTP/1.1 {status_code}\r\n").await?;
-
-        headers
-            .for_each_header(HeadersWriter {
-                writer: &mut self.writer,
-                connection_header: Some(self.connection_header),
-            })
-            .await?;
-
-        self.writer.write_all(b"\r\n").await?;
-        self.writer.flush().await?;
-
-        body.write_response_body(connection, &mut self.writer)
-            .await
-            .map(super::ResponseSent)
-    }
 }
 
 /// Trait for generating responses.
