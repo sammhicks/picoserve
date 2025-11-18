@@ -21,7 +21,7 @@ pub use layer::{Layer, Next};
 
 mod sealed {
     /// Only `picoserve` may declare types which implement [`RequestHandlerFunction`](super::RequestHandlerFunction).
-    pub trait RequestHandlerFunctionIsSealed<State, PathParameters, Shape> {}
+    pub trait RequestHandlerFunctionIsSealed<State, PathParameters, HandlerTypeSigniature> {}
 
     /// Only `picoserve` may create types which implement [`RequestHandler`](super::RequestHandler).
     pub trait RequestHandlerIsSealed {}
@@ -48,8 +48,8 @@ use request_handler_function_components::{
 };
 
 /// Functions which can be used as a [RequestHandler].
-pub trait RequestHandlerFunction<State, PathParameters, Shape>:
-    sealed::RequestHandlerFunctionIsSealed<State, PathParameters, Shape>
+pub trait RequestHandlerFunction<State, PathParameters, HandlerTypeSigniature>:
+    sealed::RequestHandlerFunctionIsSealed<State, PathParameters, HandlerTypeSigniature>
 {
     /// Call the handler function and write the response to the [ResponseWriter].
     async fn call_handler_func<R: Read, W: ResponseWriter<Error = R::Error>>(
@@ -309,24 +309,32 @@ pub trait RequestHandler<State, PathParameters>: sealed::RequestHandlerIsSealed 
     ) -> Result<ResponseSent, W::Error>;
 }
 
-struct HandlerFunctionRequestHandler<T, Handler> {
-    phantom_data: PhantomData<fn(&T)>,
+struct HandlerFunctionRequestHandler<Handler, HandlerTypeSigniature> {
     handler: Handler,
+    _handler_type_signiature: PhantomData<fn(&HandlerTypeSigniature)>,
 }
 
-impl<T, Handler> sealed::RequestHandlerIsSealed for HandlerFunctionRequestHandler<T, Handler> {}
+impl<Handler, HandlerTypeSigniature> sealed::RequestHandlerIsSealed
+    for HandlerFunctionRequestHandler<Handler, HandlerTypeSigniature>
+{
+}
 
-impl<T, Handler> HandlerFunctionRequestHandler<T, Handler> {
+impl<Handler, HandlerTypeSigniature> HandlerFunctionRequestHandler<Handler, HandlerTypeSigniature> {
     fn new(handler: Handler) -> Self {
         Self {
-            phantom_data: PhantomData,
             handler,
+            _handler_type_signiature: PhantomData,
         }
     }
 }
 
-impl<State, PathParameters, T, H: RequestHandlerFunction<State, PathParameters, T>>
-    RequestHandler<State, PathParameters> for HandlerFunctionRequestHandler<T, H>
+impl<
+        State,
+        PathParameters,
+        HandlerTypeSigniature,
+        Handler: RequestHandlerFunction<State, PathParameters, HandlerTypeSigniature>,
+    > RequestHandler<State, PathParameters>
+    for HandlerFunctionRequestHandler<Handler, HandlerTypeSigniature>
 {
     async fn call_request_handler<R: Read, W: ResponseWriter<Error = R::Error>>(
         &self,
