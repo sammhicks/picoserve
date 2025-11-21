@@ -1074,43 +1074,75 @@ impl<State, CurrentPathParameters> PathRouter<State, CurrentPathParameters> for 
 ///     + `("/add", parse_path_segment::<i32>(), parse_path_segment::<i32>())`
 ///     + `("/user", parse_path_segment::<UserId>(), "/set_name", parse_path_segment::<UserName>())`
 pub trait PathDescription<CurrentPathParameters>: Copy + fmt::Debug {
-    /// The output of the parsed path description. Must implement [PushPathSegmentParameter] if not the final path description.
-    type Output;
+    /// The current path parameters, and the new path parameter, if any.
+    type NewPathParameters;
 
-    /// Parse the path and then call the validation function.
-    fn parse_and_validate<'r, T, F: FnOnce(Self::Output, Path<'r>) -> Result<T, Self::Output>>(
+    /// Parse the section of the path described by `Self`` and then call the validation function with the new path parameters and the rest of the path.
+    fn parse_and_validate<
+        'r,
+        T,
+        F: FnOnce(Self::NewPathParameters, Path<'r>) -> Result<T, Self::NewPathParameters>,
+    >(
         &self,
         current_path_parameters: CurrentPathParameters,
         path: Path<'r>,
         validate: F,
     ) -> Result<T, CurrentPathParameters>;
 
-    fn parse_prefix<'r>(
+    /// Parse the entire path, verifying that Self describes the entire path.
+    fn parse_entire_path(
+        &self,
+        current_path_parameters: CurrentPathParameters,
+        path: Path<'_>,
+    ) -> Result<Self::NewPathParameters, CurrentPathParameters> {
+        self.parse_and_validate(
+            current_path_parameters,
+            path,
+            |new_path_parameters, path| {
+                if path.0.is_empty() {
+                    Ok(new_path_parameters)
+                } else {
+                    Err(new_path_parameters)
+                }
+            },
+        )
+    }
+
+    /// Parse the prefix of the path described by `Self`, verifying that the rest of the path isn't empty.
+    fn parse_path_prefix<'r>(
         &self,
         current_path_parameters: CurrentPathParameters,
         path: Path<'r>,
-    ) -> Result<(Self::Output, Path<'r>), CurrentPathParameters> {
-        self.parse_and_validate(current_path_parameters, path, |path_parameters, path| {
-            if path.0.is_empty() {
-                Err(path_parameters)
-            } else {
-                Ok((path_parameters, path))
-            }
-        })
+    ) -> Result<(Self::NewPathParameters, Path<'r>), CurrentPathParameters> {
+        self.parse_and_validate(
+            current_path_parameters,
+            path,
+            |new_path_parameters, path| {
+                if path.0.is_empty() {
+                    Err(new_path_parameters)
+                } else {
+                    Ok((new_path_parameters, path))
+                }
+            },
+        )
     }
 }
 
 impl<CurrentPathParameters> PathDescription<CurrentPathParameters> for &str {
-    type Output = CurrentPathParameters;
+    type NewPathParameters = CurrentPathParameters;
 
-    fn parse_and_validate<'r, T, F: FnOnce(Self::Output, Path<'r>) -> Result<T, Self::Output>>(
+    fn parse_and_validate<
+        'r,
+        T,
+        F: FnOnce(Self::NewPathParameters, Path<'r>) -> Result<T, Self::NewPathParameters>,
+    >(
         &self,
         current_path_parameters: CurrentPathParameters,
         path: Path<'r>,
-        f: F,
+        validate: F,
     ) -> Result<T, CurrentPathParameters> {
         match path.strip_prefix(self) {
-            Some(path) => f(current_path_parameters, path),
+            Some(path) => validate(current_path_parameters, path),
             None => Err(current_path_parameters),
         }
     }
@@ -1118,12 +1150,14 @@ impl<CurrentPathParameters> PathDescription<CurrentPathParameters> for &str {
 
 /// The trait which powers concatinating several path parameters into a tuple of path parameters.
 pub trait PushPathSegmentParameter<P>: sealed::PushPathSegmentParameterIsSealed + Sized {
-    /// The concatenation of the current value and the new value.
-    type Output;
+    /// The concatenation of the current path parameters and the new path parameter.
+    type NewPathParameters;
 
-    fn push_path_segment_parameter(self, segment_parameter: P) -> Self::Output;
+    /// Push a new segment parameter to the end of the list.
+    fn push_path_segment_parameter(self, segment_parameter: P) -> Self::NewPathParameters;
 
-    fn pop_path_segment_parameter_from_output(output: Self::Output) -> Self;
+    /// Undo `push_path_segment_parameter`.
+    fn pop_path_segment_parameter_from_output(output: Self::NewPathParameters) -> Self;
 }
 
 macro_rules! impl_tuple_push_path_segment_parameter {
@@ -1132,17 +1166,17 @@ macro_rules! impl_tuple_push_path_segment_parameter {
             impl<$($path_parameter,)*> sealed::PushPathSegmentParameterIsSealed for ($($path_parameter,)*) {}
 
             impl<$($path_parameter,)* P> PushPathSegmentParameter<P> for ($($path_parameter,)*) {
-                type Output = ($($path_parameter,)* P,);
+                type NewPathParameters = ($($path_parameter,)* P,);
 
                 #[allow(non_snake_case)]
-                fn push_path_segment_parameter(self, segment_parameter: P) -> Self::Output {
+                fn push_path_segment_parameter(self, segment_parameter: P) -> Self::NewPathParameters {
                     let ($($path_parameter,)*) = self;
 
                     ($($path_parameter,)* segment_parameter,)
                 }
 
                 #[allow(non_snake_case)]
-                fn pop_path_segment_parameter_from_output(($($path_parameter,)* _segment_parameter,): Self::Output) -> Self {
+                fn pop_path_segment_parameter_from_output(($($path_parameter,)* _segment_parameter,): Self::NewPathParameters) -> Self {
                     (($($path_parameter,)*))
                 }
             }
@@ -1163,33 +1197,37 @@ impl_tuple_push_path_segment_parameter!(
 );
 
 /// A [PathDescription] which parses a single segment using the implementation of `core::str::FromStr` of `T`.
-pub struct ParsePathSegment<T>(PhantomData<T>);
+pub struct ParsePathSegment<P>(PhantomData<fn() -> P>);
 
-impl<T> Clone for ParsePathSegment<T> {
+impl<P> Clone for ParsePathSegment<P> {
     fn clone(&self) -> Self {
         *self
     }
 }
 
-impl<T> Copy for ParsePathSegment<T> {}
+impl<P> Copy for ParsePathSegment<P> {}
 
-impl<T> fmt::Debug for ParsePathSegment<T> {
+impl<P> fmt::Debug for ParsePathSegment<P> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "ParsePath")
+        write!(f, "ParsePathSegment::<{}>", core::any::type_name::<P>())
     }
 }
 
 /// Parse a single segment using the implementation of `core::str::FromStr` of `T`.
-pub fn parse_path_segment<T: FromStr>() -> ParsePathSegment<T> {
+pub fn parse_path_segment<P: FromStr>() -> ParsePathSegment<P> {
     ParsePathSegment(PhantomData)
 }
 
 impl<CurrentPathParameters: PushPathSegmentParameter<P>, P: FromStr>
     PathDescription<CurrentPathParameters> for ParsePathSegment<P>
 {
-    type Output = CurrentPathParameters::Output;
+    type NewPathParameters = CurrentPathParameters::NewPathParameters;
 
-    fn parse_and_validate<'r, T, F: FnOnce(Self::Output, Path<'r>) -> Result<T, Self::Output>>(
+    fn parse_and_validate<
+        'r,
+        T,
+        F: FnOnce(Self::NewPathParameters, Path<'r>) -> Result<T, Self::NewPathParameters>,
+    >(
         &self,
         current_path_parameters: CurrentPathParameters,
         path: Path<'r>,
@@ -1214,16 +1252,24 @@ impl<CurrentPathParameters: PushPathSegmentParameter<P>, P: FromStr>
     }
 }
 
-impl<CurrentPathParameters> PathDescription<CurrentPathParameters> for () {
-    type Output = CurrentPathParameters;
+impl<CurrentPathParameters, P: PathDescription<CurrentPathParameters>>
+    PathDescription<CurrentPathParameters> for (P,)
+{
+    type NewPathParameters = P::NewPathParameters;
 
-    fn parse_and_validate<'r, T, F: FnOnce(Self::Output, Path<'r>) -> Result<T, Self::Output>>(
+    fn parse_and_validate<
+        'r,
+        T,
+        F: FnOnce(Self::NewPathParameters, Path<'r>) -> Result<T, Self::NewPathParameters>,
+    >(
         &self,
         current_path_parameters: CurrentPathParameters,
         path: Path<'r>,
-        f: F,
+        validate: F,
     ) -> Result<T, CurrentPathParameters> {
-        f(current_path_parameters, path)
+        let (path_parameter,) = self;
+
+        path_parameter.parse_and_validate(current_path_parameters, path, validate)
     }
 }
 
@@ -1233,15 +1279,15 @@ macro_rules! impl_tuple_path_description {
             impl<CurrentPathParameters, P: PathDescription<CurrentPathParameters> $(,$name: Copy + fmt::Debug)*>
                 PathDescription<CurrentPathParameters> for (P, $($name,)*)
             where
-                ($($name,)*): PathDescription<P::Output>,
+                ($($name,)*): PathDescription<P::NewPathParameters>,
             {
-                type Output = <($($name,)*) as PathDescription<P::Output>>::Output;
+                type NewPathParameters = <($($name,)*) as PathDescription<P::NewPathParameters>>::NewPathParameters;
 
                 #[allow(non_snake_case)]
                 fn parse_and_validate<
                     'r,
                     T,
-                    F: FnOnce(Self::Output, Path<'r>) -> Result<T, Self::Output>,
+                    F: FnOnce(Self::NewPathParameters, Path<'r>) -> Result<T, Self::NewPathParameters>,
                 >(
                     &self,
                     current_path_parameters: CurrentPathParameters,
@@ -1262,7 +1308,6 @@ macro_rules! impl_tuple_path_description {
 }
 
 impl_tuple_path_description!(
-    ;
     P1;
     P1 P2;
     P1 P2 P3;
@@ -1285,7 +1330,7 @@ impl<
         State,
         CurrentPathParameters,
         PD: PathDescription<CurrentPathParameters>,
-        Handler: MethodHandler<State, PD::Output>,
+        Handler: MethodHandler<State, PD::NewPathParameters>,
         Fallback: PathRouter<State, CurrentPathParameters>,
     > PathRouter<State, CurrentPathParameters> for Route<PD, Handler, Fallback>
 {
@@ -1297,17 +1342,10 @@ impl<
         request: Request<'_, R>,
         response_writer: W,
     ) -> Result<ResponseSent, W::Error> {
-        match self.path_description.parse_and_validate(
-            current_path_parameters,
-            path,
-            |path_parameters, path| {
-                if path.0.is_empty() {
-                    Ok(path_parameters)
-                } else {
-                    Err(path_parameters)
-                }
-            },
-        ) {
+        match self
+            .path_description
+            .parse_entire_path(current_path_parameters, path)
+        {
             Ok(path_parameters) => {
                 self.handler
                     .call_method_handler(state, path_parameters, request, response_writer)
@@ -1340,7 +1378,7 @@ impl<
         State,
         CurrentPathParameters,
         PD: PathDescription<CurrentPathParameters>,
-        Service: PathRouter<State, PD::Output>,
+        Service: PathRouter<State, PD::NewPathParameters>,
         Fallback: PathRouter<State, CurrentPathParameters>,
     > PathRouter<State, CurrentPathParameters> for NestedService<PD, Service, Fallback>
 {
@@ -1354,7 +1392,7 @@ impl<
     ) -> Result<ResponseSent, W::Error> {
         match self
             .path_description
-            .parse_prefix(current_path_parameters, path)
+            .parse_path_prefix(current_path_parameters, path)
         {
             Ok((current_path_parameters, path)) => {
                 self.service
@@ -1410,7 +1448,7 @@ impl<
         State,
         CurrentPathParameters,
         PD: PathDescription<CurrentPathParameters>,
-        Service: PathRouterService<State, <PD as PathDescription<CurrentPathParameters>>::Output>,
+        Service: PathRouterService<State, <PD as PathDescription<CurrentPathParameters>>::NewPathParameters>,
         Fallback: PathRouter<State, CurrentPathParameters>,
     > PathRouter<State, CurrentPathParameters>
     for PathRouterServicePathRouter<PD, Service, Fallback>
@@ -1425,7 +1463,7 @@ impl<
     ) -> Result<ResponseSent, W::Error> {
         match self
             .path_description
-            .parse_prefix(current_path_parameters, path)
+            .parse_path_prefix(current_path_parameters, path)
         {
             Ok((path_parameters, path)) => {
                 self.service
@@ -1608,7 +1646,7 @@ impl<State, CurrentPathParameters, RouterInner: PathRouter<State, CurrentPathPar
     pub fn route<PD: PathDescription<CurrentPathParameters>>(
         self,
         path_description: PD,
-        handler: impl MethodHandler<State, PD::Output>,
+        handler: impl MethodHandler<State, PD::NewPathParameters>,
     ) -> Router<impl PathRouter<State, CurrentPathParameters>, State, CurrentPathParameters> {
         let Router {
             router: fallback,
@@ -1681,7 +1719,7 @@ impl<State, CurrentPathParameters, RouterInner: PathRouter<State, CurrentPathPar
     pub fn nest<PD: PathDescription<CurrentPathParameters>>(
         self,
         path_description: PD,
-        router: Router<impl PathRouter<State, PD::Output>, State, PD::Output>,
+        router: Router<impl PathRouter<State, PD::NewPathParameters>, State, PD::NewPathParameters>,
     ) -> Router<impl PathRouter<State, CurrentPathParameters>, State, CurrentPathParameters> {
         let Router {
             router: fallback,
@@ -1702,7 +1740,7 @@ impl<State, CurrentPathParameters, RouterInner: PathRouter<State, CurrentPathPar
     pub fn nest_service<PD: PathDescription<CurrentPathParameters>>(
         self,
         path_description: PD,
-        service: impl PathRouterService<State, PD::Output>,
+        service: impl PathRouterService<State, PD::NewPathParameters>,
     ) -> Router<impl PathRouter<State, CurrentPathParameters>, State, CurrentPathParameters> {
         let Router {
             router: fallback,
