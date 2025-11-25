@@ -116,16 +116,20 @@ fn eq_ignore_ascii_case(lhs: &[u8], rhs: &[u8]) -> bool {
         .all(|(lhs, rhs)| lhs.eq_ignore_ascii_case(rhs))
 }
 
-fn escape_debug(data: &[u8], f: &mut fmt::Formatter<'_>) -> fmt::Result {
-    use fmt::Write;
+struct EscapeDebug<'a>(&'a [u8]);
 
-    data.iter().try_for_each(|&b| {
-        if b.is_ascii_graphic() {
-            f.write_char(b.into())
-        } else {
-            write!(f, "\\x{b:02x}")
-        }
-    })
+impl fmt::Display for EscapeDebug<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        use fmt::Write;
+
+        self.0.iter().try_for_each(|&b| {
+            if b.is_ascii_graphic() {
+                f.write_char(b.into())
+            } else {
+                write!(f, "\\x{b:02x}")
+            }
+        })
+    }
 }
 
 #[derive(Clone, PartialEq, Eq)]
@@ -135,7 +139,7 @@ pub struct HeaderName<'a> {
 
 impl fmt::Debug for HeaderName<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        escape_debug(self.name, f)
+        write!(f, "\"{}\"", EscapeDebug(self.name))
     }
 }
 
@@ -187,7 +191,7 @@ pub struct HeaderValue<'a> {
 
 impl fmt::Debug for HeaderValue<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        escape_debug(self.value, f)
+        write!(f, "\"{}\"", EscapeDebug(self.value))
     }
 }
 
@@ -239,6 +243,7 @@ impl<'a> PartialEq<HeaderValue<'a>> for &str {
     }
 }
 
+#[derive(Clone)]
 pub struct HeadersIter<'a>(&'a [u8]);
 
 impl<'a> Iterator for HeadersIter<'a> {

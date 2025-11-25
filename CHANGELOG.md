@@ -11,6 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Routing types which have `PathParameters` use tuples rather than one of `NoPathParameters`, `OnePathParameter`, `ManyPathParameters`.
 
+### Fixed
+- The [`Debug`](https://doc.rust-lang.org/core/fmt/trait.Debug.html) implementation of [`HeaderName`](https://docs.rs/picoserve/latest/picoserve/request/struct.HeaderName.html) and [`HeaderValue`](https://docs.rs/picoserve/latest/picoserve/request/struct.HeaderValue.html) includes the surrounding double quotes.
+
 ## [0.17.1] - 2025-11-07
 
 ### Fixed
