@@ -88,7 +88,7 @@ impl<W: Write> EventWriter<'_, W> {
             writer: W,
         }
 
-        impl<W: Write> embedded_io_async::ErrorType for DataWriter<W> {
+        impl<W: Write> crate::io::ErrorType for DataWriter<W> {
             type Error = W::Error;
         }
 
@@ -256,7 +256,7 @@ mod tests {
 
     struct CountWriteSize(usize);
 
-    impl embedded_io_async::ErrorType for CountWriteSize {
+    impl crate::io::ErrorType for CountWriteSize {
         type Error = core::convert::Infallible;
     }
 
@@ -274,7 +274,7 @@ mod tests {
         write_size: usize,
     }
 
-    impl embedded_io_async::ErrorType for ThrottledWriter {
+    impl crate::io::ErrorType for ThrottledWriter {
         type Error = core::convert::Infallible;
     }
 

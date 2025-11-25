@@ -2,7 +2,7 @@
 
 use core::fmt;
 
-pub use embedded_io_async::{self, Error, ErrorKind, ErrorType, Read, Write};
+pub use embedded_io_async::{self, Error, ErrorKind, ErrorType, Read, ReadExactError, Write};
 
 /// An extension trait for [`Read`] which allows discarding of all incoming data until the client closes the connection.
 pub trait ReadExt: Read {
@@ -99,7 +99,7 @@ impl<W: Write> WriteExt for W {}
 /// A connection socket, which can be split into its read and write half, and shut down when finished.
 pub trait Socket<Runtime>: Sized {
     /// Error type of all the IO operations on this type.
-    type Error: embedded_io_async::Error;
+    type Error: Error;
 
     /// The "read" half of the socket
     type ReadHalf<'a>: Read<Error = Self::Error>
@@ -203,8 +203,14 @@ pub(crate) mod tokio_support {
 #[cfg(feature = "embassy")]
 impl<'s> Socket<super::EmbassyRuntime> for embassy_net::tcp::TcpSocket<'s> {
     type Error = embassy_net::tcp::Error;
-    type ReadHalf<'a> = embassy_net::tcp::TcpReader<'a> where 's: 'a;
-    type WriteHalf<'a> = embassy_net::tcp::TcpWriter<'a> where 's: 'a;
+    type ReadHalf<'a>
+        = embassy_net::tcp::TcpReader<'a>
+    where
+        's: 'a;
+    type WriteHalf<'a>
+        = embassy_net::tcp::TcpWriter<'a>
+    where
+        's: 'a;
 
     fn split(&mut self) -> (Self::ReadHalf<'_>, Self::WriteHalf<'_>) {
         embassy_net::tcp::TcpSocket::split(self)

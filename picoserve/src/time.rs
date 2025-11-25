@@ -67,20 +67,20 @@ impl Timer<super::EmbassyRuntime> for EmbassyTimer {
     }
 }
 
-pub(crate) struct WriteWithTimeout<'t, Runtime, W: embedded_io_async::Write, T: Timer<Runtime>> {
+pub(crate) struct WriteWithTimeout<'t, Runtime, W: crate::io::Write, T: Timer<Runtime>> {
     pub inner: W,
     pub timer: &'t T,
     pub timeout_duration: Option<T::Duration>,
     pub _runtime: core::marker::PhantomData<fn(&Runtime)>,
 }
 
-impl<Runtime, W: embedded_io_async::Write, T: Timer<Runtime>> embedded_io_async::ErrorType
+impl<Runtime, W: crate::io::Write, T: Timer<Runtime>> crate::io::ErrorType
     for WriteWithTimeout<'_, Runtime, W, T>
 {
     type Error = super::Error<W::Error>;
 }
 
-impl<Runtime, W: embedded_io_async::Write, T: Timer<Runtime>> embedded_io_async::Write
+impl<Runtime, W: crate::io::Write, T: Timer<Runtime>> crate::io::Write
     for WriteWithTimeout<'_, Runtime, W, T>
 {
     async fn write(&mut self, buf: &[u8]) -> Result<usize, Self::Error> {

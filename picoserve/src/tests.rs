@@ -10,7 +10,6 @@ use std::{
 
 use alloc::borrow::ToOwned;
 
-use embedded_io_async::Read;
 use futures_util::FutureExt;
 use http_body_util::BodyExt;
 use hyper::StatusCode;
@@ -19,6 +18,8 @@ use tokio::sync::mpsc;
 use self::routing::PathRouter;
 
 use super::*;
+
+use super::io::{Read, Write};
 
 struct VecRead(Vec<u8>);
 
@@ -49,7 +50,7 @@ impl io::ErrorType for PipeRx {
     type Error = Infallible;
 }
 
-impl io::Read for PipeRx {
+impl Read for PipeRx {
     async fn read(&mut self, buf: &mut [u8]) -> Result<usize, Self::Error> {
         if self.current.is_empty() {
             let Some(mut next) = self.channel.recv().await else {
@@ -110,7 +111,7 @@ impl io::ErrorType for PipeTx {
     type Error = Infallible;
 }
 
-impl io::Write for PipeTx {
+impl Write for PipeTx {
     async fn write(&mut self, buf: &[u8]) -> Result<usize, Self::Error> {
         let _ = self.0.send(buf.into());
 
@@ -158,13 +159,21 @@ struct TestSocket<TX, RX> {
     rx: RX,
 }
 
-impl<TX: io::Write<Error = Infallible>, RX: io::Read<Error = Infallible>> io::Socket<TokioRuntime>
+impl<TX: Write<Error = Infallible>, RX: Read<Error = Infallible>> io::Socket<TokioRuntime>
     for TestSocket<TX, RX>
 {
     type Error = Infallible;
 
-    type ReadHalf<'a> = &'a mut RX where TX: 'a, RX: 'a;
-    type WriteHalf<'a> = &'a mut TX where TX: 'a, RX: 'a;
+    type ReadHalf<'a>
+        = &'a mut RX
+    where
+        TX: 'a,
+        RX: 'a;
+    type WriteHalf<'a>
+        = &'a mut TX
+    where
+        TX: 'a,
+        RX: 'a;
 
     fn split(&mut self) -> (Self::ReadHalf<'_>, Self::WriteHalf<'_>) {
         (&mut self.rx, &mut self.tx)
@@ -580,7 +589,7 @@ async fn upgrade_with_request_body() {
         type Error = Infallible;
     }
 
-    impl io::Read for VecSequence {
+    impl Read for VecSequence {
         async fn read(&mut self, buf: &mut [u8]) -> Result<usize, Self::Error> {
             if self.current.is_empty() {
                 self.current = match self.rest_reversed.pop() {
@@ -598,7 +607,7 @@ async fn upgrade_with_request_body() {
     }
 
     impl response::Body for UpgradeCheck {
-        async fn write_response_body<R: io::Read, W: io::Write<Error = R::Error>>(
+        async fn write_response_body<R: Read, W: Write<Error = R::Error>>(
             self,
             connection: response::Connection<'_, R>,
             _writer: W,
@@ -630,7 +639,7 @@ async fn upgrade_with_request_body() {
 
     impl routing::RequestHandlerService<()> for BodyCheck {
         async fn call_request_handler_service<
-            R: embedded_io_async::Read,
+            R: Read,
             W: response::ResponseWriter<Error = R::Error>,
         >(
             &self,

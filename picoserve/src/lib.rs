@@ -57,7 +57,7 @@ pub use response::response_stream::ResponseSent;
 /// Errors arising while handling a request.
 #[derive(Debug)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub enum Error<E: embedded_io_async::Error> {
+pub enum Error<E: io::Error> {
     /// Bad Request from the client
     BadRequest,
     /// Error while reading from the socket.
@@ -70,11 +70,11 @@ pub enum Error<E: embedded_io_async::Error> {
     WriteTimeout,
 }
 
-impl<E: embedded_io_async::Error> embedded_io_async::Error for Error<E> {
-    fn kind(&self) -> embedded_io_async::ErrorKind {
+impl<E: io::Error> io::Error for Error<E> {
+    fn kind(&self) -> io::ErrorKind {
         match self {
-            Self::BadRequest => embedded_io_async::ErrorKind::InvalidData,
-            Self::ReadTimeout | Self::WriteTimeout => embedded_io_async::ErrorKind::TimedOut,
+            Self::BadRequest => io::ErrorKind::InvalidData,
+            Self::ReadTimeout | Self::WriteTimeout => io::ErrorKind::TimedOut,
             Self::Read(err) | Self::Write(err) => err.kind(),
         }
     }
@@ -180,28 +180,21 @@ impl<D> Config<D> {
 }
 
 /// Maps Read errors to [Error]s
-struct MapReadErrorReader<R: embedded_io_async::Read>(R);
+struct MapReadErrorReader<R: io::Read>(R);
 
-impl<R: embedded_io_async::Read> embedded_io_async::ErrorType for MapReadErrorReader<R> {
+impl<R: io::Read> io::ErrorType for MapReadErrorReader<R> {
     type Error = Error<R::Error>;
 }
 
-impl<R: embedded_io_async::Read> embedded_io_async::Read for MapReadErrorReader<R> {
+impl<R: io::Read> io::Read for MapReadErrorReader<R> {
     async fn read(&mut self, buf: &mut [u8]) -> Result<usize, Self::Error> {
         self.0.read(buf).await.map_err(Error::Read)
     }
 
-    async fn read_exact(
-        &mut self,
-        buf: &mut [u8],
-    ) -> Result<(), embedded_io_async::ReadExactError<Self::Error>> {
+    async fn read_exact(&mut self, buf: &mut [u8]) -> Result<(), io::ReadExactError<Self::Error>> {
         self.0.read_exact(buf).await.map_err(|err| match err {
-            embedded_io_async::ReadExactError::UnexpectedEof => {
-                embedded_io_async::ReadExactError::UnexpectedEof
-            }
-            embedded_io_async::ReadExactError::Other(err) => {
-                embedded_io_async::ReadExactError::Other(Error::Read(err))
-            }
+            io::ReadExactError::UnexpectedEof => io::ReadExactError::UnexpectedEof,
+            io::ReadExactError::Other(err) => io::ReadExactError::Other(Error::Read(err)),
         })
     }
 }

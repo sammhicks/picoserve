@@ -410,14 +410,15 @@ impl<State, PathParameters> RequestHandler<State, PathParameters> for MethodNotA
 }
 
 mod head_method_util {
-    use embedded_io_async::Write;
-
-    use crate::response::{Body, Connection, HeadersIter, Response, ResponseWriter};
+    use crate::{
+        io::{Read, Write},
+        response::{Body, Connection, HeadersIter, Response, ResponseWriter},
+    };
 
     struct EmptyBody;
 
     impl Body for EmptyBody {
-        async fn write_response_body<R: embedded_io_async::Read, W: Write<Error = R::Error>>(
+        async fn write_response_body<R: Read, W: Write<Error = R::Error>>(
             self,
             _connection: Connection<'_, R>,
             _writer: W,
@@ -431,11 +432,7 @@ mod head_method_util {
     impl<W: ResponseWriter> ResponseWriter for IgnoreBody<W> {
         type Error = W::Error;
 
-        async fn write_response<
-            R: embedded_io_async::Read<Error = Self::Error>,
-            H: HeadersIter,
-            B: Body,
-        >(
+        async fn write_response<R: Read<Error = Self::Error>, H: HeadersIter, B: Body>(
             self,
             connection: Connection<'_, R>,
             Response {

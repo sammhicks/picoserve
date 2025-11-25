@@ -2,9 +2,7 @@
 
 use core::{fmt, ops::Range};
 
-use embedded_io_async::Read;
-
-use crate::{sync::oneshot_broadcast, url_encoded::UrlEncodedString};
+use crate::{io::Read, sync::oneshot_broadcast, url_encoded::UrlEncodedString};
 
 struct Subslice<'a> {
     buffer: &'a [u8],
@@ -533,10 +531,8 @@ impl<'r, R: Read> RequestBody<'r, R> {
                 .read_exact(remaining_body_to_read)
                 .await
                 .map_err(|err| match err {
-                    embedded_io_async::ReadExactError::UnexpectedEof => {
-                        ReadAllBodyError::UnexpectedEof
-                    }
-                    embedded_io_async::ReadExactError::Other(err) => ReadAllBodyError::IO(err),
+                    crate::io::ReadExactError::UnexpectedEof => ReadAllBodyError::UnexpectedEof,
+                    crate::io::ReadExactError::Other(err) => ReadAllBodyError::IO(err),
                 })?;
 
             *self.buffer_usage = self.content_length;

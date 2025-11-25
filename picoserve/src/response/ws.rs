@@ -263,15 +263,11 @@ impl<IoError, Error> From<Error> for InternalError<IoError, Error> {
     }
 }
 
-impl<IoError> From<embedded_io_async::ReadExactError<IoError>>
-    for InternalError<IoError, ReadFrameError>
-{
-    fn from(value: embedded_io_async::ReadExactError<IoError>) -> Self {
+impl<IoError> From<crate::io::ReadExactError<IoError>> for InternalError<IoError, ReadFrameError> {
+    fn from(value: crate::io::ReadExactError<IoError>) -> Self {
         match value {
-            embedded_io_async::ReadExactError::UnexpectedEof => {
-                Self::Other(ReadFrameError::UnexpectedEof)
-            }
-            embedded_io_async::ReadExactError::Other(error) => Self::Io(error),
+            crate::io::ReadExactError::UnexpectedEof => Self::Other(ReadFrameError::UnexpectedEof),
+            crate::io::ReadExactError::Other(error) => Self::Io(error),
         }
     }
 }
@@ -336,9 +332,7 @@ pub enum Message<'a> {
     Pong(&'a [u8]),
 }
 
-async fn next_byte<R: Read>(
-    reader: &mut R,
-) -> Result<u8, embedded_io_async::ReadExactError<R::Error>> {
+async fn next_byte<R: Read>(reader: &mut R) -> Result<u8, crate::io::ReadExactError<R::Error>> {
     let mut buffer = 0;
 
     reader
@@ -636,7 +630,7 @@ struct FrameWriter<'w, W: Write> {
     tx: &'w mut SocketTx<W>,
 }
 
-impl<W: Write> embedded_io_async::ErrorType for FrameWriter<'_, W> {
+impl<W: Write> crate::io::ErrorType for FrameWriter<'_, W> {
     type Error = W::Error;
 }
 
@@ -871,8 +865,8 @@ impl<P: WebSocketProtocol, C: WebSocketCallbackWithShutdownSignal> super::IntoRe
 
         impl<C: WebSocketCallbackWithShutdownSignal> super::Body for Body<C> {
             async fn write_response_body<
-                R: embedded_io_async::Read,
-                W: embedded_io_async::Write<Error = R::Error>,
+                R: crate::io::Read,
+                W: crate::io::Write<Error = R::Error>,
             >(
                 self,
                 connection: super::Connection<'_, R>,
@@ -935,8 +929,8 @@ impl<State, P: WebSocketProtocol, C: WebSocketCallbackWithStateAndShutdownSignal
             for Body<'_, State, C>
         {
             async fn write_response_body<
-                R: embedded_io_async::Read,
-                W: embedded_io_async::Write<Error = R::Error>,
+                R: crate::io::Read,
+                W: crate::io::Write<Error = R::Error>,
             >(
                 self,
                 connection: super::Connection<'_, R>,

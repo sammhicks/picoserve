@@ -48,7 +48,7 @@ impl core::fmt::Display for StatusCode {
 }
 
 impl super::IntoResponse for StatusCode {
-    async fn write_to<R: embedded_io_async::Read, W: super::ResponseWriter<Error = R::Error>>(
+    async fn write_to<R: crate::io::Read, W: super::ResponseWriter<Error = R::Error>>(
         self,
         connection: super::Connection<'_, R>,
         response_writer: W,

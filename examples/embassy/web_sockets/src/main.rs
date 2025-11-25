@@ -94,7 +94,7 @@ async fn web_task(
 struct WebsocketEcho;
 
 impl ws::WebSocketCallback for WebsocketEcho {
-    async fn run<R: embedded_io_async::Read, W: embedded_io_async::Write<Error = R::Error>>(
+    async fn run<R: picoserve::io::Read, W: picoserve::io::Write<Error = R::Error>>(
         self,
         mut rx: ws::SocketRx<R>,
         mut tx: ws::SocketTx<W>,

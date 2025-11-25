@@ -123,7 +123,7 @@ impl<C: Chunks> ChunkedResponse<C> {
 }
 
 impl<C: Chunks> super::IntoResponse for ChunkedResponse<C> {
-    async fn write_to<R: embedded_io_async::Read, W: super::ResponseWriter<Error = R::Error>>(
+    async fn write_to<R: crate::io::Read, W: super::ResponseWriter<Error = R::Error>>(
         self,
         connection: super::Connection<'_, R>,
         response_writer: W,
