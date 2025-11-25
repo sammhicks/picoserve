@@ -14,6 +14,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - The [`Debug`](https://doc.rust-lang.org/core/fmt/trait.Debug.html) implementation of [`HeaderName`](https://docs.rs/picoserve/latest/picoserve/request/struct.HeaderName.html) and [`HeaderValue`](https://docs.rs/picoserve/latest/picoserve/request/struct.HeaderValue.html) includes the surrounding double quotes.
 
+### Added
+- Added [`MethodHandlerService`](https://docs.rs/picoserve/latest/picoserve/routing/trait.MethodHandlerService.html) and [`Router::route_service`](https://docs.rs/picoserve/latest/picoserve/routing/struct.Router.html#method.route_service).
+
 ## [0.17.1] - 2025-11-07
 
 ### Fixed

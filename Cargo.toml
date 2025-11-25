@@ -17,6 +17,7 @@ members = [
     "examples/layers",
     "examples/nested_router",
     "examples/path_parameters",
+    "examples/request_info",
     "examples/response_using_state",
     "examples/routing_fallback",
     "examples/server_sent_events",

@@ -1366,6 +1366,80 @@ impl<
     }
 }
 
+/// A service which handles requests at a given path.
+pub trait MethodHandlerService<State = (), CurrentPathParameters = ()> {
+    /// Handle the request and write the response to the provided  [ResponseWriter].
+    async fn call_request_handler_service<R: Read, W: ResponseWriter<Error = R::Error>>(
+        &self,
+        state: &State,
+        current_path_parameters: CurrentPathParameters,
+        method: &str,
+        request: Request<'_, R>,
+        response_writer: W,
+    ) -> Result<ResponseSent, W::Error>;
+}
+
+struct MethodHandlerServicePathRouter<PD, Service, Fallback> {
+    path_description: PD,
+    service: Service,
+    fallback: Fallback,
+}
+
+impl<PD, Service, Fallback> sealed::PathRouterIsSealed
+    for MethodHandlerServicePathRouter<PD, Service, Fallback>
+{
+}
+
+impl<
+        State,
+        CurrentPathParameters,
+        PD: PathDescription<CurrentPathParameters>,
+        Service: MethodHandlerService<
+            State,
+            <PD as PathDescription<CurrentPathParameters>>::NewPathParameters,
+        >,
+        Fallback: PathRouter<State, CurrentPathParameters>,
+    > PathRouter<State, CurrentPathParameters>
+    for MethodHandlerServicePathRouter<PD, Service, Fallback>
+{
+    async fn call_path_router<R: Read, W: ResponseWriter<Error = R::Error>>(
+        &self,
+        state: &State,
+        current_path_parameters: CurrentPathParameters,
+        path: Path<'_>,
+        request: Request<'_, R>,
+        response_writer: W,
+    ) -> Result<ResponseSent, W::Error> {
+        match self
+            .path_description
+            .parse_entire_path(current_path_parameters, path)
+        {
+            Ok(path_parameters) => {
+                self.service
+                    .call_request_handler_service(
+                        state,
+                        path_parameters,
+                        request.parts.method(),
+                        request,
+                        response_writer,
+                    )
+                    .await
+            }
+            Err(current_path_parameters) => {
+                self.fallback
+                    .call_path_router(
+                        state,
+                        current_path_parameters,
+                        path,
+                        request,
+                        response_writer,
+                    )
+                    .await
+            }
+        }
+    }
+}
+
 struct NestedService<PD, Service, Fallback> {
     path_description: PD,
     service: Service,
@@ -1657,6 +1731,55 @@ impl<State, CurrentPathParameters, RouterInner: PathRouter<State, CurrentPathPar
             router: Route {
                 path_description,
                 handler,
+                fallback,
+            },
+            _data,
+        }
+    }
+
+    /// Add another route to the router, using a [`MethodHandlerService`] to handle the method routing.
+    ///
+    /// Note that unless you wish to handle unusual HTTP methods, it's typically better to use [`route`](Router::route) with the `*_service` functions, e.g. [`get_service`].
+    /// You can handle additional methods by calling the `*_service` methods on the type returned by the `*_service` functions, e.g. [`post_service`](MethodRouter::post_service).
+    ///
+    /// ```rust
+    /// use picoserve::response::IntoResponse;
+    ///
+    /// struct ShowMethod;
+    ///
+    /// impl picoserve::routing::MethodHandlerService for ShowMethod {
+    ///     async fn call_request_handler_service<
+    ///         R: picoserve::io::Read,
+    ///         W: picoserve::response::ResponseWriter<Error = R::Error>,
+    ///     >(
+    ///         &self,
+    ///         _state: &(),
+    ///         _current_path_parameters: (),
+    ///         method: &str,
+    ///         request: picoserve::request::Request<'_, R>,
+    ///         response_writer: W,
+    ///     ) -> Result<picoserve::ResponseSent, W::Error> {
+    ///         format_args!("Method: {method}")
+    ///             .write_to(request.body_connection.finalize().await?, response_writer)
+    ///             .await
+    ///     }
+    /// }
+    ///
+    /// ```
+    pub fn route_service<PD: PathDescription<CurrentPathParameters>>(
+        self,
+        path_description: PD,
+        service: impl MethodHandlerService<State, PD::NewPathParameters>,
+    ) -> Router<impl PathRouter<State, CurrentPathParameters>, State, CurrentPathParameters> {
+        let Router {
+            router: fallback,
+            _data,
+        } = self;
+
+        Router {
+            router: MethodHandlerServicePathRouter {
+                path_description,
+                service,
                 fallback,
             },
             _data,
