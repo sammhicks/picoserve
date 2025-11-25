@@ -1,6 +1,10 @@
-use proc_macro::TokenStream;
+use proc_macro2::TokenStream;
 use quote::{quote, ToTokens};
 use syn::{parse_macro_input, spanned::Spanned, DeriveInput};
+
+/// Helpers used interally by picoserve
+#[doc(hidden)]
+mod internal;
 
 trait HasAttributes: Spanned {
     fn attributes(&self) -> &[syn::Attribute];
@@ -18,7 +22,7 @@ impl HasAttributes for syn::Variant {
     }
 }
 
-fn single_field(fields: &syn::Fields) -> Option<proc_macro2::TokenStream> {
+fn single_field(fields: &syn::Fields) -> Option<TokenStream> {
     match fields {
         syn::Fields::Named(fields) => {
             let mut fields = fields.named.iter();
@@ -69,9 +73,7 @@ impl StatusCodeAttribute {
     }
 }
 
-fn try_derive_error_with_status_code(
-    input: &DeriveInput,
-) -> Result<proc_macro2::TokenStream, syn::Error> {
+fn try_derive_error_with_status_code(input: &DeriveInput) -> Result<TokenStream, syn::Error> {
     let ident = &input.ident;
 
     let default_status_code = StatusCodeAttribute::parse(input)?;
@@ -183,7 +185,7 @@ fn try_derive_error_with_status_code(
             syn::GenericParam::Type(type_param) => type_param.ident.to_token_stream(),
             syn::GenericParam::Const(const_param) => const_param.ident.to_token_stream(),
         })
-        .collect::<syn::punctuated::Punctuated<proc_macro2::TokenStream, syn::token::Comma>>();
+        .collect::<syn::punctuated::Punctuated<TokenStream, syn::token::Comma>>();
 
     Ok(quote! {
         #[allow(unused_qualifications)]
@@ -229,11 +231,18 @@ fn try_derive_error_with_status_code(
 ///
 /// Variants with a `status_code` of `transparent` must contain a single field which implements `ErrorWithStatusCode`.
 #[proc_macro_derive(ErrorWithStatusCode, attributes(status_code))]
-pub fn derive_error_with_status_code(input: TokenStream) -> TokenStream {
+pub fn derive_error_with_status_code(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
 
     match try_derive_error_with_status_code(&input) {
         Ok(tokens) => tokens.into(),
         Err(error) => error.into_compile_error().into(),
     }
+}
+
+/// Used internally by `picoserve`.
+#[doc(hidden)]
+#[proc_macro]
+pub fn generate_method_router(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    internal::router::generate_method_router(input)
 }
