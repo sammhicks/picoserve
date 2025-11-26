@@ -52,7 +52,7 @@ pub trait RequestHandlerFunction<State, PathParameters, HandlerTypeSigniature>:
     sealed::RequestHandlerFunctionIsSealed<State, PathParameters, HandlerTypeSigniature>
 {
     /// Call the handler function and write the response to the [ResponseWriter].
-    async fn call_handler_func<R: Read, W: ResponseWriter<Error = R::Error>>(
+    async fn call_request_handler_function<R: Read, W: ResponseWriter<Error = R::Error>>(
         &self,
         state: &State,
         path_parameters: PathParameters,
@@ -69,7 +69,7 @@ impl<State, FunctionReturn: IntoResponseWithState<State>, H: AsyncFn() -> Functi
 impl<State, FunctionReturn: IntoResponseWithState<State>, H: AsyncFn() -> FunctionReturn>
     RequestHandlerFunction<State, (), (FunctionReturn,)> for H
 {
-    async fn call_handler_func<R: Read, W: ResponseWriter<Error = R::Error>>(
+    async fn call_request_handler_function<R: Read, W: ResponseWriter<Error = R::Error>>(
         &self,
         state: &State,
         (): (),
@@ -113,7 +113,7 @@ impl<
         (OnePathParameter<PathParameter>, FunctionReturn),
     > for H
 {
-    async fn call_handler_func<R: Read, W: ResponseWriter<Error = R::Error>>(
+    async fn call_request_handler_function<R: Read, W: ResponseWriter<Error = R::Error>>(
         &self,
         state: &State,
         (path_parameter,): (PathParameter,),
@@ -157,7 +157,7 @@ impl<
         (ManyPathParameters<PathParameters>, FunctionReturn),
     > for H
 {
-    async fn call_handler_func<R: Read, W: ResponseWriter<Error = R::Error>>(
+    async fn call_request_handler_function<R: Read, W: ResponseWriter<Error = R::Error>>(
         &self,
         state: &State,
         path_parameters: PathParameters,
@@ -186,7 +186,7 @@ macro_rules! declare_handler_func {
             impl<State, FunctionReturn: IntoResponseWithState<State>, $($name: for<'a> FromRequestParts<'a, State>,)* M, E: for<'a> FromRequest<'a, State, M>, H: AsyncFn($($name,)* E) -> FunctionReturn>
                 RequestHandlerFunction<State, (), (ParametersFromRequestParts<($($name,)*)>, ParameterFromRequest<M, E>, FunctionReturn)> for H
             {
-                async fn call_handler_func<R: Read, W: ResponseWriter<Error = R::Error>>(
+                async fn call_request_handler_function<R: Read, W: ResponseWriter<Error = R::Error>>(
                     &self,
                     state: &State,
                     (): (),
@@ -218,7 +218,7 @@ macro_rules! declare_handler_func {
                 RequestHandlerFunction<State, (PathParameter,), (OnePathParameter<PathParameter>, ParametersFromRequestParts<($($name,)*)>, ParameterFromRequest<M, E>,  FunctionReturn,)> for H
             {
                 #[allow(unused_variables)]
-                async fn call_handler_func<R: Read, W: ResponseWriter<Error = R::Error>>(
+                async fn call_request_handler_function<R: Read, W: ResponseWriter<Error = R::Error>>(
                     &self,
                     state: &State,
                     (path_parameter,): (PathParameter,),
@@ -250,7 +250,7 @@ macro_rules! declare_handler_func {
                 RequestHandlerFunction<State, PathParameters, (ManyPathParameters<PathParameters>, ParametersFromRequestParts<($($name,)*)>, ParameterFromRequest<M, E>,  FunctionReturn)> for H
             {
                 #[allow(unused_variables)]
-                async fn call_handler_func<R: Read, W: ResponseWriter<Error = R::Error>>(
+                async fn call_request_handler_function<R: Read, W: ResponseWriter<Error = R::Error>>(
                     &self,
                     state: &State,
                     path_parameters: PathParameters,
@@ -344,7 +344,7 @@ impl<
         response_writer: W,
     ) -> Result<ResponseSent, W::Error> {
         self.handler
-            .call_handler_func(state, path_parameters, request, response_writer)
+            .call_request_handler_function(state, path_parameters, request, response_writer)
             .await
     }
 }
@@ -818,7 +818,7 @@ impl<
 /// A service which handles requests at a given path.
 pub trait MethodHandlerService<State = (), CurrentPathParameters = ()> {
     /// Handle the request and write the response to the provided  [ResponseWriter].
-    async fn call_request_handler_service<R: Read, W: ResponseWriter<Error = R::Error>>(
+    async fn call_method_handler_service<R: Read, W: ResponseWriter<Error = R::Error>>(
         &self,
         state: &State,
         current_path_parameters: CurrentPathParameters,
@@ -865,7 +865,7 @@ impl<
         {
             Ok(path_parameters) => {
                 self.service
-                    .call_request_handler_service(
+                    .call_method_handler_service(
                         state,
                         path_parameters,
                         request.parts.method(),
@@ -946,7 +946,7 @@ impl<
 /// A service which handles both path routing and subsequent request handling.
 pub trait PathRouterService<State = (), CurrentPathParameters = ()> {
     /// Handle the request and write the response to the provided  [ResponseWriter].
-    async fn call_request_handler_service<R: Read, W: ResponseWriter<Error = R::Error>>(
+    async fn call_path_router_service<R: Read, W: ResponseWriter<Error = R::Error>>(
         &self,
         state: &State,
         current_path_parameters: CurrentPathParameters,
@@ -990,7 +990,7 @@ impl<
         {
             Ok((path_parameters, path)) => {
                 self.service
-                    .call_request_handler_service(
+                    .call_path_router_service(
                         state,
                         path_parameters,
                         path,
@@ -1033,7 +1033,7 @@ impl<State, CurrentPathParameters, Service: PathRouterService<State, CurrentPath
         response_writer: W,
     ) -> Result<ResponseSent, W::Error> {
         self.service
-            .call_request_handler_service(
+            .call_path_router_service(
                 state,
                 current_path_parameters,
                 path,
@@ -1197,7 +1197,7 @@ impl<State, CurrentPathParameters, RouterInner: PathRouter<State, CurrentPathPar
     /// struct ShowMethod;
     ///
     /// impl picoserve::routing::MethodHandlerService for ShowMethod {
-    ///     async fn call_request_handler_service<
+    ///     async fn call_method_handler_service<
     ///         R: picoserve::io::Read,
     ///         W: picoserve::response::ResponseWriter<Error = R::Error>,
     ///     >(

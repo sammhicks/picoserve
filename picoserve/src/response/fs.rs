@@ -230,7 +230,7 @@ impl Directory {
 }
 
 impl<State, CurrentPathParameters> PathRouterService<State, CurrentPathParameters> for Directory {
-    async fn call_request_handler_service<R: Read, W: super::ResponseWriter<Error = R::Error>>(
+    async fn call_path_router_service<R: Read, W: super::ResponseWriter<Error = R::Error>>(
         &self,
         state: &State,
         current_path_parameters: CurrentPathParameters,

@@ -5,7 +5,7 @@ use picoserve::response::IntoResponse;
 struct ShowRequestInfo;
 
 impl picoserve::routing::MethodHandlerService for ShowRequestInfo {
-    async fn call_request_handler_service<
+    async fn call_method_handler_service<
         R: picoserve::io::Read,
         W: picoserve::response::ResponseWriter<Error = R::Error>,
     >(

@@ -71,7 +71,7 @@ struct FallbackService {
 }
 
 impl picoserve::routing::PathRouterService<AppState> for FallbackService {
-    async fn call_request_handler_service<
+    async fn call_path_router_service<
         R: picoserve::io::Read,
         W: picoserve::response::ResponseWriter<Error = R::Error>,
     >(
