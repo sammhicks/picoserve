@@ -21,58 +21,13 @@ struct RequestLine<S> {
     http_version: S,
 }
 
-impl<'a> RequestLine<Subslice<'a>> {
-    fn range(&self) -> RequestLine<Range<usize>> {
-        let RequestLine {
-            method,
-            url,
-            http_version,
-        } = self;
-
-        RequestLine {
-            method: method.range.clone(),
-            url: url.range.clone(),
-            http_version: http_version.range.clone(),
-        }
-    }
-
-    fn as_str(&self) -> Result<RequestLine<&'a str>, core::str::Utf8Error> {
-        let RequestLine {
-            method,
-            url,
-            http_version,
-        } = self;
-
+impl<S> RequestLine<S> {
+    fn try_map<T, E>(&self, f: impl Fn(&S) -> Result<T, E>) -> Result<RequestLine<T>, E> {
         Ok(RequestLine {
-            method: core::str::from_utf8(method.as_ref())?,
-            url: core::str::from_utf8(url.as_ref())?,
-            http_version: core::str::from_utf8(http_version.as_ref())?,
+            method: f(&self.method)?,
+            url: f(&self.url)?,
+            http_version: f(&self.http_version)?,
         })
-    }
-}
-
-impl RequestLine<Range<usize>> {
-    fn index_buffer<'a>(&self, buffer: &'a [u8]) -> RequestLine<Subslice<'a>> {
-        let RequestLine {
-            method,
-            url,
-            http_version,
-        } = self;
-
-        RequestLine {
-            method: Subslice {
-                buffer,
-                range: method.clone(),
-            },
-            url: Subslice {
-                buffer,
-                range: url.clone(),
-            },
-            http_version: Subslice {
-                buffer,
-                range: http_version.clone(),
-            },
-        }
     }
 }
 
@@ -837,11 +792,10 @@ impl<'b, R: Read> Reader<'b, R> {
     }
 
     pub async fn read(&mut self) -> Result<Request<'_, R>, ReadError<R::Error>> {
-        self.wind_buffer_to_start();
-
-        let request_line = self.read_request_line().await?;
-
-        let request_line = request_line.range();
+        let Ok(request_line) = self
+            .read_request_line()
+            .await?
+            .try_map::<Range<usize>, core::convert::Infallible>(|field| Ok(field.range.clone()));
 
         let headers = self.read_headers().await?;
 
@@ -860,10 +814,16 @@ impl<'b, R: Read> Reader<'b, R> {
             method,
             url,
             http_version,
-        } = request_line
-            .index_buffer(parts_buffer)
-            .as_str()
-            .map_err(|_| ReadError::BadRequestLine)?;
+        } = request_line.try_map(|range| {
+            core::str::from_utf8(
+                Subslice {
+                    buffer: parts_buffer,
+                    range: range.clone(),
+                }
+                .as_ref(),
+            )
+            .map_err(|_| ReadError::BadRequestLine)
+        })?;
 
         let (url, fragments) = url.split_once('#').map_or((url, None), |(url, fragments)| {
             (url, Some(UrlEncodedString(fragments)))
