@@ -509,6 +509,26 @@ impl<'r, R: Read> RequestBody<'r, R> {
     }
 }
 
+mod must_close_connection_notification {
+
+    #[derive(Default)]
+    pub(crate) struct MustCloseConnectionNotification {
+        connection_must_be_closed_after_sending_response: bool,
+    }
+
+    impl MustCloseConnectionNotification {
+        pub(crate) fn has_been_triggered(&self) -> bool {
+            self.connection_must_be_closed_after_sending_response
+        }
+
+        pub(crate) fn notify(&mut self) {
+            self.connection_must_be_closed_after_sending_response = true;
+        }
+    }
+}
+
+pub(crate) use must_close_connection_notification::MustCloseConnectionNotification;
+
 /// The connection reading the request body. Can be used to read the request body and then extract the underlying connection for reading further data,
 /// such as if the connenction has been upgraded.
 pub struct RequestBodyConnection<'r, R: Read> {
@@ -517,7 +537,7 @@ pub struct RequestBodyConnection<'r, R: Read> {
     read_position: usize,
     buffer: &'r mut [u8],
     buffer_usage: usize,
-    has_been_upgraded: &'r mut bool,
+    must_close_connection_notification: &'r mut MustCloseConnectionNotification,
     shutdown_signal: oneshot_broadcast::Listener<'r, ()>,
 }
 
@@ -538,57 +558,54 @@ impl<'r, R: Read> RequestBodyConnection<'r, R> {
         }
     }
 
-    /// "Finalize" the connection, reading and discarding the rest of the body if need be, and returning the underlying connection
+    /// "Finalize" the connection, returning the underlying connection.
     pub async fn finalize(
         self,
     ) -> Result<crate::response::Connection<'r, impl Read<Error = R::Error> + 'r>, R::Error> {
-        // If the entire body is already in the buffer
-        if self.content_length <= self.buffer_usage {
-            return Ok(crate::response::Connection {
-                reader: crate::response::BufferedReader {
-                    reader: self.reader,
-                    buffer: self.buffer,
-                    read_position: self.content_length,
-                    buffer_usage: self.buffer_usage,
-                },
-                has_been_upgraded: self.has_been_upgraded,
-                shutdown_signal: self.shutdown_signal,
-            });
-        }
+        let Self {
+            content_length,
+            reader,
+            read_position,
+            buffer,
+            buffer_usage,
+            must_close_connection_notification,
+            shutdown_signal,
+        } = self;
 
-        // Data after the body has not yet been read, the entire buffer can be used to read the rest of the body
-
-        // Skip the section that has already been read into the buffer
-        let mut read_position = self.read_position.max(self.buffer_usage);
-
-        while let Some(data_remaining) = self
-            .content_length
-            .checked_sub(read_position)
-            .and_then(core::num::NonZeroUsize::new)
+        let mode = if read_position > buffer_usage {
+            // Case 1: The request handler had read past the end of the buffer.
+            crate::response::AfterBodyReadMode::ReadFromReader
+        } else if let Some(body_bytes_remaining) = content_length
+            .checked_sub(self.buffer_usage)
+            .filter(|&body_bytes_remaining| body_bytes_remaining > 0)
         {
-            let read_buffer_size = data_remaining.get().min(self.buffer.len());
+            // Case 2: The request handler has not read all of the request body, so close the connection after writing the response.
 
-            let read_size = self
-                .reader
-                .read(&mut self.buffer[..read_buffer_size])
-                .await?;
+            // In case not all bytes are read, close the connection after writing the response.
+            must_close_connection_notification.notify();
 
-            if read_size == 0 {
-                break;
+            crate::response::AfterBodyReadMode::SkipRemainingBodyFromReader {
+                scratch_buffer: buffer,
+                body_bytes_remaining,
             }
+        } else {
+            // Case 4: The request handler has read the entire request body, but has not read past the end of the buffer.
 
-            read_position += read_size;
-        }
+            // This shouldn't panic because both:
+            //     1. self.buffer_usage is always less than self.buffer.len()
+            //     2. self.content_length < self.buffer_usage because either:
+            //             2.1 self.content_length.checked_sub(self.buffer_usage) == None
+            //             2.2 self.content_length == self.buffer_usage thus body_bytes_remaining == 0
+            //         Thus Case 2 happened
+            let remaining = &buffer[content_length..buffer_usage];
+
+            crate::response::AfterBodyReadMode::ReadFromBuffer { remaining }
+        };
 
         Ok(crate::response::Connection {
-            reader: crate::response::BufferedReader {
-                reader: self.reader,
-                buffer: self.buffer,
-                read_position: 0,
-                buffer_usage: 0,
-            },
-            has_been_upgraded: self.has_been_upgraded,
-            shutdown_signal: self.shutdown_signal,
+            reader: crate::response::AfterBodyReader { mode, reader },
+            must_close_connection_notification,
+            shutdown_signal,
         })
     }
 }
@@ -599,17 +616,6 @@ pub struct Request<'r, R: Read> {
     pub parts: RequestParts<'r>,
     /// The request body and underlying connection
     pub body_connection: RequestBodyConnection<'r, R>,
-}
-
-impl<'r, R: Read> Request<'r, R> {
-    pub(crate) fn with_shutdown_signal(
-        mut self,
-        signal: oneshot_broadcast::Listener<'r, ()>,
-    ) -> Self {
-        self.body_connection.shutdown_signal = signal;
-
-        self
-    }
 }
 
 /// Errors arising while reading a HTTP Request
@@ -624,50 +630,56 @@ pub(crate) enum ReadError<E> {
     IO(E),
 }
 
-pub(crate) struct Reader<'b, R: Read> {
+pub(crate) struct RequestIsPending(());
+
+pub(crate) struct Reader<'a, R: Read> {
     reader: R,
     read_position: usize,
-    buffer: &'b mut [u8],
+    buffer: &'a mut [u8],
     buffer_usage: usize,
-    has_been_upgraded: bool,
+    must_close_connection_notification: &'a mut MustCloseConnectionNotification,
 }
 
-impl<'b, R: Read> Reader<'b, R> {
-    pub fn new(reader: R, buffer: &'b mut [u8]) -> Self {
+impl<'a, R: Read> Reader<'a, R> {
+    pub fn new(
+        reader: R,
+        buffer: &'a mut [u8],
+        must_close_connection_notification: &'a mut MustCloseConnectionNotification,
+    ) -> Self {
         Self {
             reader,
             read_position: 0,
             buffer,
             buffer_usage: 0,
-            has_been_upgraded: false,
+            must_close_connection_notification,
         }
     }
 
-    fn wind_buffer_to_start(&mut self) {
-        if let Some(used_buffer) = self.buffer.get_mut(..self.buffer_usage) {
-            used_buffer.rotate_left(self.read_position);
-
-            self.buffer_usage -= self.read_position;
-        } else {
-            self.buffer_usage = 0;
-        }
-
-        self.read_position = 0;
-    }
-
-    pub async fn request_is_pending(&mut self) -> Result<bool, R::Error> {
-        if self.has_been_upgraded {
-            Ok(false)
-        } else {
-            self.wind_buffer_to_start();
-
-            if self.buffer_usage > 0 {
-                Ok(true)
+    pub async fn request_is_pending(&mut self) -> Result<Option<RequestIsPending>, R::Error> {
+        Ok(
+            if self.must_close_connection_notification.has_been_triggered() {
+                false
             } else {
-                self.buffer_usage = self.reader.read(self.buffer).await?;
-                Ok(self.buffer_usage > 0)
+                // Move the buffered section of the next request to the start of the buffer.
+                if let Some(used_buffer) = self.buffer.get_mut(..self.buffer_usage) {
+                    used_buffer.rotate_left(self.read_position);
+
+                    self.buffer_usage -= self.read_position;
+                } else {
+                    self.buffer_usage = 0;
+                }
+
+                self.read_position = 0;
+
+                if self.buffer_usage > 0 {
+                    true
+                } else {
+                    self.buffer_usage = self.reader.read(self.buffer).await?;
+                    self.buffer_usage > 0
+                }
             }
-        }
+            .then_some(RequestIsPending(())),
+        )
     }
 
     fn used_buffer(&self) -> &[u8] {
@@ -791,7 +803,11 @@ impl<'b, R: Read> Reader<'b, R> {
         })
     }
 
-    pub async fn read(&mut self) -> Result<Request<'_, R>, ReadError<R::Error>> {
+    pub(crate) async fn read<'r>(
+        &'r mut self,
+        _request_is_pending: RequestIsPending, // This enforces that self.request_is_pending() has been previously called.
+        shutdown_signal: oneshot_broadcast::Listener<'r, ()>,
+    ) -> Result<Request<'r, R>, ReadError<R::Error>> {
         let Ok(request_line) = self
             .read_request_line()
             .await?
@@ -852,12 +868,13 @@ impl<'b, R: Read> Reader<'b, R> {
                 read_position: 0,
                 buffer: body_buffer,
                 buffer_usage: self.buffer_usage - parts_length,
-                has_been_upgraded: &mut self.has_been_upgraded,
-                shutdown_signal: oneshot_broadcast::Listener::never(),
+                must_close_connection_notification: self.must_close_connection_notification,
+                shutdown_signal,
             },
         };
 
-        // This will be true once the RequestBodyConnection has been finalized, which happens no matter how the request is handled
+        // This will generally be true once the RequestBodyConnection has been finalized, which happens no matter how the request is handled.
+        // The only cases where this isn't the case, must_close_connection_notification.notify() has been called, so the next request isn't read.
         self.read_position += content_length;
         self.buffer_usage = self.buffer_usage.max(self.read_position);
 

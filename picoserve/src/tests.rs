@@ -612,15 +612,21 @@ async fn upgrade_with_request_body() {
             connection: response::Connection<'_, R>,
             _writer: W,
         ) -> Result<(), W::Error> {
+            let mut connection = connection.upgrade(self.upgrade_token);
+
             let mut actual = [0; EXPECTED_UPGRADE.len()];
+            let mut read_position = 0;
 
-            connection
-                .upgrade(self.upgrade_token)
-                .read_exact(&mut actual)
-                .await
-                .unwrap();
-
-            assert_eq!(EXPECTED_UPGRADE, actual);
+            while read_position < actual.len() {
+                match connection.read(&mut actual[read_position..]).await {
+                    Ok(0) => panic!(
+                        "Unexpected EOF after reading {:?}",
+                        core::str::from_utf8(&actual[..read_position])
+                    ),
+                    Ok(n) => read_position += n,
+                    Err(error) => panic!("Failed to read: {error:?}"),
+                }
+            }
 
             Ok(())
         }
@@ -696,7 +702,11 @@ async fn upgrade_with_request_body() {
 
             response::Response {
                 status_code: response::StatusCode::OK,
-                headers: [("Content-Type", "text/plain"), ("Content-Length", "0")],
+                headers: [
+                    ("Content-Type", "text/plain"),
+                    ("Content-Length", "0"),
+                    ("Connection", "Upgrade"),
+                ],
                 body: UpgradeCheck { upgrade_token },
             }
             .write_to(connection, response_writer)
@@ -721,6 +731,8 @@ async fn upgrade_with_request_body() {
             {
                 let app = Router::new().route("/", routing::post_service(BodyCheck { read_body }));
 
+                let mut response_bytes = Vec::new();
+
                 let server = Server::new(&app, &config, &mut http_buffer).serve(TestSocket {
                     rx: VecSequence {
                         current: VecRead(Vec::new()),
@@ -734,7 +746,7 @@ async fn upgrade_with_request_body() {
                         .map(Vec::from)
                         .collect(),
                     },
-                    tx: Vec::new(),
+                    tx: &mut response_bytes,
                 });
 
                 assert_eq!(
@@ -745,6 +757,31 @@ async fn upgrade_with_request_body() {
                         .handled_requests_count,
                     1
                 );
+
+                std::println!("{}", core::str::from_utf8(&response_bytes).unwrap());
+
+                let mut headers = [httparse::EMPTY_HEADER; 4];
+
+                let mut response = httparse::Response::new(&mut headers);
+
+                let read_position = response.parse(&response_bytes).unwrap().unwrap();
+
+                let upgrade_header = core::str::from_utf8(
+                    response
+                        .headers
+                        .iter()
+                        .find_map(|header| {
+                            (header.name.eq_ignore_ascii_case("connection")).then_some(header.value)
+                        })
+                        .unwrap(),
+                )
+                .unwrap();
+
+                if !upgrade_header.eq_ignore_ascii_case("upgrade") {
+                    panic!(r#"Invalid "connection" header for upgrade response: {upgrade_header}"#);
+                }
+
+                assert_eq!(read_position, response_bytes.len());
             }
         }
     }

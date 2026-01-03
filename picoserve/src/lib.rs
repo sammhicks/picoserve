@@ -164,6 +164,8 @@ impl<D> Config<D> {
     /// Keep the connection alive after the response has been sent, allowing the client to make further requests on the same TCP connection.
     /// This should only be called if multiple sockets are handling HTTP connections to avoid a single client hogging the connection
     /// and preventing other clients from making requests.
+    ///
+    /// If the request handler doesn't read the entire request body or upgrade the connection, the connection with be closed.
     pub const fn keep_connection_alive(mut self) -> Self {
         self.connection = KeepAlive::KeepAlive;
 
@@ -245,7 +247,14 @@ async fn serve_and_shutdown<
     let result: Result<DisconnectionInfo<ShutdownReason>, Error<S::Error>> = async {
         let (reader, mut writer) = socket.split();
 
-        let mut reader = request::Reader::new(MapReadErrorReader(reader), http_buffer);
+        let mut must_close_connection_notification =
+            request::MustCloseConnectionNotification::default();
+
+        let mut reader = request::Reader::new(
+            MapReadErrorReader(reader),
+            http_buffer,
+            &mut must_close_connection_notification,
+        );
 
         let mut request_count_iter = {
             let mut n = 0_u64;
@@ -259,7 +268,7 @@ async fn serve_and_shutdown<
         loop {
             let request_count = request_count_iter();
 
-            match timer
+            let request_is_pending = match timer
                 .run_with_maybe_timeout(
                     if request_count == 0 {
                         config.timeouts.start_read_request.clone()
@@ -276,15 +285,18 @@ async fn serve_and_shutdown<
                         shutdown_reason,
                     ));
                 }
-                Ok(futures::Either::Second(Ok(true))) => (),
-                Ok(futures::Either::Second(Ok(false))) | Err(_) => {
+                Ok(futures::Either::Second(Ok(Some(request_is_pending)))) => request_is_pending,
+                Ok(futures::Either::Second(Ok(None))) | Err(_) => {
                     return Ok(DisconnectionInfo::no_shutdown_reason(request_count))
                 }
                 Ok(futures::Either::Second(Err(err))) => return Err(err),
             };
 
             match timer
-                .run_with_maybe_timeout(config.timeouts.read_request.clone(), reader.read())
+                .run_with_maybe_timeout(
+                    config.timeouts.read_request.clone(),
+                    reader.read(request_is_pending, shutdown_broadcast.listen()),
+                )
                 .await
             {
                 Ok(Ok(request)) => {
@@ -304,7 +316,7 @@ async fn serve_and_shutdown<
                     };
 
                     let mut handle_request = core::pin::pin!(app.handle_request(
-                        request.with_shutdown_signal(shutdown_broadcast.listen()),
+                        request,
                         response::ResponseStream::new(&mut writer, connection_header),
                     ));
 
@@ -360,7 +372,7 @@ async fn serve_and_shutdown<
                         .run_with_maybe_timeout(
                             config.timeouts.write.clone(),
                             (response::StatusCode::BAD_REQUEST, message).write_to(
-                                response::Connection::empty(&mut false),
+                                response::Connection::empty(&mut Default::default()),
                                 response::ResponseStream::new(writer, KeepAlive::Close),
                             ),
                         )

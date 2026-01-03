@@ -17,6 +17,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - The [`Debug`](https://doc.rust-lang.org/core/fmt/trait.Debug.html) implementation of [`HeaderName`](https://docs.rs/picoserve/latest/picoserve/request/struct.HeaderName.html) and [`HeaderValue`](https://docs.rs/picoserve/latest/picoserve/request/struct.HeaderValue.html) includes the surrounding double quotes.
 
+### Changed
+- If a request handler doesn't read the entire request body and there is data waiting to be read from the socket, the connection is closed, avoiding needlessly reading and discarding a potentially large request body.
+
 ### Added
 - Added [`MethodHandlerService`](https://docs.rs/picoserve/latest/picoserve/routing/trait.MethodHandlerService.html) and [`Router::route_service`](https://docs.rs/picoserve/latest/picoserve/routing/struct.Router.html#method.route_service).
 - Added support for the `PATCH` and `TRACE` HTTP methods.

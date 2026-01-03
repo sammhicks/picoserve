@@ -77,33 +77,83 @@ impl fmt::Write for MeasureFormatSize<'_> {
     }
 }
 
-pub(crate) struct BufferedReader<'r, R: Read> {
-    pub(crate) reader: R,
-    pub(crate) buffer: &'r mut [u8],
-    pub(crate) read_position: usize,
-    pub(crate) buffer_usage: usize,
+pub(crate) enum AfterBodyReadMode<'r> {
+    ReadFromReader,
+    ReadFromBuffer {
+        remaining: &'r [u8],
+    },
+    SkipRemainingBodyFromReader {
+        scratch_buffer: &'r mut [u8],
+        body_bytes_remaining: usize,
+    },
 }
 
-impl<R: Read> BufferedReader<'_, R> {
-    async fn read_into(&mut self, buffer: &mut [u8]) -> Result<usize, R::Error> {
-        let prefix = &self.buffer[self.read_position..self.buffer_usage];
+pub(crate) struct AfterBodyReader<'r, R: Read> {
+    pub(crate) mode: AfterBodyReadMode<'r>,
+    pub(crate) reader: R,
+}
 
-        if prefix.is_empty() {
-            self.reader.read(buffer).await
-        } else {
-            let read_size = prefix.len().min(buffer.len());
+impl<R: Read> AfterBodyReader<'_, R> {
+    async fn read_after_body(
+        &mut self,
+        buffer: &mut [u8],
+        _upgrade_token: &crate::extract::UpgradeToken,
+    ) -> Result<usize, R::Error> {
+        loop {
+            break match &mut self.mode {
+                AfterBodyReadMode::ReadFromReader => self.reader.read(buffer).await,
+                AfterBodyReadMode::ReadFromBuffer { remaining } => {
+                    if remaining.is_empty() {
+                        self.mode = AfterBodyReadMode::ReadFromReader;
 
-            buffer[..read_size].copy_from_slice(prefix);
-            self.read_position += read_size;
+                        continue;
+                    }
 
-            Ok(read_size)
+                    let read_size = remaining.len().min(buffer.len());
+
+                    buffer[..read_size].copy_from_slice(&remaining[..read_size]);
+
+                    *remaining = &remaining[read_size..];
+
+                    Ok(read_size)
+                }
+                AfterBodyReadMode::SkipRemainingBodyFromReader {
+                    scratch_buffer,
+                    body_bytes_remaining,
+                } => {
+                    if *body_bytes_remaining == 0 {
+                        self.mode = AfterBodyReadMode::ReadFromReader;
+
+                        continue;
+                    }
+
+                    let read_buffer_size = (*body_bytes_remaining).min(scratch_buffer.len());
+
+                    let read_size = self
+                        .reader
+                        .read(&mut scratch_buffer[..read_buffer_size])
+                        .await?;
+
+                    *body_bytes_remaining -= read_size;
+
+                    if read_size == 0 {
+                        // EOF from reader while skipping, transition to reading directly from reader, which will again return EOF.
+                        self.mode = AfterBodyReadMode::ReadFromReader;
+
+                        Ok(0)
+                    } else {
+                        continue;
+                    }
+                }
+            };
         }
     }
 }
 
 /// A connection which has been upgraded, and is thus allowed to read arbitary data from the socket.
 pub struct UpgradedConnection<'r, R: Read> {
-    reader: BufferedReader<'r, R>,
+    upgrade_token: crate::extract::UpgradeToken,
+    reader: AfterBodyReader<'r, R>,
 }
 
 impl<R: Read> crate::io::ErrorType for UpgradedConnection<'_, R> {
@@ -112,26 +162,27 @@ impl<R: Read> crate::io::ErrorType for UpgradedConnection<'_, R> {
 
 impl<R: Read> Read for UpgradedConnection<'_, R> {
     async fn read(&mut self, buffer: &mut [u8]) -> Result<usize, Self::Error> {
-        self.reader.read_into(buffer).await
+        self.reader
+            .read_after_body(buffer, &self.upgrade_token)
+            .await
     }
 }
 
-/// A handle to the current conneection. Allows a long-lasting response to check if the client has disconnected.
+/// A handle to the current connection. Allows a long-lasting response to check if the client has disconnected.
 pub struct Connection<'r, R: Read> {
-    pub(crate) reader: BufferedReader<'r, R>,
-    pub(crate) has_been_upgraded: &'r mut bool,
+    pub(crate) reader: AfterBodyReader<'r, R>,
+    pub(crate) must_close_connection_notification:
+        &'r mut crate::request::MustCloseConnectionNotification,
     pub(crate) shutdown_signal: oneshot_broadcast::Listener<'r, ()>,
 }
 
 impl<'r, R: Read> Connection<'r, R> {
     /// Upgrade the connection and get access to the inner reader
-    pub fn upgrade(
-        self,
-        _upgrade_token: crate::extract::UpgradeToken,
-    ) -> UpgradedConnection<'r, R> {
-        *self.has_been_upgraded = true;
+    pub fn upgrade(self, upgrade_token: crate::extract::UpgradeToken) -> UpgradedConnection<'r, R> {
+        self.must_close_connection_notification.notify();
 
         UpgradedConnection {
+            upgrade_token,
             reader: self.reader,
         }
     }
@@ -166,17 +217,34 @@ impl<E: crate::io::Error> crate::io::Read for EmptyReader<E> {
     }
 }
 
-impl<'r, E: crate::io::Error> Connection<'r, EmptyReader<E>> {
-    pub(crate) fn empty(has_been_upgraded: &'r mut bool) -> Self {
+pub(crate) struct EmptyParts {
+    must_close_connection_notification: crate::request::MustCloseConnectionNotification,
+    shutdown_signal: oneshot_broadcast::SignalCore<()>,
+}
+
+impl Default for EmptyParts {
+    fn default() -> Self {
         Self {
-            reader: BufferedReader {
+            must_close_connection_notification: Default::default(),
+            shutdown_signal: oneshot_broadcast::Signal::core(),
+        }
+    }
+}
+
+impl<'r, E: crate::io::Error> Connection<'r, EmptyReader<E>> {
+    pub(crate) fn empty(
+        EmptyParts {
+            must_close_connection_notification,
+            shutdown_signal,
+        }: &'r mut EmptyParts,
+    ) -> Self {
+        Self {
+            reader: AfterBodyReader {
+                mode: AfterBodyReadMode::ReadFromReader,
                 reader: EmptyReader(core::marker::PhantomData),
-                buffer: &mut [],
-                read_position: 0,
-                buffer_usage: 0,
             },
-            has_been_upgraded,
-            shutdown_signal: oneshot_broadcast::Listener::never(),
+            must_close_connection_notification,
+            shutdown_signal: shutdown_signal.make_signal().listen(),
         }
     }
 }
