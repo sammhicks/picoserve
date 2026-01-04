@@ -225,7 +225,8 @@ pub(crate) struct EmptyParts {
 impl Default for EmptyParts {
     fn default() -> Self {
         Self {
-            must_close_connection_notification: Default::default(),
+            must_close_connection_notification:
+                crate::request::MustCloseConnectionNotification::new(),
             shutdown_signal: oneshot_broadcast::Signal::core(),
         }
     }

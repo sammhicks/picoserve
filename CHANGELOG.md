@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - The [`Debug`](https://doc.rust-lang.org/core/fmt/trait.Debug.html) implementation of [`HeaderName`](https://docs.rs/picoserve/latest/picoserve/request/struct.HeaderName.html) and [`HeaderValue`](https://docs.rs/picoserve/latest/picoserve/request/struct.HeaderValue.html) includes the surrounding double quotes.
+- The `read_request` timeout applies to reading the request body, not just the request head.
 
 ### Changed
 - If a request handler doesn't read the entire request body and there is data waiting to be read from the socket, the connection is closed, avoiding needlessly reading and discarding a potentially large request body.

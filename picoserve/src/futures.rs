@@ -23,6 +23,15 @@ impl<B> Either<core::convert::Infallible, B> {
     }
 }
 
+impl<A, B> Either<A, B> {
+    pub fn first_is_error(self) -> Result<B, A> {
+        match self {
+            Either::First(a) => Err(a),
+            Either::Second(b) => Ok(b),
+        }
+    }
+}
+
 pub(crate) async fn select_either<A: Future, B: Future>(
     a: A,
     b: B,

@@ -511,12 +511,17 @@ impl<'r, R: Read> RequestBody<'r, R> {
 
 mod must_close_connection_notification {
 
-    #[derive(Default)]
     pub(crate) struct MustCloseConnectionNotification {
         connection_must_be_closed_after_sending_response: bool,
     }
 
     impl MustCloseConnectionNotification {
+        pub(crate) fn new() -> Self {
+            Self {
+                connection_must_be_closed_after_sending_response: false,
+            }
+        }
+
         pub(crate) fn has_been_triggered(&self) -> bool {
             self.connection_must_be_closed_after_sending_response
         }
@@ -533,7 +538,7 @@ pub(crate) use must_close_connection_notification::MustCloseConnectionNotificati
 /// such as if the connenction has been upgraded.
 pub struct RequestBodyConnection<'r, R: Read> {
     content_length: usize,
-    reader: &'r mut R,
+    reader: ReaderWithReadRequestTimeoutSignal<'r, R>,
     read_position: usize,
     buffer: &'r mut [u8],
     buffer_usage: usize,
@@ -548,10 +553,10 @@ impl<'r, R: Read> RequestBodyConnection<'r, R> {
     }
 
     /// Return the Request Body
-    pub fn body(&mut self) -> RequestBody<'_, R> {
+    pub fn body(&mut self) -> RequestBody<'_, impl Read<Error = R::Error> + 'r> {
         RequestBody {
             content_length: self.content_length,
-            reader: self.reader,
+            reader: &mut self.reader,
             read_position: &mut self.read_position,
             buffer: self.buffer,
             buffer_usage: &mut self.buffer_usage,
@@ -559,12 +564,13 @@ impl<'r, R: Read> RequestBodyConnection<'r, R> {
     }
 
     /// "Finalize" the connection, returning the underlying connection.
+    /// Also cancels the read timeout to avoid long-lived connections such as WebSockets triggering read timeout.
     pub async fn finalize(
         self,
     ) -> Result<crate::response::Connection<'r, impl Read<Error = R::Error> + 'r>, R::Error> {
         let Self {
             content_length,
-            reader,
+            reader: ReaderWithReadRequestTimeoutSignal { reader, .. },
             read_position,
             buffer,
             buffer_usage,
@@ -616,6 +622,36 @@ pub struct Request<'r, R: Read> {
     pub parts: RequestParts<'r>,
     /// The request body and underlying connection
     pub body_connection: RequestBodyConnection<'r, R>,
+}
+
+struct ReaderWithReadRequestTimeoutSignal<'r, R: Read> {
+    reader: &'r mut R,
+    read_request_timeout_signal: oneshot_broadcast::Listener<'r, ()>,
+    make_read_timeout_error: fn() -> R::Error,
+}
+
+impl<R: Read> crate::io::ErrorType for ReaderWithReadRequestTimeoutSignal<'_, R> {
+    type Error = R::Error;
+}
+
+impl<R: Read> Read for ReaderWithReadRequestTimeoutSignal<'_, R> {
+    async fn read(&mut self, buf: &mut [u8]) -> Result<usize, Self::Error> {
+        crate::futures::select(
+            async {
+                self.read_request_timeout_signal.clone().await;
+
+                Err((self.make_read_timeout_error)())
+            },
+            self.reader.read(buf),
+        )
+        .await
+    }
+}
+
+pub(crate) struct RequestSignals<'r, R: Read> {
+    pub shutdown_signal: oneshot_broadcast::Listener<'r, ()>,
+    pub read_request_timeout_signal: oneshot_broadcast::Listener<'r, ()>,
+    pub make_read_timeout_error: fn() -> R::Error,
 }
 
 /// Errors arising while reading a HTTP Request
@@ -806,8 +842,12 @@ impl<'a, R: Read> Reader<'a, R> {
     pub(crate) async fn read<'r>(
         &'r mut self,
         _request_is_pending: RequestIsPending, // This enforces that self.request_is_pending() has been previously called.
-        shutdown_signal: oneshot_broadcast::Listener<'r, ()>,
-    ) -> Result<Request<'r, R>, ReadError<R::Error>> {
+        RequestSignals {
+            shutdown_signal,
+            read_request_timeout_signal,
+            make_read_timeout_error,
+        }: RequestSignals<'r, R>,
+    ) -> Result<Request<'r, impl Read<Error = R::Error> + 'r>, ReadError<R::Error>> {
         let Ok(request_line) = self
             .read_request_line()
             .await?
@@ -864,7 +904,11 @@ impl<'a, R: Read> Reader<'a, R> {
             },
             body_connection: RequestBodyConnection {
                 content_length,
-                reader: &mut self.reader,
+                reader: ReaderWithReadRequestTimeoutSignal {
+                    reader: &mut self.reader,
+                    read_request_timeout_signal,
+                    make_read_timeout_error,
+                },
                 read_position: 0,
                 buffer: body_buffer,
                 buffer_usage: self.buffer_usage - parts_length,

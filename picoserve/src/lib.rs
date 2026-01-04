@@ -63,19 +63,19 @@ pub enum Error<E: io::Error> {
     /// Error while reading from the socket.
     Read(E),
     /// Timeout while reading from the socket.
-    ReadTimeout,
+    ReadTimeout(crate::time::TimeoutError),
     /// Error while writing to the socket.
     Write(E),
     /// Timeout while writing to the socket.
-    WriteTimeout,
+    WriteTimeout(crate::time::TimeoutError),
 }
 
 impl<E: io::Error> io::Error for Error<E> {
     fn kind(&self) -> io::ErrorKind {
         match self {
             Self::BadRequest => io::ErrorKind::InvalidData,
-            Self::ReadTimeout | Self::WriteTimeout => io::ErrorKind::TimedOut,
-            Self::Read(err) | Self::Write(err) => err.kind(),
+            Self::ReadTimeout(error) | Self::WriteTimeout(error) => error.kind(),
+            Self::Read(error) | Self::Write(error) => error.kind(),
         }
     }
 }
@@ -239,22 +239,29 @@ async fn serve_and_shutdown<
     mut socket: S,
     shutdown_signal: ShutdownSignal,
 ) -> Result<DisconnectionInfo<ShutdownReason>, Error<S::Error>> {
-    let mut shutdown_signal = core::pin::pin!(shutdown_signal);
-
-    let mut shutdown_broadcast = oneshot_broadcast::Signal::core();
-    let shutdown_broadcast = shutdown_broadcast.make_signal();
-
     let result: Result<DisconnectionInfo<ShutdownReason>, Error<S::Error>> = async {
-        let (reader, mut writer) = socket.split();
+        let (reader, writer) = socket.split();
+
+        let reader = MapReadErrorReader(reader);
+
+        let mut writer = time::WriteWithTimeout {
+            inner: writer,
+            timer,
+            timeout_duration: config.timeouts.write.clone(),
+            _runtime: PhantomData,
+        };
 
         let mut must_close_connection_notification =
-            request::MustCloseConnectionNotification::default();
+            request::MustCloseConnectionNotification::new();
 
-        let mut reader = request::Reader::new(
-            MapReadErrorReader(reader),
-            http_buffer,
-            &mut must_close_connection_notification,
-        );
+        let mut request_reader =
+            request::Reader::new(reader, http_buffer, &mut must_close_connection_notification);
+
+        let mut shutdown_signal = core::pin::pin!(shutdown_signal);
+
+        // If `shutdown_signal` triggers, notify components which want to gracefully shutdown.
+        let mut shutdown_broadcast = oneshot_broadcast::Signal::core();
+        let shutdown_broadcast = shutdown_broadcast.make_signal();
 
         let mut request_count_iter = {
             let mut n = 0_u64;
@@ -275,7 +282,10 @@ async fn serve_and_shutdown<
                     } else {
                         config.timeouts.persistent_start_read_request.clone()
                     },
-                    futures::select_either(shutdown_signal.as_mut(), reader.request_is_pending()),
+                    futures::select_either(
+                        shutdown_signal.as_mut(),
+                        request_reader.request_is_pending(),
+                    ),
                 )
                 .await
             {
@@ -286,20 +296,40 @@ async fn serve_and_shutdown<
                     ));
                 }
                 Ok(futures::Either::Second(Ok(Some(request_is_pending)))) => request_is_pending,
-                Ok(futures::Either::Second(Ok(None))) | Err(_) => {
+                Ok(futures::Either::Second(Ok(None))) | Err(time::TimeoutError) => {
                     return Ok(DisconnectionInfo::no_shutdown_reason(request_count))
                 }
                 Ok(futures::Either::Second(Err(err))) => return Err(err),
             };
 
-            match timer
-                .run_with_maybe_timeout(
-                    config.timeouts.read_request.clone(),
-                    reader.read(request_is_pending, shutdown_broadcast.listen()),
-                )
-                .await
-            {
-                Ok(Ok(request)) => {
+            let mut read_request_timeout_signal = oneshot_broadcast::Signal::core();
+            let read_request_timeout_signal = read_request_timeout_signal.make_signal();
+
+            let request_signals = request::RequestSignals {
+                shutdown_signal: shutdown_broadcast.listen(),
+                read_request_timeout_signal: read_request_timeout_signal.listen(),
+                make_read_timeout_error: || Error::ReadTimeout(crate::time::TimeoutError),
+            };
+
+            let mut read_request_timeout = core::pin::pin!(async {
+                let timeout = timer
+                    .maybe_timeout(config.timeouts.read_request.clone())
+                    .await;
+
+                read_request_timeout_signal.notify(());
+
+                Error::ReadTimeout(timeout)
+            });
+
+            let request = futures::select_either(
+                read_request_timeout.as_mut(),
+                request_reader.read(request_is_pending, request_signals),
+            )
+            .await
+            .first_is_error()?;
+
+            match request {
+                Ok(request) => {
                     let connection_header = match config.connection {
                         KeepAlive::Close => KeepAlive::Close,
                         KeepAlive::KeepAlive => KeepAlive::from_request(
@@ -308,16 +338,16 @@ async fn serve_and_shutdown<
                         ),
                     };
 
-                    let mut writer = time::WriteWithTimeout {
-                        inner: &mut writer,
-                        timer,
-                        timeout_duration: config.timeouts.write.clone(),
-                        _runtime: PhantomData,
-                    };
+                    let mut handle_request = core::pin::pin!(crate::futures::select(
+                        async {
+                            read_request_timeout.await;
 
-                    let mut handle_request = core::pin::pin!(app.handle_request(
-                        request,
-                        response::ResponseStream::new(&mut writer, connection_header),
+                            core::future::pending().await
+                        },
+                        app.handle_request(
+                            request,
+                            response::ResponseStream::new(&mut writer, connection_header),
+                        )
                     ));
 
                     return Ok(
@@ -356,7 +386,7 @@ async fn serve_and_shutdown<
                         },
                     );
                 }
-                Ok(Err(err)) => {
+                Err(err) => {
                     use response::IntoResponse;
 
                     let message = match err {
@@ -377,12 +407,10 @@ async fn serve_and_shutdown<
                             ),
                         )
                         .await
-                        .map_err(|_| Error::WriteTimeout)?
-                        .map_err(Error::Write)?;
+                        .map_err(Error::WriteTimeout)??;
 
                     return Err(Error::BadRequest);
                 }
-                Err(..) => return Err(Error::ReadTimeout),
             }
         }
     }

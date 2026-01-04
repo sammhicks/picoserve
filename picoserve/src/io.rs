@@ -179,8 +179,8 @@ pub(crate) mod tokio_support {
                     tokio::io::AsyncWriteExt::shutdown(&mut self),
                 )
                 .await
-                .map_err(|_err| crate::Error::WriteTimeout)?
-                .map_err(|err| crate::Error::Write(TokioIoError(err)))?;
+                .map_err(crate::Error::WriteTimeout)?
+                .map_err(|error| crate::Error::Write(TokioIoError(error)))?;
 
             let mut buffer = [0; 128];
 
@@ -190,8 +190,8 @@ pub(crate) mod tokio_support {
                     tokio::io::AsyncReadExt::read(&mut self, &mut buffer),
                 )
                 .await
-                .map_err(|_err| crate::Error::ReadTimeout)?
-                .map_err(|err| crate::Error::Read(TokioIoError(err)))?
+                .map_err(crate::Error::ReadTimeout)?
+                .map_err(|error| crate::Error::Read(TokioIoError(error)))?
                 > 0
             {}
 
@@ -233,7 +233,7 @@ impl<'s> Socket<super::EmbassyRuntime> for embassy_net::tcp::TcpSocket<'s> {
                 timer
                     .run_with_maybe_timeout(timeouts.read_request.clone(), rx.discard_all_data())
                     .await
-                    .map_err(|_err| crate::Error::ReadTimeout)?
+                    .map_err(crate::Error::ReadTimeout)?
                     .map_err(crate::Error::Read)
             },
             async {
@@ -247,7 +247,7 @@ impl<'s> Socket<super::EmbassyRuntime> for embassy_net::tcp::TcpSocket<'s> {
         timer
             .run_with_maybe_timeout(timeouts.write.clone(), self.flush())
             .await
-            .map_err(|_err| crate::Error::WriteTimeout)?
+            .map_err(crate::Error::WriteTimeout)?
             .map_err(crate::Error::Write)
     }
 }
