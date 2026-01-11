@@ -55,22 +55,27 @@ use crate::sync::oneshot_broadcast;
 pub use response::response_stream::ResponseSent;
 
 /// Errors arising while handling a request.
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum Error<E: io::Error> {
     /// Bad Request from the client
+    #[error("Bad Request")]
     BadRequest,
     /// Error while reading from the socket.
-    Read(E),
+    #[error("Read error: {0}")]
+    Read(#[source] E),
     /// Timeout while reading from the socket.
+    #[error("Read timeout")]
     ReadTimeout,
     /// Error while writing to the socket.
-    Write(E),
+    #[error("Write error: {0}")]
+    Write(#[source] E),
     /// Timeout while writing to the socket.
+    #[error("Write timeout")]
     WriteTimeout,
 }
 
-impl<E: io::Error> io::Error for Error<E> {
+impl<E: io::Error + 'static> io::Error for Error<E> {
     fn kind(&self) -> io::ErrorKind {
         match self {
             Self::BadRequest => io::ErrorKind::InvalidData,
@@ -182,11 +187,17 @@ impl<D> Config<D> {
 /// Maps Read errors to [Error]s
 struct MapReadErrorReader<R: io::Read>(R);
 
-impl<R: io::Read> io::ErrorType for MapReadErrorReader<R> {
+impl<R: io::Read> io::ErrorType for MapReadErrorReader<R>
+where
+    R::Error: 'static,
+{
     type Error = Error<R::Error>;
 }
 
-impl<R: io::Read> io::Read for MapReadErrorReader<R> {
+impl<R: io::Read> io::Read for MapReadErrorReader<R>
+where
+    R::Error: 'static,
+{
     async fn read(&mut self, buf: &mut [u8]) -> Result<usize, Self::Error> {
         self.0.read(buf).await.map_err(Error::Read)
     }

@@ -99,7 +99,7 @@ impl<W: Write> WriteExt for W {}
 /// A connection socket, which can be split into its read and write half, and shut down when finished.
 pub trait Socket<Runtime>: Sized {
     /// Error type of all the IO operations on this type.
-    type Error: Error;
+    type Error: Error + 'static;
 
     /// The "read" half of the socket
     type ReadHalf<'a>: Read<Error = Self::Error>
