@@ -1,5 +1,42 @@
 //! [Timer] for creating timeouts during request parsing and request handling.
 
+/// This becomes an alias of `embassy_time::Duration` if the `embassy` features is enabled.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[cfg(not(feature = "embassy"))]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub struct Duration {
+    milliseconds: u64,
+}
+
+#[cfg(not(feature = "embassy"))]
+impl Duration {
+    pub const fn as_secs(&self) -> u64 {
+        self.milliseconds / 1000
+    }
+
+    pub const fn as_millis(&self) -> u64 {
+        self.milliseconds
+    }
+
+    pub const fn from_secs(seconds: u64) -> Self {
+        Self::from_millis(1000 * seconds)
+    }
+
+    pub const fn from_millis(milliseconds: u64) -> Self {
+        Self { milliseconds }
+    }
+}
+
+#[cfg(not(feature = "embassy"))]
+impl core::fmt::Display for Duration {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "{:.3}s", self.milliseconds as f32 / 1000.0)
+    }
+}
+
+#[cfg(feature = "embassy")]
+pub use embassy_time::Duration;
+
 #[derive(Debug, thiserror::Error)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[error("Timeout")]
@@ -13,27 +50,24 @@ impl crate::io::Error for TimeoutError {
 
 /// A timer which can be used to abort futures if they take to long to resolve.
 pub trait Timer<Runtime> {
-    /// The measure of time duration for this timer.
-    type Duration: Clone;
-
-    async fn delay(&self, duration: Self::Duration);
+    async fn delay(&self, duration: Duration);
 
     /// Drive the future, failing if it takes to long to resolve.
     async fn run_with_timeout<F: core::future::Future>(
         &self,
-        duration: Self::Duration,
+        duration: Duration,
         future: F,
     ) -> Result<F::Output, TimeoutError>;
 }
 
 pub(crate) trait TimerExt<Runtime>: Timer<Runtime> {
-    async fn timeout(&self, duration: Self::Duration) -> TimeoutError {
+    async fn timeout(&self, duration: Duration) -> TimeoutError {
         self.delay(duration).await;
 
         TimeoutError
     }
 
-    async fn maybe_timeout(&self, duration: Option<Self::Duration>) -> TimeoutError {
+    async fn maybe_timeout(&self, duration: Option<Duration>) -> TimeoutError {
         if let Some(duration) = duration {
             self.timeout(duration).await
         } else {
@@ -43,7 +77,7 @@ pub(crate) trait TimerExt<Runtime>: Timer<Runtime> {
 
     async fn run_with_maybe_timeout<F: core::future::Future>(
         &self,
-        duration: Option<Self::Duration>,
+        duration: Option<Duration>,
         future: F,
     ) -> Result<F::Output, TimeoutError> {
         if let Some(duration) = duration {
@@ -56,44 +90,45 @@ pub(crate) trait TimerExt<Runtime>: Timer<Runtime> {
 
 impl<Runtime, T: Timer<Runtime>> TimerExt<Runtime> for T {}
 
+#[derive(Default)]
 #[cfg(any(feature = "tokio", test))]
 #[doc(hidden)]
 pub struct TokioTimer;
 
 #[cfg(any(feature = "tokio", test))]
 impl Timer<super::TokioRuntime> for TokioTimer {
-    type Duration = std::time::Duration;
-
-    async fn delay(&self, duration: Self::Duration) {
-        tokio::time::sleep(duration).await
+    async fn delay(&self, duration: Duration) {
+        tokio::time::sleep(std::time::Duration::from_millis(duration.as_millis())).await
     }
 
     async fn run_with_timeout<F: core::future::Future>(
         &self,
-        duration: Self::Duration,
+        duration: Duration,
         future: F,
     ) -> Result<F::Output, TimeoutError> {
-        tokio::time::timeout(duration, future)
-            .await
-            .map_err(|_: tokio::time::error::Elapsed| TimeoutError)
+        tokio::time::timeout(
+            std::time::Duration::from_millis(duration.as_millis()),
+            future,
+        )
+        .await
+        .map_err(|_: tokio::time::error::Elapsed| TimeoutError)
     }
 }
 
+#[derive(Default)]
 #[cfg(feature = "embassy")]
 #[doc(hidden)]
 pub struct EmbassyTimer;
 
 #[cfg(feature = "embassy")]
 impl Timer<super::EmbassyRuntime> for EmbassyTimer {
-    type Duration = embassy_time::Duration;
-
-    async fn delay(&self, duration: Self::Duration) {
+    async fn delay(&self, duration: Duration) {
         embassy_time::Timer::after(duration).await
     }
 
     async fn run_with_timeout<F: core::future::Future>(
         &self,
-        duration: Self::Duration,
+        duration: Duration,
         future: F,
     ) -> Result<F::Output, TimeoutError> {
         embassy_time::with_timeout(duration, future)
@@ -105,7 +140,7 @@ impl Timer<super::EmbassyRuntime> for EmbassyTimer {
 pub(crate) struct WriteWithTimeout<'t, Runtime, W: crate::io::Write, T: Timer<Runtime>> {
     pub inner: W,
     pub timer: &'t T,
-    pub timeout_duration: Option<T::Duration>,
+    pub timeout_duration: Option<Duration>,
     pub _runtime: core::marker::PhantomData<fn(&Runtime)>,
 }
 
@@ -124,7 +159,7 @@ where
 {
     async fn write(&mut self, buf: &[u8]) -> Result<usize, Self::Error> {
         self.timer
-            .run_with_maybe_timeout(self.timeout_duration.clone(), self.inner.write(buf))
+            .run_with_maybe_timeout(self.timeout_duration, self.inner.write(buf))
             .await
             .map_err(super::Error::WriteTimeout)?
             .map_err(super::Error::Write)
@@ -132,7 +167,7 @@ where
 
     async fn flush(&mut self) -> Result<(), Self::Error> {
         self.timer
-            .run_with_maybe_timeout(self.timeout_duration.clone(), self.inner.flush())
+            .run_with_maybe_timeout(self.timeout_duration, self.inner.flush())
             .await
             .map_err(super::Error::WriteTimeout)?
             .map_err(super::Error::Write)

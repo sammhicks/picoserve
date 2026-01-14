@@ -1,8 +1,7 @@
-use std::time::Duration;
-
 use picoserve::{
     response,
     routing::{get, get_service, post},
+    time::Duration,
 };
 
 #[derive(Clone)]
@@ -68,15 +67,6 @@ async fn main() -> anyhow::Result<()> {
             ),
     );
 
-    // Larger timeouts to demonstrate rapid graceful shutdown
-    let config = picoserve::Config::new(picoserve::Timeouts {
-        start_read_request: Some(Duration::from_secs(10)),
-        persistent_start_read_request: Some(Duration::from_secs(10)),
-        read_request: Some(Duration::from_secs(1)),
-        write: Some(Duration::from_secs(1)),
-    })
-    .keep_connection_alive();
-
     let socket = tokio::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, port)).await?;
 
     println!("http://localhost:{port}/");
@@ -102,12 +92,21 @@ async fn main() -> anyhow::Result<()> {
                 println!("Connection from {remote_address}");
 
                 let app = app.clone();
-                let config = config.clone();
                 let mut server_state = server_state.clone();
                 let wait_handle = wait_handle.clone();
 
                 tokio::task::spawn_local(async move {
-                    match picoserve::Server::new(&app, &config, &mut [0; 2048])
+                    // Larger timeouts to demonstrate rapid graceful shutdown
+                    static CONFIG: picoserve::Config =
+                        picoserve::Config::new(picoserve::Timeouts {
+                            start_read_request: Some(Duration::from_secs(10)),
+                            persistent_start_read_request: Some(Duration::from_secs(10)),
+                            read_request: Some(Duration::from_secs(1)),
+                            write: Some(Duration::from_secs(1)),
+                        })
+                        .keep_connection_alive();
+
+                    match picoserve::Server::new_tokio(&app, &CONFIG, &mut [0; 2048])
                         .with_graceful_shutdown(
                             server_state.wait_for(|state| matches!(state, ServerState::Shutdown)),
                             Duration::from_secs(1),

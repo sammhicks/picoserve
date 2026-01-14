@@ -1,4 +1,4 @@
-use std::{cell::RefCell, rc::Rc, time::Duration};
+use std::{cell::RefCell, rc::Rc};
 
 use picoserve::{
     extract::State,
@@ -48,14 +48,6 @@ async fn main() -> anyhow::Result<()> {
             .route(("/set", parse_path_segment()), get(set_counter)),
     );
 
-    let config = picoserve::Config::new(picoserve::Timeouts {
-        start_read_request: Some(Duration::from_secs(5)),
-        persistent_start_read_request: Some(Duration::from_secs(1)),
-        read_request: Some(Duration::from_secs(1)),
-        write: Some(Duration::from_secs(1)),
-    })
-    .keep_connection_alive();
-
     let socket = tokio::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, port)).await?;
 
     println!("http://localhost:{port}/");
@@ -69,15 +61,17 @@ async fn main() -> anyhow::Result<()> {
 
                 let counter = counter.clone();
                 let app = app.clone();
-                let config = config.clone();
 
                 tokio::task::spawn_local(async move {
-                    match picoserve::Server::new(
+                    static CONFIG: picoserve::Config =
+                        picoserve::Config::const_default().keep_connection_alive();
+
+                    match picoserve::Server::new_tokio(
                         &app.shared().with_state(AppState {
                             connection_id,
                             counter,
                         }),
-                        &config,
+                        &CONFIG,
                         &mut [0; 2048],
                     )
                     .serve(stream)

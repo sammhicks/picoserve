@@ -4,6 +4,8 @@ use core::fmt;
 
 pub use embedded_io_async::{self, Error, ErrorKind, ErrorType, Read, ReadExactError, Write};
 
+use crate::time::Timer;
+
 /// An extension trait for [`Read`] which allows discarding of all incoming data until the client closes the connection.
 pub trait ReadExt: Read {
     async fn discard_all_data(&mut self) -> Result<(), Self::Error> {
@@ -115,17 +117,17 @@ pub trait Socket<Runtime>: Sized {
     fn split(&mut self) -> (Self::ReadHalf<'_>, Self::WriteHalf<'_>);
 
     /// Abort the connection
-    async fn abort<Timer: crate::Timer<Runtime>>(
+    async fn abort<T: Timer<Runtime>>(
         self,
-        timeouts: &crate::Timeouts<Timer::Duration>,
-        timer: &mut Timer,
+        timeouts: &crate::Timeouts,
+        timer: &mut T,
     ) -> Result<(), super::Error<Self::Error>>;
 
     /// Perform a graceful shutdown
-    async fn shutdown<Timer: crate::Timer<Runtime>>(
+    async fn shutdown<T: Timer<Runtime>>(
         self,
-        timeouts: &crate::Timeouts<Timer::Duration>,
-        timer: &mut Timer,
+        timeouts: &crate::Timeouts,
+        timer: &mut T,
     ) -> Result<(), super::Error<Self::Error>>;
 }
 
@@ -179,26 +181,26 @@ pub(crate) mod tokio_support {
             (TokioIo(read_half), TokioIo(write_half))
         }
 
-        async fn abort<Timer: crate::Timer<crate::TokioRuntime>>(
+        async fn abort<T: crate::Timer<crate::TokioRuntime>>(
             self,
-            _timeouts: &crate::Timeouts<Timer::Duration>,
-            _timer: &mut Timer,
+            _timeouts: &crate::Timeouts,
+            _timer: &mut T,
         ) -> Result<(), crate::Error<Self::Error>> {
             // Dropping a TcpStream closes it.
 
             Ok(())
         }
 
-        async fn shutdown<Timer: crate::Timer<crate::TokioRuntime>>(
+        async fn shutdown<T: crate::Timer<crate::TokioRuntime>>(
             mut self,
-            timeouts: &crate::Timeouts<Timer::Duration>,
-            timer: &mut Timer,
+            timeouts: &crate::Timeouts,
+            timer: &mut T,
         ) -> Result<(), crate::Error<Self::Error>> {
             use crate::time::TimerExt;
 
             timer
                 .run_with_maybe_timeout(
-                    timeouts.write.clone(),
+                    timeouts.write,
                     tokio::io::AsyncWriteExt::shutdown(&mut self),
                 )
                 .await
@@ -209,7 +211,7 @@ pub(crate) mod tokio_support {
 
             while timer
                 .run_with_maybe_timeout(
-                    timeouts.read_request.clone(),
+                    timeouts.read_request,
                     tokio::io::AsyncReadExt::read(&mut self, &mut buffer),
                 )
                 .await
@@ -241,7 +243,7 @@ impl<'s> Socket<super::EmbassyRuntime> for embassy_net::tcp::TcpSocket<'s> {
 
     async fn abort<Timer: crate::Timer<super::EmbassyRuntime>>(
         mut self,
-        timeouts: &crate::Timeouts<Timer::Duration>,
+        timeouts: &crate::Timeouts,
         timer: &mut Timer,
     ) -> Result<(), crate::Error<Self::Error>> {
         use crate::time::TimerExt;
@@ -260,7 +262,7 @@ impl<'s> Socket<super::EmbassyRuntime> for embassy_net::tcp::TcpSocket<'s> {
 
     async fn shutdown<Timer: crate::Timer<super::EmbassyRuntime>>(
         mut self,
-        timeouts: &crate::Timeouts<Timer::Duration>,
+        timeouts: &crate::Timeouts,
         timer: &mut Timer,
     ) -> Result<(), crate::Error<Self::Error>> {
         use crate::time::TimerExt;

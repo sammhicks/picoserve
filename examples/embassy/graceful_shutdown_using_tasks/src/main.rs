@@ -102,12 +102,20 @@ async fn suspend_server() {
     SERVER_STATE.sender().send(ServerState::Running);
 }
 
+// Larger timeouts to demonstrate rapid graceful shutdown
+static CONFIG: picoserve::Config = picoserve::Config::new(picoserve::Timeouts {
+    start_read_request: Some(Duration::from_secs(10)),
+    persistent_start_read_request: Some(Duration::from_secs(10)),
+    read_request: Some(Duration::from_secs(1)),
+    write: Some(Duration::from_secs(1)),
+})
+.keep_connection_alive();
+
 #[embassy_executor::task(pool_size = WEB_TASK_POOL_SIZE)]
 async fn web_task(
     task_id: usize,
     stack: embassy_net::Stack<'static>,
     app: &'static AppRouter<AppProps>,
-    config: &'static picoserve::Config<Duration>,
 ) -> ! {
     let port = 80;
     let mut tcp_rx_buffer = [0; 1024];
@@ -122,7 +130,7 @@ async fn web_task(
 
         server_state.get_and(ServerState::is_running).await;
 
-        picoserve::Server::new(app, config, &mut http_buffer)
+        picoserve::Server::new(app, &CONFIG, &mut http_buffer)
             .with_graceful_shutdown(
                 server_state.get_and(ServerState::is_shutdown),
                 shutdown_timeout,
@@ -194,18 +202,7 @@ async fn main(spawner: embassy_executor::Spawner) {
 
     let app = make_static!(AppRouter<AppProps>, AppProps { spawner }.build_app());
 
-    let config = make_static!(
-        picoserve::Config<Duration>,
-        picoserve::Config::new(picoserve::Timeouts {
-            start_read_request: Some(Duration::from_secs(5)),
-            persistent_start_read_request: Some(Duration::from_secs(1)),
-            read_request: Some(Duration::from_secs(1)),
-            write: Some(Duration::from_secs(1)),
-        })
-        .keep_connection_alive()
-    );
-
     for task_id in 0..WEB_TASK_POOL_SIZE {
-        spawner.must_spawn(web_task(task_id, stack, app, config));
+        spawner.must_spawn(web_task(task_id, stack, app));
     }
 }

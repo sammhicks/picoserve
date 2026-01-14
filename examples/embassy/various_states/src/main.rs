@@ -9,7 +9,6 @@ use embassy_rp::{
     pio::Pio,
 };
 
-use embassy_time::Duration;
 use panic_persist as _;
 use picoserve::{
     extract::FromRequestParts, make_static, response::IntoResponse, routing::get, AppRouter,
@@ -124,6 +123,8 @@ impl AppWithStateBuilder for AppProps {
     }
 }
 
+static CONFIG: picoserve::Config = picoserve::Config::const_default().keep_connection_alive();
+
 const WEB_TASK_POOL_SIZE: usize = 8;
 
 #[embassy_executor::task(pool_size = WEB_TASK_POOL_SIZE)]
@@ -131,7 +132,6 @@ async fn web_task(
     task_id: usize,
     stack: embassy_net::Stack<'static>,
     app: &'static AppRouter<AppProps>,
-    config: &'static picoserve::Config<Duration>,
     state: &'static AppState,
 ) -> ! {
     let port = 80;
@@ -139,7 +139,7 @@ async fn web_task(
     let mut tcp_tx_buffer = [0; 1024];
     let mut http_buffer = [0; 2048];
 
-    picoserve::Server::new(&app.shared().with_state(state), config, &mut http_buffer)
+    picoserve::Server::new(&app.shared().with_state(state), &CONFIG, &mut http_buffer)
         .listen_and_serve(task_id, stack, port, &mut tcp_rx_buffer, &mut tcp_tx_buffer)
         .await
         .into_never()
@@ -210,17 +210,6 @@ async fn main(spawner: embassy_executor::Spawner) {
 
     let app = make_static!(AppRouter<AppProps>, AppProps { service_name }.build_app());
 
-    let config = make_static!(
-        picoserve::Config<Duration>,
-        picoserve::Config::new(picoserve::Timeouts {
-            start_read_request: Some(Duration::from_secs(5)),
-            persistent_start_read_request: Some(Duration::from_secs(1)),
-            read_request: Some(Duration::from_secs(1)),
-            write: Some(Duration::from_secs(1)),
-        })
-        .keep_connection_alive()
-    );
-
     let app_state = make_static!(
         AppState,
         AppState {
@@ -229,6 +218,6 @@ async fn main(spawner: embassy_executor::Spawner) {
     );
 
     for task_id in 0..WEB_TASK_POOL_SIZE {
-        spawner.must_spawn(web_task(task_id, stack, app, config, app_state));
+        spawner.must_spawn(web_task(task_id, stack, app, app_state));
     }
 }

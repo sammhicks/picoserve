@@ -48,7 +48,7 @@ pub use logging::LogDisplay;
 pub use routing::Router;
 pub use time::Timer;
 
-use time::TimerExt;
+use time::{Duration, TimerExt};
 
 use crate::sync::oneshot_broadcast;
 
@@ -107,15 +107,32 @@ impl<T, E0, E1> SwapErrors for Result<Result<T, E0>, E1> {
 /// If set to None, the operation never times out.
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub struct Timeouts<D> {
+pub struct Timeouts {
     /// The duration of time to wait when starting to read the first request before the connection is closed due to inactivity.
-    pub start_read_request: Option<D>,
+    pub start_read_request: Option<Duration>,
     /// The duration of time to wait when starting to read persistent (i.e. not the first) requests before the connection is closed due to inactivity.
-    pub persistent_start_read_request: Option<D>,
+    pub persistent_start_read_request: Option<Duration>,
     /// The duration of time to wait when partway reading a request before the connection is aborted and closed.
-    pub read_request: Option<D>,
+    pub read_request: Option<Duration>,
     /// The duration of time to wait when writing the response before the connection is aborted and closed.
-    pub write: Option<D>,
+    pub write: Option<Duration>,
+}
+
+impl Timeouts {
+    pub const fn const_default() -> Self {
+        Self {
+            start_read_request: Some(Duration::from_secs(5)),
+            persistent_start_read_request: Some(Duration::from_secs(1)),
+            read_request: Some(Duration::from_secs(3)),
+            write: Some(Duration::from_secs(1)),
+        }
+    }
+}
+
+impl Default for Timeouts {
+    fn default() -> Self {
+        Self::const_default()
+    }
 }
 
 /// After the response has been sent, should the connection be kept open to allow the client to make further requests on the same TCP connection?
@@ -126,6 +143,18 @@ pub enum KeepAlive {
     Close,
     /// Keep the connection alive after the response has been sent, allowing the client to make further requests on the same TCP connection.
     KeepAlive,
+}
+
+impl KeepAlive {
+    pub const fn const_default() -> Self {
+        Self::Close
+    }
+}
+
+impl Default for KeepAlive {
+    fn default() -> Self {
+        Self::const_default()
+    }
 }
 
 impl core::fmt::Display for KeepAlive {
@@ -167,20 +196,27 @@ impl KeepAlive {
 
 /// Server Configuration.
 #[derive(Debug, Clone)]
-pub struct Config<D> {
+pub struct Config {
     /// The timeout information
-    pub timeouts: Timeouts<D>,
+    pub timeouts: Timeouts,
     /// Whether to close the connection after handling a request or keeping it open to allow further requests on the same connection.
     pub connection: KeepAlive,
 }
 
-impl<D> Config<D> {
+impl Config {
     /// Create a new configuration, setting the timeouts.
     /// All other configuration is set to the defaults.
-    pub const fn new(timeouts: Timeouts<D>) -> Self {
+    pub const fn new(timeouts: Timeouts) -> Self {
         Self {
             timeouts,
             connection: KeepAlive::Close,
+        }
+    }
+
+    pub const fn const_default() -> Self {
+        Self {
+            timeouts: Timeouts::const_default(),
+            connection: KeepAlive::const_default(),
         }
     }
 
@@ -201,6 +237,12 @@ impl<D> Config<D> {
         self.connection = KeepAlive::Close;
 
         self
+    }
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self::const_default()
     }
 }
 
@@ -259,11 +301,11 @@ async fn serve_and_shutdown<
     P: routing::PathRouter,
     S: io::Socket<Runtime>,
     ShutdownReason,
-    ShutdownSignal: core::future::Future<Output = (ShutdownReason, Option<T::Duration>)>,
+    ShutdownSignal: core::future::Future<Output = (ShutdownReason, Option<Duration>)>,
 >(
     app: &Router<P>,
     timer: &mut T,
-    config: &Config<T::Duration>,
+    config: &Config,
     http_buffer: &mut [u8],
     mut socket: S,
     shutdown_signal: ShutdownSignal,
@@ -278,7 +320,7 @@ async fn serve_and_shutdown<
         let mut writer = time::WriteWithTimeout {
             inner: writer,
             timer,
-            timeout_duration: config.timeouts.write.clone(),
+            timeout_duration: config.timeouts.write,
             _runtime: PhantomData,
         };
 
@@ -305,9 +347,9 @@ async fn serve_and_shutdown<
             let request_is_pending = match timer
                 .run_with_maybe_timeout(
                     if request_count == 0 {
-                        config.timeouts.start_read_request.clone()
+                        config.timeouts.start_read_request
                     } else {
-                        config.timeouts.persistent_start_read_request.clone()
+                        config.timeouts.persistent_start_read_request
                     },
                     futures::select_either(
                         shutdown_signal.as_mut(),
@@ -339,9 +381,7 @@ async fn serve_and_shutdown<
             };
 
             let mut read_request_timeout = core::pin::pin!(async {
-                let timeout = timer
-                    .maybe_timeout(config.timeouts.read_request.clone())
-                    .await;
+                let timeout = timer.maybe_timeout(config.timeouts.read_request).await;
 
                 read_request_timeout_signal.notify(());
 
@@ -425,7 +465,7 @@ async fn serve_and_shutdown<
 
                     let ResponseSent { .. } = timer
                         .run_with_maybe_timeout(
-                            config.timeouts.write.clone(),
+                            config.timeouts.write,
                             (response::StatusCode::BAD_REQUEST, message).write_to(
                                 response::Connection::empty(&mut Default::default()),
                                 response::ResponseStream::new(writer, KeepAlive::Close),
@@ -480,14 +520,14 @@ pub struct Server<
 > {
     app: &'a Router<P>,
     timer: T,
-    config: &'a Config<T::Duration>,
+    config: &'a Config,
     http_buffer: &'a mut [u8],
     shutdown_signal: ShutdownSignal,
     _runtime: PhantomData<fn(&Runtime)>,
 }
 
 impl<'a, Runtime, T: Timer<Runtime>, P: routing::PathRouter>
-    Server<'a, Runtime, T, P, core::future::Pending<(NoGracefulShutdown, Option<T::Duration>)>>
+    Server<'a, Runtime, T, P, core::future::Pending<(NoGracefulShutdown, Option<Duration>)>>
 {
     /// Create a new [`Router`] with a custom timer.
     ///
@@ -495,7 +535,7 @@ impl<'a, Runtime, T: Timer<Runtime>, P: routing::PathRouter>
     pub fn custom(
         app: &'a Router<P>,
         timer: T,
-        config: &'a Config<T::Duration>,
+        config: &'a Config,
         http_buffer: &'a mut [u8],
     ) -> Self {
         Self {
@@ -515,13 +555,13 @@ impl<'a, Runtime, T: Timer<Runtime>, P: routing::PathRouter>
     pub fn with_graceful_shutdown<ShutdownSignal: core::future::Future>(
         self,
         shutdown_signal: ShutdownSignal,
-        shutdown_timeout: impl Into<Option<T::Duration>>,
+        shutdown_timeout: impl Into<Option<Duration>>,
     ) -> Server<
         'a,
         Runtime,
         T,
         P,
-        impl core::future::Future<Output = (ShutdownSignal::Output, Option<T::Duration>)>,
+        impl core::future::Future<Output = (ShutdownSignal::Output, Option<Duration>)>,
     > {
         let Self {
             app,
@@ -554,7 +594,7 @@ impl<
         T: Timer<Runtime>,
         P: routing::PathRouter,
         ShutdownReason,
-        ShutdownSignal: core::future::Future<Output = (ShutdownReason, Option<T::Duration>)>,
+        ShutdownSignal: core::future::Future<Output = (ShutdownReason, Option<Duration>)>,
     > Server<'_, Runtime, T, P, ShutdownSignal>
 {
     /// Serve requests read from the connected socket.
@@ -594,15 +634,11 @@ impl<'a, P: routing::PathRouter>
         TokioRuntime,
         time::TokioTimer,
         P,
-        core::future::Pending<(NoGracefulShutdown, Option<std::time::Duration>)>,
+        core::future::Pending<(NoGracefulShutdown, Option<time::Duration>)>,
     >
 {
     /// Create a new server using the `tokio` runtime, and typically with a `tokio::net::TcpSocket` as the socket.
-    pub fn new(
-        app: &'a Router<P>,
-        config: &'a Config<std::time::Duration>,
-        http_buffer: &'a mut [u8],
-    ) -> Self {
+    pub fn new_tokio(app: &'a Router<P>, config: &'a Config, http_buffer: &'a mut [u8]) -> Self {
         Self {
             app,
             timer: time::TokioTimer,
@@ -625,15 +661,11 @@ impl<'a, P: routing::PathRouter>
         EmbassyRuntime,
         time::EmbassyTimer,
         P,
-        core::future::Pending<(NoGracefulShutdown, Option<embassy_time::Duration>)>,
+        core::future::Pending<(NoGracefulShutdown, Option<Duration>)>,
     >
 {
     /// Create a new server using the `embassy` runtime.
-    pub fn new(
-        app: &'a Router<P>,
-        config: &'a Config<embassy_time::Duration>,
-        http_buffer: &'a mut [u8],
-    ) -> Self {
+    pub fn new(app: &'a Router<P>, config: &'a Config, http_buffer: &'a mut [u8]) -> Self {
         Self {
             app,
             timer: time::EmbassyTimer,

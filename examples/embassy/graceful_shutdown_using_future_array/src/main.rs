@@ -38,35 +38,6 @@ async fn net_task(mut stack: embassy_net::Runner<'static, cyw43::NetDriver<'stat
     stack.run().await
 }
 
-// struct AppProps {
-//     spawner: embassy_executor::Spawner,
-// }
-
-// impl AppBuilder for AppProps {
-//     type PathRouter = impl picoserve::routing::PathRouter;
-
-//     fn build_app(self) -> picoserve::Router<Self::PathRouter> {
-//         let Self { spawner } = self;
-
-//         picoserve::Router::new()
-//             .route(
-//                 "/",
-//                 get(|| async {
-//                     "Hello World\n\nNavigate to /suspend to temporarily shutdown the server."
-//                 }),
-//             )
-//             .route(
-//                 "/suspend",
-//                 get(move || async move {
-//                     match spawner.spawn(suspend_server()) {
-//                         Ok(()) => "Server suspended",
-//                         Err(_) => "Failed to suspend server",
-//                     }
-//                 }),
-//             )
-//     }
-// }
-
 const WEB_TASK_POOL_SIZE: usize = 8;
 
 #[derive(Clone)]
@@ -101,6 +72,15 @@ async fn suspend_server() {
     log::info!("Resuming server");
     SERVER_STATE.sender().send(ServerState::Running);
 }
+
+// Larger timeouts to demonstrate rapid graceful shutdown
+static CONFIG: picoserve::Config = picoserve::Config::new(picoserve::Timeouts {
+    start_read_request: Some(Duration::from_secs(10)),
+    persistent_start_read_request: Some(Duration::from_secs(10)),
+    read_request: Some(Duration::from_secs(1)),
+    write: Some(Duration::from_secs(1)),
+})
+.keep_connection_alive();
 
 #[embassy_executor::main]
 async fn main(spawner: embassy_executor::Spawner) {
@@ -179,14 +159,6 @@ async fn main(spawner: embassy_executor::Spawner) {
             }),
         );
 
-    let config = &picoserve::Config::new(picoserve::Timeouts {
-        start_read_request: Some(Duration::from_secs(5)),
-        persistent_start_read_request: Some(Duration::from_secs(1)),
-        read_request: Some(Duration::from_secs(1)),
-        write: Some(Duration::from_secs(1)),
-    })
-    .keep_connection_alive();
-
     let mut server_state = SERVER_STATE.receiver().unwrap();
 
     loop {
@@ -205,7 +177,7 @@ async fn main(spawner: embassy_executor::Spawner) {
                     let mut http_buffer = [0; 2048];
                     let shutdown_timeout = embassy_time::Duration::from_secs(3);
 
-                    picoserve::Server::new(app, config, &mut http_buffer)
+                    picoserve::Server::new(app, &CONFIG, &mut http_buffer)
                         .with_graceful_shutdown(
                             server_state.get_and(ServerState::is_shutdown),
                             shutdown_timeout,

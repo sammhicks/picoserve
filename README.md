@@ -24,8 +24,6 @@ Shortcomings:
 ### tokio (for testing purposes)
 
 ```rust
-use std::time::Duration;
-
 use picoserve::routing::get;
 
 #[tokio::main(flavor = "current_thread")]
@@ -34,14 +32,6 @@ async fn main() -> anyhow::Result<()> {
 
     let app =
         std::rc::Rc::new(picoserve::Router::new().route("/", get(|| async { "Hello World" })));
-
-    let config = picoserve::Config::new(picoserve::Timeouts {
-        start_read_request: Some(Duration::from_secs(5)),
-        persistent_start_read_request: Some(Duration::from_secs(1)),
-        read_request: Some(Duration::from_secs(1)),
-        write: Some(Duration::from_secs(1)),
-    })
-    .keep_connection_alive();
 
     let socket = tokio::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, port)).await?;
 
@@ -55,10 +45,12 @@ async fn main() -> anyhow::Result<()> {
                 println!("Connection from {remote_address}");
 
                 let app = app.clone();
-                let config = config.clone();
 
                 tokio::task::spawn_local(async move {
-                    match picoserve::Server::new(&app, &config, &mut [0; 2048])
+                    static CONFIG: picoserve::Config =
+                        picoserve::Config::const_default().keep_connection_alive();
+
+                    match picoserve::Server::new_tokio(&app, &CONFIG, &mut [0; 2048])
                         .serve(stream)
                         .await
                     {
@@ -77,4 +69,5 @@ async fn main() -> anyhow::Result<()> {
         })
         .await
 }
+
 ```

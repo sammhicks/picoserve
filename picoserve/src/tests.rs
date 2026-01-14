@@ -185,7 +185,7 @@ impl<TX: Write<Error = Infallible>, RX: Read<Error = Infallible>> io::Socket<Tok
 
     async fn abort<Timer: crate::Timer<TokioRuntime>>(
         self,
-        _timeouts: &crate::Timeouts<Timer::Duration>,
+        _timeouts: &crate::Timeouts,
         _timer: &mut Timer,
     ) -> Result<(), crate::Error<Self::Error>> {
         Ok(())
@@ -193,7 +193,7 @@ impl<TX: Write<Error = Infallible>, RX: Read<Error = Infallible>> io::Socket<Tok
 
     async fn shutdown<Timer: time::Timer<TokioRuntime>>(
         self,
-        _timeouts: &Timeouts<Timer::Duration>,
+        _timeouts: &Timeouts,
         _timer: &mut Timer,
     ) -> Result<(), Error<Self::Error>> {
         Ok(())
@@ -247,12 +247,12 @@ async fn run_single_request_test(
 
     let mut http_buffer = [0; 2048];
 
-    let server = std::pin::pin!(
-        Server::new(app, &config, &mut http_buffer).serve(TestSocket {
+    let server = std::pin::pin!(Server::new_tokio(app, &config, &mut http_buffer).serve(
+        TestSocket {
             rx: request_rx,
             tx: response_tx,
-        })
-    );
+        }
+    ));
 
     let (mut request_sender, connection) = hyper::client::conn::http1::handshake(TestSocket {
         tx: request_tx,
@@ -519,7 +519,7 @@ async fn only_one_request() {
 
     let mut http_buffer = [0; 2048];
 
-    let server = Server::new(&app, &config, &mut http_buffer).serve(TestSocket {
+    let server = Server::new_tokio(&app, &config, &mut http_buffer).serve(TestSocket {
         rx: request_rx,
         tx: response_tx,
     });
@@ -562,7 +562,7 @@ async fn keep_alive() {
 
     let mut http_buffer = [0; 2048];
 
-    let server = Server::new(&app, &config, &mut http_buffer).serve(TestSocket {
+    let server = Server::new_tokio(&app, &config, &mut http_buffer).serve(TestSocket {
         rx: "GET / HTTP/1.1\r\n\r\nGET / HTTP/1.1\r\n\r\n".as_bytes(),
         tx: std::vec::Vec::new(),
     });
@@ -745,7 +745,7 @@ async fn upgrade_with_request_body() {
 
                 let mut response_bytes = Vec::new();
 
-                let server = Server::new(&app, &config, &mut http_buffer).serve(TestSocket {
+                let server = Server::new_tokio(&app, &config, &mut http_buffer).serve(TestSocket {
                     rx: VecSequence {
                         current: VecRead(Vec::new()),
                         rest_reversed: [
