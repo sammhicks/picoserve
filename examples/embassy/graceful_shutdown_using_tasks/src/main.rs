@@ -179,7 +179,7 @@ async fn main(spawner: embassy_executor::Spawner) {
             embassy_net::StackResources<WEB_TASK_POOL_SIZE>,
             embassy_net::StackResources::new()
         ),
-        embassy_rp::clocks::RoscRng.gen(),
+        embassy_rp::clocks::RoscRng.random(),
     );
 
     spawner.must_spawn(net_task(runner));

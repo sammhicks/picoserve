@@ -16,7 +16,6 @@ embassy-rp = { workspace = true }
 embassy-sync = { workspace = true }
 embassy-time = { workspace = true }
 embassy-usb-logger = { workspace = true }
-embedded-io-async = { workspace = true }
 log = { workspace = true }
 panic-persist = { workspace = true }
 picoserve = { workspace = true }

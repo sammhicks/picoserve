@@ -126,7 +126,8 @@ pub trait Socket<Runtime>: Sized {
 pub(crate) mod tokio_support {
     use embedded_io_async::{Error, ErrorKind, ErrorType, Read, Write};
 
-    #[derive(Debug)]
+    #[derive(Debug, thiserror::Error)]
+    #[error(transparent)]
     pub struct TokioIoError(pub std::io::Error);
 
     impl Error for TokioIoError {
@@ -152,6 +153,11 @@ pub(crate) mod tokio_support {
         async fn write(&mut self, buf: &[u8]) -> Result<usize, Self::Error> {
             use tokio::io::AsyncWriteExt;
             self.0.write(buf).await.map_err(TokioIoError)
+        }
+
+        async fn flush(&mut self) -> Result<(), Self::Error> {
+            use tokio::io::AsyncWriteExt;
+            self.0.flush().await.map_err(TokioIoError)
         }
     }
 
