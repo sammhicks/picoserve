@@ -15,8 +15,8 @@
 
 use crate::{
     self as picoserve,
-    io::{Read, ReadExt},
-    request::{RequestBody, RequestParts},
+    io::{Error, Read, ReadExt},
+    request::{ReadAllBodyError, RequestBody, RequestParts},
     response::{ErrorWithStatusCode, IntoResponse},
 };
 
@@ -101,48 +101,20 @@ macro_rules! from_request {
     };
 }
 
-/// Errors arising while reading the entire body.
-#[derive(Debug, thiserror::Error, ErrorWithStatusCode)]
-#[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub enum FailedToExtractEntireBodyError {
-    #[error("No space to extract entire body. Content Length: {content_length}. Buffer Length: {buffer_length}.")]
-    #[status_code(PAYLOAD_TOO_LARGE)]
-    BufferIsTooSmall {
-        content_length: usize,
-        buffer_length: usize,
-    },
-    #[error("IO Error while reading body.")]
-    #[status_code(INTERNAL_SERVER_ERROR)]
-    IoError,
-}
-
 impl<'r, State> FromRequest<'r, State> for &'r mut [u8] {
-    type Rejection = FailedToExtractEntireBodyError;
+    type Rejection = ReadAllBodyError;
 
     async fn from_request<R: Read>(
         _state: &'r State,
         _request_parts: RequestParts<'r>,
         request_body: RequestBody<'r, R>,
     ) -> Result<Self, Self::Rejection> {
-        if !request_body.entire_body_fits_into_buffer() {
-            return Err(FailedToExtractEntireBodyError::BufferIsTooSmall {
-                content_length: request_body.content_length(),
-                buffer_length: request_body.buffer_length(),
-            });
-        }
-
-        request_body.read_all().await.map_err(|err| {
-            log_error!(
-                "Failed to read body: {:?}",
-                crate::logging::Debug2Format(&err)
-            );
-            FailedToExtractEntireBodyError::IoError
-        })
+        request_body.read_all().await
     }
 }
 
 impl<'r, State> FromRequest<'r, State> for &'r [u8] {
-    type Rejection = FailedToExtractEntireBodyError;
+    type Rejection = ReadAllBodyError;
 
     async fn from_request<R: Read>(
         state: &'r State,
@@ -155,9 +127,43 @@ impl<'r, State> FromRequest<'r, State> for &'r [u8] {
     }
 }
 
+impl<'r, State, const N: usize> FromRequest<'r, State> for heapless::Vec<u8, N> {
+    type Rejection = ReadAllBodyError;
+
+    async fn from_request<R: Read>(
+        _state: &'r State,
+        _request_parts: RequestParts<'r>,
+        request_body: RequestBody<'r, R>,
+    ) -> Result<Self, Self::Rejection> {
+        let mut buffer = Self::new();
+
+        let content_length = request_body.content_length();
+
+        buffer
+            .resize(request_body.content_length(), 0)
+            .map_err(|()| ReadAllBodyError::BufferIsTooSmall {
+                content_length,
+                buffer_length: N,
+            })?;
+
+        request_body
+            .reader()
+            .read_exact(buffer.as_mut_slice())
+            .await
+            .map_err(|error| match error {
+                embedded_io_async::ReadExactError::UnexpectedEof => ReadAllBodyError::UnexpectedEof,
+                embedded_io_async::ReadExactError::Other(error) => {
+                    ReadAllBodyError::IO(error.kind())
+                }
+            })?;
+
+        Ok(buffer)
+    }
+}
+
 #[cfg(feature = "alloc")]
 impl<'r, State> FromRequest<'r, State> for alloc::vec::Vec<u8> {
-    type Rejection = FailedToExtractEntireBodyError;
+    type Rejection = ReadAllBodyError;
 
     async fn from_request<R: Read>(
         _state: &'r State,
@@ -169,7 +175,7 @@ impl<'r, State> FromRequest<'r, State> for alloc::vec::Vec<u8> {
         let content_length = request_body.content_length();
 
         buffer.try_reserve_exact(content_length).map_err(|_| {
-            FailedToExtractEntireBodyError::BufferIsTooSmall {
+            ReadAllBodyError::BufferIsTooSmall {
                 content_length,
                 buffer_length: request_body.buffer_length(),
             }
@@ -181,12 +187,11 @@ impl<'r, State> FromRequest<'r, State> for alloc::vec::Vec<u8> {
             .reader()
             .read_exact(buffer.as_mut_slice())
             .await
-            .map_err(|err| {
-                log_error!(
-                    "Failed to read body: {:?}",
-                    crate::logging::Debug2Format(&err)
-                );
-                FailedToExtractEntireBodyError::IoError
+            .map_err(|error| match error {
+                embedded_io_async::ReadExactError::UnexpectedEof => ReadAllBodyError::UnexpectedEof,
+                embedded_io_async::ReadExactError::Other(error) => {
+                    ReadAllBodyError::IO(error.kind())
+                }
             })?;
 
         Ok(buffer)
@@ -195,7 +200,7 @@ impl<'r, State> FromRequest<'r, State> for alloc::vec::Vec<u8> {
 
 #[cfg(feature = "alloc")]
 impl<'r, State> FromRequest<'r, State> for alloc::borrow::Cow<'r, [u8]> {
-    type Rejection = FailedToExtractEntireBodyError;
+    type Rejection = ReadAllBodyError;
 
     async fn from_request<R: Read>(
         state: &'r State,
@@ -220,7 +225,7 @@ impl<'r, State> FromRequest<'r, State> for alloc::borrow::Cow<'r, [u8]> {
 pub enum FailedToExtractEntireBodyAsStringError {
     #[error(transparent)]
     #[status_code(transparent)]
-    FailedToExtractEntireBody(FailedToExtractEntireBodyError),
+    FailedToExtractEntireBody(ReadAllBodyError),
     #[error("Body is not UTF-8: {0}")]
     #[status_code(BAD_REQUEST)]
     StringIsNotUtf8(#[cfg_attr(feature = "defmt", defmt(Debug2Format))] core::str::Utf8Error),
@@ -254,6 +259,23 @@ impl<'r, State> FromRequest<'r, State> for &'r str {
         <&'r mut str>::from_request(state, request_parts, request_body)
             .await
             .map(|body| &*body)
+    }
+}
+
+impl<'r, State, const N: usize> FromRequest<'r, State> for heapless::String<N> {
+    type Rejection = FailedToExtractEntireBodyAsStringError;
+
+    async fn from_request<R: Read>(
+        state: &'r State,
+        request_parts: RequestParts<'r>,
+        request_body: RequestBody<'r, R>,
+    ) -> Result<Self, Self::Rejection> {
+        heapless::String::from_utf8(
+            heapless::Vec::from_request(state, request_parts, request_body)
+                .await
+                .map_err(FailedToExtractEntireBodyAsStringError::FailedToExtractEntireBody)?,
+        )
+        .map_err(FailedToExtractEntireBodyAsStringError::StringIsNotUtf8)
     }
 }
 

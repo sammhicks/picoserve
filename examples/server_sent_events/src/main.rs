@@ -1,35 +1,21 @@
 use picoserve::{
-    response::{self, ErrorWithStatusCode, StatusCode},
+    response::{self, StatusCode},
     routing::{get, get_service, post},
 };
-
-#[derive(Debug, thiserror::Error, ErrorWithStatusCode)]
-#[status_code(BAD_REQUEST)]
-enum NewMessageRejection {
-    #[error("Read Error")]
-    ReadError,
-    #[error("Body is not UTF-8: {0}")]
-    NotUtf8(std::str::Utf8Error),
-}
 
 struct NewMessage(String);
 
 impl<'r, State> picoserve::extract::FromRequest<'r, State> for NewMessage {
-    type Rejection = NewMessageRejection;
+    type Rejection = picoserve::extract::FailedToExtractEntireBodyAsStringError;
 
     async fn from_request<R: picoserve::io::Read>(
-        _state: &'r State,
-        _request_parts: picoserve::request::RequestParts<'r>,
+        state: &'r State,
+        request_parts: picoserve::request::RequestParts<'r>,
         request_body: picoserve::request::RequestBody<'r, R>,
     ) -> Result<Self, Self::Rejection> {
-        core::str::from_utf8(
-            request_body
-                .read_all()
-                .await
-                .map_err(|_err| NewMessageRejection::ReadError)?,
-        )
-        .map(|message| NewMessage(message.into()))
-        .map_err(NewMessageRejection::NotUtf8)
+        String::from_request(state, request_parts, request_body)
+            .await
+            .map(Self)
     }
 }
 

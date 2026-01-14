@@ -2,7 +2,7 @@
 
 use core::{fmt, future::Future, ops::Range};
 
-use crate::{io::Read, sync::oneshot_broadcast, url_encoded::UrlEncodedString};
+use crate::{self as picoserve, io::Read, sync::oneshot_broadcast, url_encoded::UrlEncodedString};
 
 struct Subslice<'a> {
     buffer: &'a [u8],
@@ -486,16 +486,25 @@ impl<'r, R: Read> RequestBodyReader<'r, ReaderWithReadRequestTimeout<'r, R>> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error, picoserve_derive::ErrorWithStatusCode)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 /// Errors arising when reading the entire body
-pub enum ReadAllBodyError<E> {
+pub enum ReadAllBodyError {
     /// The body does not fit into the remaining request buffer.
-    BufferIsTooSmall,
+    #[error("No space to extract entire body. Content Length: {content_length}. Buffer Length: {buffer_length}.")]
+    #[status_code(PAYLOAD_TOO_LARGE)]
+    BufferIsTooSmall {
+        content_length: usize,
+        buffer_length: usize,
+    },
     /// EndOfFile reached while reading the body before the entire body has been read.
+    #[error("The client closed the connection")]
+    #[status_code(BAD_REQUEST)]
     UnexpectedEof,
     /// The socket failed to read.
-    IO(E),
+    #[error("IO Error while reading body: {0}")]
+    #[status_code(INTERNAL_SERVER_ERROR)]
+    IO(crate::io::ErrorKind),
 }
 
 /// The body of the request, which may not have yet been buffered.
@@ -524,11 +533,16 @@ impl<'r, R: Read> RequestBody<'r, R> {
     }
 
     /// Read the entire body into the HTTP buffer.
-    pub async fn read_all(mut self) -> Result<&'r mut [u8], ReadAllBodyError<R::Error>> {
-        let buffer = self
-            .buffer
-            .get_mut(..self.content_length)
-            .ok_or(ReadAllBodyError::BufferIsTooSmall)?;
+    pub async fn read_all(mut self) -> Result<&'r mut [u8], ReadAllBodyError> {
+        let content_length = self.content_length;
+        let buffer_length = self.buffer.len();
+
+        let buffer = self.buffer.get_mut(..self.content_length).ok_or(
+            ReadAllBodyError::BufferIsTooSmall {
+                content_length,
+                buffer_length,
+            },
+        )?;
 
         if let Some(remaining_body_to_read) = buffer.get_mut(*self.buffer_usage..) {
             self.reader
@@ -536,7 +550,7 @@ impl<'r, R: Read> RequestBody<'r, R> {
                 .await
                 .map_err(|err| match err {
                     crate::io::ReadExactError::UnexpectedEof => ReadAllBodyError::UnexpectedEof,
-                    crate::io::ReadExactError::Other(err) => ReadAllBodyError::IO(err),
+                    crate::io::ReadExactError::Other(error) => ReadAllBodyError::IO(error.kind()),
                 })?;
 
             *self.buffer_usage = self.content_length;
@@ -592,6 +606,7 @@ mod connection_flags {
 }
 
 pub(crate) use connection_flags::ConnectionFlags;
+use embedded_io_async::Error;
 
 /// The connection reading the request body. Can be used to read the request body and then extract the underlying connection for reading further data,
 /// such as if the connenction has been upgraded.

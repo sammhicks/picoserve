@@ -39,10 +39,10 @@ tokio = { version = "1.32.0", optional = true, features = ["io-util", "net", "ti
 std = ["alloc"]     # Use the standard library. Used by examples.
 alloc = []          # Enable `FromRequest` and `Content` for some alloc types.
 
-tokio = ["dep:tokio", "std", "serde/std"]                               # Use the `tokio` runtime. Used by examples.
-embassy = ["dep:embassy-time", "dep:embassy-net"]                       # Use the `embassy` runtime and `embassy-net` sockets.
-defmt = ["dep:defmt", "embassy-net?/defmt", "serde-json-core/defmt"]    # Emit log messages using the `defmt` crate.
-log = ["dep:log"]                                                       # Emit log messages using the `log` crate.
+tokio = ["dep:tokio", "std", "serde/std"]                                                       # Use the `tokio` runtime. Used by examples.
+embassy = ["dep:embassy-time", "dep:embassy-net"]                                               # Use the `embassy` runtime and `embassy-net` sockets.
+defmt = ["dep:defmt", "embassy-net?/defmt", "embedded-io-async/defmt", "serde-json-core/defmt"] # Emit log messages using the `defmt` crate.
+log = ["dep:log"]                                                                               # Emit log messages using the `log` crate.
 
 json = ["dep:ryu", "dep:serde-json-core"]   # Enable JSON support
 ws = ["dep:data-encoding", "dep:lhash"]     # Enable WebSocket support

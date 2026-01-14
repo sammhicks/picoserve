@@ -11,14 +11,15 @@ struct Number {
 }
 
 #[derive(Debug, thiserror::Error, ErrorWithStatusCode)]
-#[status_code(BAD_REQUEST)]
+
 enum BadRequest {
     #[error("Read Error")]
-    #[status_code(INTERNAL_SERVER_ERROR)]
-    ReadError,
-    #[error("Request Body is not UTF-8: {0}")]
-    NotUtf8(core::str::Utf8Error),
+    #[status_code(transparent)]
+    FailedToExtractEntireBodyAsStringError(
+        picoserve::extract::FailedToExtractEntireBodyAsStringError,
+    ),
     #[error("Request Body is not a valid integer: {0}")]
+    #[status_code(BAD_REQUEST)]
     BadNumber(core::num::ParseFloatError),
 }
 
@@ -26,20 +27,16 @@ impl<'r, State> FromRequest<'r, State> for Number {
     type Rejection = BadRequest;
 
     async fn from_request<R: picoserve::io::Read>(
-        _state: &'r State,
-        _request_parts: picoserve::request::RequestParts<'r>,
+        state: &'r State,
+        request_parts: picoserve::request::RequestParts<'r>,
         request_body: picoserve::request::RequestBody<'r, R>,
     ) -> Result<Self, Self::Rejection> {
         Ok(Number {
-            value: core::str::from_utf8(
-                request_body
-                    .read_all()
-                    .await
-                    .map_err(|_err| BadRequest::ReadError)?,
-            )
-            .map_err(BadRequest::NotUtf8)?
-            .parse()
-            .map_err(BadRequest::BadNumber)?,
+            value: <&str>::from_request(state, request_parts, request_body)
+                .await
+                .map_err(BadRequest::FailedToExtractEntireBodyAsStringError)?
+                .parse()
+                .map_err(BadRequest::BadNumber)?,
         })
     }
 }
