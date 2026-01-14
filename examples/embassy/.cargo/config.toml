@@ -1,3 +1,10 @@
+[env]
+DEFMT_LOG = "info"
+
+[profile.dev]
+opt-level = 3
+incremental = false
+
 [build]
 # Set the default target to match the Cortex-M0+ in the RP2040
 target = "thumbv6m-none-eabi"
