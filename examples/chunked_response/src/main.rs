@@ -28,6 +28,8 @@ impl Chunks for TextChunks {
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> anyhow::Result<()> {
+    pretty_env_logger::init();
+
     let port = 8000;
 
     let app = std::rc::Rc::new(picoserve::Router::new().route(
@@ -43,14 +45,14 @@ async fn main() -> anyhow::Result<()> {
 
     let socket = tokio::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, port)).await?;
 
-    println!("http://localhost:{port}/");
+    log::info!("http://localhost:{port}/");
 
     tokio::task::LocalSet::new()
         .run_until(async {
             loop {
                 let (stream, remote_address) = socket.accept().await?;
 
-                println!("Connection from {remote_address}");
+                log::info!("Connection from {remote_address}");
 
                 let app = app.clone();
 
@@ -66,11 +68,13 @@ async fn main() -> anyhow::Result<()> {
                             handled_requests_count,
                             ..
                         }) => {
-                            println!(
+                            log::info!(
                                 "{handled_requests_count} requests handled from {remote_address}"
                             )
                         }
-                        Err(err) => println!("{err:?}"),
+                        Err(error) => {
+                            log::error!("Error handling requests from {remote_address}: {error}")
+                        }
                     }
                 });
             }

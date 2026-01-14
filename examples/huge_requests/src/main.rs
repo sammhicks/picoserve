@@ -25,14 +25,14 @@ impl picoserve::routing::RequestHandlerService<()> for MeasureBody {
                 .write_to(request.body_connection.finalize().await?, response_writer)
                 .await;
 
-            println!("Too large");
+            log::info!("Too large");
 
             return response;
         }
 
         let timeout = Duration::from_nanos(request.body_connection.content_length() as u64 * 100);
 
-        println!("Allowed time: {:.2}s", timeout.as_millis() as f32 / 1000.0);
+        log::info!("Allowed time: {:.2}s", timeout.as_millis() as f32 / 1000.0);
         let start_time = Instant::now();
 
         let mut reader = request
@@ -61,16 +61,16 @@ impl picoserve::routing::RequestHandlerService<()> for MeasureBody {
             if last_log_time.elapsed() > Duration::from_secs(1) {
                 last_log_time = Instant::now();
 
-                println!(
+                log::info!(
                     "Upload progress: {:.2}%",
-                    100.0 * (upload_byte_count as f32) / (reader.content_length() as f32)
+                    100.0 * (upload_byte_count as f32) / (reader.content_length() as f32),
                 )
             }
         };
 
-        println!(
+        log::info!(
             "Done in {:.2}s",
-            start_time.elapsed().as_millis() as f32 / 1000.0
+            start_time.elapsed().as_millis() as f32 / 1000.0,
         );
 
         format_args!("SHA2 hash: {hash:x}\r\n")
@@ -81,6 +81,8 @@ impl picoserve::routing::RequestHandlerService<()> for MeasureBody {
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> anyhow::Result<()> {
+    pretty_env_logger::init();
+
     let port = 8000;
 
     let app = std::rc::Rc::new(
@@ -93,14 +95,14 @@ async fn main() -> anyhow::Result<()> {
 
     let socket = tokio::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, port)).await?;
 
-    println!("http://localhost:{port}/");
+    log::info!("http://localhost:{port}/");
 
     tokio::task::LocalSet::new()
         .run_until(async {
             loop {
                 let (stream, remote_address) = socket.accept().await?;
 
-                println!("Connection from {remote_address}");
+                log::info!("Connection from {remote_address}");
 
                 let app = app.clone();
 
@@ -115,12 +117,12 @@ async fn main() -> anyhow::Result<()> {
                         Ok(picoserve::DisconnectionInfo {
                             handled_requests_count,
                             ..
-                        }) => {
-                            println!(
-                                "{handled_requests_count} requests handled from {remote_address}"
-                            )
+                        }) => log::info!(
+                            "{handled_requests_count} requests handled from {remote_address}",
+                        ),
+                        Err(error) => {
+                            log::error!("Error handling requests from {remote_address}: {error}")
                         }
-                        Err(err) => println!("{err:?}"),
                     }
                 });
             }

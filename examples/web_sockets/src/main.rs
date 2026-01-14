@@ -31,7 +31,7 @@ impl ws::WebSocketCallbackWithState<AppState> for WebsocketHandler {
             {
                 picoserve::futures::Either::First(Ok(message)) => message,
                 picoserve::futures::Either::First(Err(error)) => {
-                    eprintln!("Websocket error: {error:?}");
+                    log::warn!("Websocket error: {error:?}");
                     break Some((error.code(), "Websocket Error"));
                 }
                 picoserve::futures::Either::Second(message_changed) => match message_changed {
@@ -49,16 +49,16 @@ impl ws::WebSocketCallbackWithState<AppState> for WebsocketHandler {
                 },
             };
 
-            println!("Message: {message:?}");
+            log::info!("Message: {message:?}");
             match message {
                 Message::Text(new_message) => {
                     let _ = messages_tx.send(new_message.into());
                 }
                 Message::Binary(message) => {
-                    println!("Ignoring binary message: {message:?}")
+                    log::info!("Ignoring binary message: {message:?}")
                 }
                 ws::Message::Close(reason) => {
-                    eprintln!("Websocket close reason: {reason:?}");
+                    log::info!("Websocket close reason: {reason:?}");
                     break None;
                 }
                 Message::Ping(ping) => tx.send_pong(ping).await?,
@@ -72,6 +72,8 @@ impl ws::WebSocketCallbackWithState<AppState> for WebsocketHandler {
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> anyhow::Result<()> {
+    pretty_env_logger::init();
+
     let port = 8000;
 
     let (messages_tx, mut messages_rx) = tokio::sync::broadcast::channel(16);
@@ -79,9 +81,9 @@ async fn main() -> anyhow::Result<()> {
     tokio::spawn(async move {
         loop {
             match messages_rx.recv().await {
-                Ok(message) => println!("message: {message:?}"),
+                Ok(message) => log::info!("message: {message:?}"),
                 Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
-                    println!("Lost {n} messages")
+                    log::info!("Lost {n} messages")
                 }
                 Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
             }
@@ -128,9 +130,9 @@ async fn main() -> anyhow::Result<()> {
                 "/ws",
                 get(async move |upgrade: ws::WebSocketUpgrade| {
                     if let Some(protocols) = upgrade.protocols() {
-                        println!("Protocols:");
+                        log::info!("Protocols:");
                         for protocol in protocols {
-                            println!("\t{protocol}");
+                            log::info!("\t{protocol}");
                         }
                     }
 
@@ -144,14 +146,14 @@ async fn main() -> anyhow::Result<()> {
 
     let socket = tokio::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, port)).await?;
 
-    println!("http://localhost:{port}/");
+    log::info!("http://localhost:{port}/");
 
     tokio::task::LocalSet::new()
         .run_until(async {
             loop {
                 let (stream, remote_address) = socket.accept().await?;
 
-                println!("Connection from {remote_address}");
+                log::info!("Connection from {remote_address}");
 
                 let app = app.clone();
 
@@ -167,11 +169,13 @@ async fn main() -> anyhow::Result<()> {
                             handled_requests_count,
                             ..
                         }) => {
-                            println!(
+                            log::info!(
                                 "{handled_requests_count} requests handled from {remote_address}"
                             )
                         }
-                        Err(err) => println!("{err:?}"),
+                        Err(error) => {
+                            log::error!("Error handling requests from {remote_address}: {error}")
+                        }
                     }
                 });
             }

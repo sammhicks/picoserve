@@ -8,6 +8,8 @@ enum ServerState {
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> anyhow::Result<()> {
+    pretty_env_logger::init();
+
     let port = 8000;
 
     let (update_server_state, mut server_state) = tokio::sync::watch::channel(ServerState::Running);
@@ -29,7 +31,7 @@ async fn main() -> anyhow::Result<()> {
 
     let socket = tokio::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, port)).await?;
 
-    println!("http://localhost:{port}/");
+    log::info!("http://localhost:{port}/");
 
     let (wait_handle, waiter) = tokio::sync::oneshot::channel::<futures_util::never::Never>();
     let wait_handle = std::sync::Arc::new(wait_handle);
@@ -49,7 +51,7 @@ async fn main() -> anyhow::Result<()> {
                     futures_util::future::Either::Right((connection, _)) => connection?,
                 };
 
-                println!("Connection from {remote_address}");
+                log::info!("Connection from {remote_address}");
 
                 let app = app.clone();
                 let mut server_state = server_state.clone();
@@ -78,22 +80,24 @@ async fn main() -> anyhow::Result<()> {
                             handled_requests_count,
                             shutdown_reason,
                         }) => {
-                            println!(
-                                "{handled_requests_count} requests handled from {remote_address}"
+                            log::info!(
+                                "{handled_requests_count} requests handled from {remote_address}",
                             );
 
                             if shutdown_reason.is_some() {
-                                println!("Shutdown signal received");
+                                log::info!("Shutdown signal received");
                             }
                         }
-                        Err(err) => println!("{err:?}"),
+                        Err(error) => {
+                            log::error!("Error handling requests from {remote_address}: {error}")
+                        }
                     }
 
                     drop(wait_handle);
                 });
             }
 
-            println!("Waiting for connections to close...");
+            log::info!("Waiting for connections to close...");
             drop(wait_handle);
 
             #[allow(clippy::single_match)]
@@ -102,7 +106,7 @@ async fn main() -> anyhow::Result<()> {
                 Err(_) => (),
             }
 
-            println!("All connections are closed");
+            log::info!("All connections are closed");
 
             Ok(())
         })

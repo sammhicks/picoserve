@@ -46,7 +46,7 @@ impl response::ws::WebSocketCallbackWithShutdownSignal for WebSocketCallback {
                 let message = match rx.next_message(&mut buffer, &mut shutdown_signal).await? {
                     picoserve::futures::Either::First(Ok(message)) => message,
                     picoserve::futures::Either::First(Err(error)) => {
-                        eprintln!("Websocket error: {error:?}");
+                        log::warn!("Websocket error: {error:?}");
                         break Ok(Some((error.code(), "Websocket Error")));
                     }
                     picoserve::futures::Either::Second(()) => {
@@ -55,7 +55,7 @@ impl response::ws::WebSocketCallbackWithShutdownSignal for WebSocketCallback {
                     }
                 };
 
-                println!("Message: {message:?}");
+                log::info!("Message: {message:?}");
 
                 match message {
                     Message::Text(payload) => {
@@ -65,9 +65,7 @@ impl response::ws::WebSocketCallbackWithShutdownSignal for WebSocketCallback {
                             .send_json(ClientEvent::Echo { payload })
                             .await?;
                     }
-                    Message::Binary(payload) => {
-                        println!("Ignoring Binary message: {payload:?}")
-                    }
+                    Message::Binary(payload) => log::info!("Ignoring Binary message: {payload:?}"),
                     Message::Close(_) => break Ok(None),
                     Message::Ping(data) => shared_tx.lock().await.send_pong(data).await?,
                     Message::Pong(_) => (),
@@ -111,6 +109,8 @@ impl response::ws::WebSocketCallbackWithShutdownSignal for WebSocketCallback {
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> anyhow::Result<()> {
+    pretty_env_logger::init();
+
     let port = 8000;
 
     let (update_server_state, mut server_state) = tokio::sync::watch::channel(ServerState::Running);
@@ -146,7 +146,7 @@ async fn main() -> anyhow::Result<()> {
 
     let socket = tokio::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, port)).await?;
 
-    println!("http://localhost:{port}/");
+    log::info!("http://localhost:{port}/");
 
     let (wait_handle, waiter) = tokio::sync::oneshot::channel::<futures_util::never::Never>();
     let wait_handle = std::sync::Arc::new(wait_handle);
@@ -166,7 +166,7 @@ async fn main() -> anyhow::Result<()> {
                     futures_util::future::Either::Right((connection, _)) => connection?,
                 };
 
-                println!("Connection from {remote_address}");
+                log::info!("Connection from {remote_address}");
 
                 let app = app.clone();
                 let mut server_state = server_state.clone();
@@ -195,22 +195,24 @@ async fn main() -> anyhow::Result<()> {
                             handled_requests_count,
                             shutdown_reason,
                         }) => {
-                            println!(
-                                "{handled_requests_count} requests handled from {remote_address}"
+                            log::info!(
+                                "{handled_requests_count} requests handled from {remote_address}",
                             );
 
                             if shutdown_reason.is_some() {
-                                println!("Shutdown signal received");
+                                log::info!("Shutdown signal received");
                             }
                         }
-                        Err(err) => println!("{err:?}"),
+                        Err(error) => {
+                            log::error!("Error handling requests from {remote_address}: {error}")
+                        }
                     }
 
                     drop(wait_handle);
                 });
             }
 
-            println!("Waiting for connections to close...");
+            log::info!("Waiting for connections to close...");
             drop(wait_handle);
 
             #[allow(clippy::single_match)]
@@ -219,7 +221,7 @@ async fn main() -> anyhow::Result<()> {
                 Err(_) => (),
             }
 
-            println!("All connections are closed");
+            log::info!("All connections are closed");
 
             Ok(())
         })

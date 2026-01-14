@@ -8,5 +8,7 @@ edition = "2021"
 [dependencies]
 anyhow = { workspace = true }
 futures-util = { workspace = true }
-picoserve = { path = "../../picoserve", features = ["tokio", "ws"] }
+log = { workspace = true }
+pretty_env_logger = { workspace = true }
+picoserve = { path = "../../picoserve", features = ["log", "tokio", "ws"] }
 tokio = { workspace = true, features = ["sync"] }
