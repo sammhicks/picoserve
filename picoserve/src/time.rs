@@ -1,7 +1,8 @@
 //! [Timer] for creating timeouts during request parsing and request handling.
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
+#[error("Timeout")]
 pub struct TimeoutError;
 
 impl crate::io::Error for TimeoutError {
@@ -110,12 +111,16 @@ pub(crate) struct WriteWithTimeout<'t, Runtime, W: crate::io::Write, T: Timer<Ru
 
 impl<Runtime, W: crate::io::Write, T: Timer<Runtime>> crate::io::ErrorType
     for WriteWithTimeout<'_, Runtime, W, T>
+where
+    W::Error: 'static,
 {
     type Error = super::Error<W::Error>;
 }
 
 impl<Runtime, W: crate::io::Write, T: Timer<Runtime>> crate::io::Write
     for WriteWithTimeout<'_, Runtime, W, T>
+where
+    W::Error: 'static,
 {
     async fn write(&mut self, buf: &[u8]) -> Result<usize, Self::Error> {
         self.timer

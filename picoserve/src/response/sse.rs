@@ -268,6 +268,10 @@ mod tests {
 
             Ok(write_size)
         }
+
+        async fn flush(&mut self) -> Result<(), Self::Error> {
+            Ok(())
+        }
     }
 
     struct ThrottledWriter {
@@ -289,6 +293,10 @@ mod tests {
 
                 Ok(1)
             }
+        }
+
+        async fn flush(&mut self) -> Result<(), Self::Error> {
+            Ok(())
         }
     }
 

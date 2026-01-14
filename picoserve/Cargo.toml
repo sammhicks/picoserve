@@ -21,9 +21,9 @@ features = ["tokio", "embassy", "json", "ws"]
 const-sha1 = { version = "0.3.0", default-features = false }
 data-encoding = { version = "2.4.0", default-features = false, optional = true }
 defmt = { version = "1.0.1", optional = true }
-embassy-net = { version = ">=0.6.0", optional = true, features = ["tcp", "proto-ipv4", "medium-ethernet"] }
-embassy-time = { version = ">=0.4.0", optional = true }
-embedded-io-async = "0.6.0"
+embassy-net = { version = ">=0.8.0", optional = true, features = ["tcp", "proto-ipv4", "medium-ethernet"] }
+embassy-time = { version = ">=0.5.0", optional = true }
+embedded-io-async = "0.7"
 heapless = { version = "0.8.0", features = ["serde"] }
 lhash = { version = "1.1.0", features = ["sha1"], optional = true }
 log = { version = "0.4.19", optional = true, default-features = false }
@@ -48,7 +48,7 @@ json = ["dep:ryu", "dep:serde-json-core"]   # Enable JSON support
 ws = ["dep:data-encoding", "dep:lhash"]     # Enable WebSocket support
 
 [dev-dependencies]
-embedded-io-async = { version = "0.6.0", features = ["std"] }
+embedded-io-async = { version = "0.7.0", features = ["std"] }
 futures-util = { version = "0.3.28", default-features = false }
 http-body-util = "0.1.0"
 httparse = "1.10.1"

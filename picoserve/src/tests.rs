@@ -117,6 +117,10 @@ impl Write for PipeTx {
 
         Ok(buf.len())
     }
+
+    async fn flush(&mut self) -> Result<(), Self::Error> {
+        Ok(())
+    }
 }
 
 impl hyper::rt::Write for PipeTx {
