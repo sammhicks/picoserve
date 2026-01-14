@@ -1,0 +1,9 @@
+[package]
+name = "example_utils"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+embassy-rp = { workspace = true }
+embassy-sync = { workspace = true }
+embassy-usb-logger = { workspace = true }

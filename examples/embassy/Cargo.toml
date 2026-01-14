@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "app_with_props",
     "example_secrets",
+    "example_utils",
     "graceful_shutdown_using_future_array",
     "graceful_shutdown_using_tasks",
     "hello_world",

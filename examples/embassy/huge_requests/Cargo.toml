@@ -24,3 +24,4 @@ rand = { workspace = true }
 sha2 = { version = "0.10.9", default-features = false }
 static_cell = { workspace = true }
 example_secrets = { path = "../example_secrets" }
+example_utils = { path = "../example_utils" }
