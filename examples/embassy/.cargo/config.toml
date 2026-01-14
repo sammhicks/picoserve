@@ -24,4 +24,4 @@ rustflags = [
 
 # This runner will make a UF2 file and then copy it to a mounted RP2040 in USB
 # Bootloader mode:
-runner = "elf2uf2-rs -sd"
+runner = "elf2uf2-rs -dst"

@@ -8,4 +8,5 @@ edition = "2021"
 [dependencies]
 anyhow = { workspace = true }
 picoserve = { path = "../../picoserve", features = ["tokio"] }
+sha2 = { version = "0.10.9", default-features = false }
 tokio = { workspace = true }

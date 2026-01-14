@@ -114,6 +114,13 @@ pub trait Socket<Runtime>: Sized {
     /// Split the socket into its "read" and "write" half
     fn split(&mut self) -> (Self::ReadHalf<'_>, Self::WriteHalf<'_>);
 
+    /// Abort the connection
+    async fn abort<Timer: crate::Timer<Runtime>>(
+        self,
+        timeouts: &crate::Timeouts<Timer::Duration>,
+        timer: &mut Timer,
+    ) -> Result<(), super::Error<Self::Error>>;
+
     /// Perform a graceful shutdown
     async fn shutdown<Timer: crate::Timer<Runtime>>(
         self,
@@ -166,6 +173,16 @@ pub(crate) mod tokio_support {
             (TokioIo(read_half), TokioIo(write_half))
         }
 
+        async fn abort<Timer: crate::Timer<crate::TokioRuntime>>(
+            self,
+            _timeouts: &crate::Timeouts<Timer::Duration>,
+            _timer: &mut Timer,
+        ) -> Result<(), crate::Error<Self::Error>> {
+            // Dropping a TcpStream closes it.
+
+            Ok(())
+        }
+
         async fn shutdown<Timer: crate::Timer<crate::TokioRuntime>>(
             mut self,
             timeouts: &crate::Timeouts<Timer::Duration>,
@@ -216,12 +233,33 @@ impl<'s> Socket<super::EmbassyRuntime> for embassy_net::tcp::TcpSocket<'s> {
         embassy_net::tcp::TcpSocket::split(self)
     }
 
+    async fn abort<Timer: crate::Timer<super::EmbassyRuntime>>(
+        mut self,
+        timeouts: &crate::Timeouts<Timer::Duration>,
+        timer: &mut Timer,
+    ) -> Result<(), crate::Error<Self::Error>> {
+        use crate::time::TimerExt;
+
+        log_info!("Abort");
+
+        Self::abort(&mut self);
+
+        // Send the abort
+        timer
+            .run_with_maybe_timeout(timeouts.write.clone(), self.flush())
+            .await
+            .map_err(crate::Error::WriteTimeout)?
+            .map_err(crate::Error::Write)
+    }
+
     async fn shutdown<Timer: crate::Timer<super::EmbassyRuntime>>(
         mut self,
         timeouts: &crate::Timeouts<Timer::Duration>,
         timer: &mut Timer,
     ) -> Result<(), crate::Error<Self::Error>> {
         use crate::time::TimerExt;
+
+        log_info!("Shutting Down");
 
         self.close();
 

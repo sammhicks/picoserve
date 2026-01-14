@@ -80,6 +80,24 @@ impl<E: io::Error> io::Error for Error<E> {
     }
 }
 
+trait SwapErrors {
+    type Output;
+
+    fn swap_errors(self) -> Self::Output;
+}
+
+impl<T, E0, E1> SwapErrors for Result<Result<T, E0>, E1> {
+    type Output = Result<Result<T, E1>, E0>;
+
+    fn swap_errors(self) -> Self::Output {
+        match self {
+            Ok(Ok(value)) => Ok(Ok(value)),
+            Ok(Err(error)) => Err(error),
+            Err(error) => Ok(Err(error)),
+        }
+    }
+}
+
 /// How long to wait before timing out for different operations.
 /// If set to None, the operation never times out.
 #[derive(Debug, Clone)]
@@ -239,6 +257,8 @@ async fn serve_and_shutdown<
     mut socket: S,
     shutdown_signal: ShutdownSignal,
 ) -> Result<DisconnectionInfo<ShutdownReason>, Error<S::Error>> {
+    let mut connection_flags = request::ConnectionFlags::new();
+
     let result: Result<DisconnectionInfo<ShutdownReason>, Error<S::Error>> = async {
         let (reader, writer) = socket.split();
 
@@ -251,11 +271,7 @@ async fn serve_and_shutdown<
             _runtime: PhantomData,
         };
 
-        let mut must_close_connection_notification =
-            request::MustCloseConnectionNotification::new();
-
-        let mut request_reader =
-            request::Reader::new(reader, http_buffer, &mut must_close_connection_notification);
+        let mut request_reader = request::Reader::new(reader, http_buffer, &mut connection_flags);
 
         let mut shutdown_signal = core::pin::pin!(shutdown_signal);
 
@@ -361,15 +377,13 @@ async fn serve_and_shutdown<
                                 shutdown_broadcast.notify(());
 
                                 DisconnectionInfo::with_shutdown_reason(
-                                    if let Ok(handle_request_response) = timer
+                                    match timer
                                         .run_with_maybe_timeout(shutdown_timeout, handle_request)
                                         .await
+                                        .swap_errors()?
                                     {
-                                        let ResponseSent(_) = handle_request_response?;
-
-                                        request_count + 1
-                                    } else {
-                                        request_count
+                                        Ok(ResponseSent(_)) => request_count + 1,
+                                        Err(time::TimeoutError) => request_count,
                                     },
                                     shutdown_reason,
                                 )
@@ -398,7 +412,7 @@ async fn serve_and_shutdown<
                         request::ReadError::IO(err) => return Err(err),
                     };
 
-                    let ResponseSent(_) = timer
+                    let ResponseSent { .. } = timer
                         .run_with_maybe_timeout(
                             config.timeouts.write.clone(),
                             (response::StatusCode::BAD_REQUEST, message).write_to(
@@ -416,13 +430,23 @@ async fn serve_and_shutdown<
     }
     .await;
 
-    let shutdown_result = socket.shutdown(&config.timeouts, timer).await;
+    match result {
+        Ok(disconnection_info) => {
+            if connection_flags.connection_must_be_aborted() {
+                socket.abort(&config.timeouts, timer).await?;
+            } else {
+                socket.shutdown(&config.timeouts, timer).await?;
+            }
 
-    let request_count = result?;
+            Ok(disconnection_info)
+        }
+        Err(error) => {
+            // Ignore any subsequent errors
+            let _ = socket.abort(&config.timeouts, timer).await;
 
-    shutdown_result?;
-
-    Ok(request_count)
+            Err(error)
+        }
+    }
 }
 
 /// Indicates that graceful shutdown is not enabled, so the [`Server`] cannot report a graceful shutdown reason.

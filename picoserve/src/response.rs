@@ -171,15 +171,14 @@ impl<R: Read> Read for UpgradedConnection<'_, R> {
 /// A handle to the current connection. Allows a long-lasting response to check if the client has disconnected.
 pub struct Connection<'r, R: Read> {
     pub(crate) reader: AfterBodyReader<'r, R>,
-    pub(crate) must_close_connection_notification:
-        &'r mut crate::request::MustCloseConnectionNotification,
+    pub(crate) connection_flags: &'r mut crate::request::ConnectionFlags,
     pub(crate) shutdown_signal: oneshot_broadcast::Listener<'r, ()>,
 }
 
 impl<'r, R: Read> Connection<'r, R> {
     /// Upgrade the connection and get access to the inner reader
     pub fn upgrade(self, upgrade_token: crate::extract::UpgradeToken) -> UpgradedConnection<'r, R> {
-        self.must_close_connection_notification.notify();
+        self.connection_flags.notify_connection_has_been_upgraded();
 
         UpgradedConnection {
             upgrade_token,
@@ -218,15 +217,14 @@ impl<E: crate::io::Error> crate::io::Read for EmptyReader<E> {
 }
 
 pub(crate) struct EmptyParts {
-    must_close_connection_notification: crate::request::MustCloseConnectionNotification,
+    connection_flags: crate::request::ConnectionFlags,
     shutdown_signal: oneshot_broadcast::SignalCore<()>,
 }
 
 impl Default for EmptyParts {
     fn default() -> Self {
         Self {
-            must_close_connection_notification:
-                crate::request::MustCloseConnectionNotification::new(),
+            connection_flags: crate::request::ConnectionFlags::new(),
             shutdown_signal: oneshot_broadcast::Signal::core(),
         }
     }
@@ -235,7 +233,7 @@ impl Default for EmptyParts {
 impl<'r, E: crate::io::Error> Connection<'r, EmptyReader<E>> {
     pub(crate) fn empty(
         EmptyParts {
-            must_close_connection_notification,
+            connection_flags,
             shutdown_signal,
         }: &'r mut EmptyParts,
     ) -> Self {
@@ -244,7 +242,7 @@ impl<'r, E: crate::io::Error> Connection<'r, EmptyReader<E>> {
                 mode: AfterBodyReadMode::ReadFromReader,
                 reader: EmptyReader(core::marker::PhantomData),
             },
-            must_close_connection_notification,
+            connection_flags,
             shutdown_signal: shutdown_signal.make_signal().listen(),
         }
     }

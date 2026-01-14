@@ -180,7 +180,7 @@ impl<W: Write> super::ResponseWriter for ResponseStream<W> {
                             ConnectionHeader::ForceClose => super::KeepAlive::Close,
                         })
                 {
-                    self.write_header("connection", connection_header).await?;
+                    self.write_header("Connection", connection_header).await?;
                 }
 
                 Ok(())
@@ -194,10 +194,7 @@ impl<W: Write> super::ResponseWriter for ResponseStream<W> {
             .for_each_header(HeadersWriter {
                 writer: &mut self.writer,
                 connection_header: Some(
-                    if connection
-                        .must_close_connection_notification
-                        .has_been_triggered()
-                    {
+                    if connection.connection_flags.connection_must_be_closed() {
                         ConnectionHeader::ForceClose
                     } else {
                         ConnectionHeader::DefaultTo(self.connection_header)

@@ -179,6 +179,14 @@ impl<TX: Write<Error = Infallible>, RX: Read<Error = Infallible>> io::Socket<Tok
         (&mut self.rx, &mut self.tx)
     }
 
+    async fn abort<Timer: crate::Timer<TokioRuntime>>(
+        self,
+        _timeouts: &crate::Timeouts<Timer::Duration>,
+        _timer: &mut Timer,
+    ) -> Result<(), crate::Error<Self::Error>> {
+        Ok(())
+    }
+
     async fn shutdown<Timer: time::Timer<TokioRuntime>>(
         self,
         _timeouts: &Timeouts<Timer::Duration>,

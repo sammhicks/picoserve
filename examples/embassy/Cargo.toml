@@ -6,6 +6,7 @@ members = [
     "graceful_shutdown_using_future_array",
     "graceful_shutdown_using_tasks",
     "hello_world",
+    "huge_requests",
     "set_pico_w_led",
     "various_states",
     "web_sockets"

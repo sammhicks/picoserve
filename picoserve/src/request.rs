@@ -1,6 +1,6 @@
 //! HTTP request types.
 
-use core::{fmt, ops::Range};
+use core::{fmt, future::Future, ops::Range};
 
 use crate::{io::Read, sync::oneshot_broadcast, url_encoded::UrlEncodedString};
 
@@ -392,7 +392,7 @@ impl<'r> RequestParts<'r> {
 /// Reads the body asynchronously. Implements [Read].
 pub struct RequestBodyReader<'r, R: Read> {
     content_length: usize,
-    reader: &'r mut R,
+    reader: R,
     current_data: &'r [u8],
     read_position: &'r mut usize,
 }
@@ -435,6 +435,57 @@ impl<R: Read> Read for RequestBodyReader<'_, R> {
     }
 }
 
+impl<'r, R: Read> RequestBodyReader<'r, ReaderWithReadRequestTimeout<'r, R>> {
+    /// Replace the timeout on reading the request body with a timeout when the provided `read_request_timeout_signal` resolves.
+    /// This should be a short `sleep` future.
+    ///
+    /// If the `embassy` feature is enabled, using `with_different_timeout` is preferred.
+    ///
+    /// Safety:
+    ///
+    /// The provided future must resolve after a short amount of time.
+    /// A future which resolves after a long time or never resolves leaves the server vulnerable to slow rate attacks such as [RUDY](https://en.wikipedia.org/wiki/R-U-Dead-Yet).
+    pub fn with_different_timeout_signal<F: Future + Unpin + 'static>(
+        self,
+        read_request_timeout_signal: F,
+    ) -> RequestBodyReader<'r, ReaderWithTimeoutFuture<'r, R, F>> {
+        let Self {
+            content_length,
+            reader:
+                ReaderWithReadRequestTimeout {
+                    reader,
+                    read_request_timeout_signal: _,
+                    make_read_timeout_error,
+                },
+            current_data,
+            read_position,
+        } = self;
+
+        RequestBodyReader {
+            content_length,
+            reader: ReaderWithTimeoutFuture {
+                reader,
+                read_request_timeout_signal,
+                make_read_timeout_error,
+            },
+            current_data,
+            read_position,
+        }
+    }
+
+    /// Replace the timeout on reading the request body with a timeout from the current point.
+    ///
+    /// This can allow request handlers which accept large request bodies, such as uploading large files,
+    /// to have longer timeouts than most request handlers.
+    #[cfg(feature = "embassy")]
+    pub fn with_different_timeout(
+        self,
+        timeout: embassy_time::Duration,
+    ) -> RequestBodyReader<'r, ReaderWithTimeoutFuture<'r, R, embassy_time::Timer>> {
+        self.with_different_timeout_signal(embassy_time::Timer::after(timeout))
+    }
+}
+
 #[derive(Debug)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 /// Errors arising when reading the entire body
@@ -448,11 +499,9 @@ pub enum ReadAllBodyError<E> {
 }
 
 /// The body of the request, which may not have yet been buffered.
-#[derive(Debug)]
-#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct RequestBody<'r, R: Read> {
     content_length: usize,
-    reader: &'r mut R,
+    reader: ReaderWithReadRequestTimeout<'r, R>,
     buffer: &'r mut [u8],
     read_position: &'r mut usize,
     buffer_usage: &'r mut usize,
@@ -475,7 +524,7 @@ impl<'r, R: Read> RequestBody<'r, R> {
     }
 
     /// Read the entire body into the HTTP buffer.
-    pub async fn read_all(self) -> Result<&'r mut [u8], ReadAllBodyError<R::Error>> {
+    pub async fn read_all(mut self) -> Result<&'r mut [u8], ReadAllBodyError<R::Error>> {
         let buffer = self
             .buffer
             .get_mut(..self.content_length)
@@ -499,7 +548,7 @@ impl<'r, R: Read> RequestBody<'r, R> {
     }
 
     /// Return a reader which can be used to asynchronously read the body, such as decoding it on the fly or streaming into an external buffer.
-    pub fn reader(self) -> RequestBodyReader<'r, R> {
+    pub fn reader(self) -> RequestBodyReader<'r, ReaderWithReadRequestTimeout<'r, R>> {
         RequestBodyReader {
             content_length: self.content_length,
             reader: self.reader,
@@ -509,40 +558,50 @@ impl<'r, R: Read> RequestBody<'r, R> {
     }
 }
 
-mod must_close_connection_notification {
+mod connection_flags {
 
-    pub(crate) struct MustCloseConnectionNotification {
-        connection_must_be_closed_after_sending_response: bool,
+    pub(crate) struct ConnectionFlags {
+        connection_has_been_upgraded: bool,
+        connection_must_be_aborted_if_not_upgraded: bool,
     }
 
-    impl MustCloseConnectionNotification {
+    impl ConnectionFlags {
         pub(crate) fn new() -> Self {
             Self {
-                connection_must_be_closed_after_sending_response: false,
+                connection_has_been_upgraded: false,
+                connection_must_be_aborted_if_not_upgraded: false,
             }
         }
 
-        pub(crate) fn has_been_triggered(&self) -> bool {
-            self.connection_must_be_closed_after_sending_response
+        pub fn notify_connection_has_been_upgraded(&mut self) {
+            self.connection_has_been_upgraded = true;
         }
 
-        pub(crate) fn notify(&mut self) {
-            self.connection_must_be_closed_after_sending_response = true;
+        pub fn connection_must_be_aborted(&self) -> bool {
+            self.connection_must_be_aborted_if_not_upgraded && !self.connection_has_been_upgraded
+        }
+
+        pub fn notify_connection_must_be_aborted_if_not_upgraded(&mut self) {
+            self.connection_must_be_aborted_if_not_upgraded = true;
+        }
+
+        pub fn connection_must_be_closed(&mut self) -> bool {
+            self.connection_has_been_upgraded | self.connection_must_be_aborted_if_not_upgraded
         }
     }
 }
 
-pub(crate) use must_close_connection_notification::MustCloseConnectionNotification;
+pub(crate) use connection_flags::ConnectionFlags;
 
 /// The connection reading the request body. Can be used to read the request body and then extract the underlying connection for reading further data,
 /// such as if the connenction has been upgraded.
 pub struct RequestBodyConnection<'r, R: Read> {
     content_length: usize,
-    reader: ReaderWithReadRequestTimeoutSignal<'r, R>,
+    reader: ReaderWithReadRequestTimeout<'r, R>,
     read_position: usize,
     buffer: &'r mut [u8],
     buffer_usage: usize,
-    must_close_connection_notification: &'r mut MustCloseConnectionNotification,
+    connection_flags: &'r mut ConnectionFlags,
     shutdown_signal: oneshot_broadcast::Listener<'r, ()>,
 }
 
@@ -553,10 +612,10 @@ impl<'r, R: Read> RequestBodyConnection<'r, R> {
     }
 
     /// Return the Request Body
-    pub fn body(&mut self) -> RequestBody<'_, impl Read<Error = R::Error> + 'r> {
+    pub fn body(&mut self) -> RequestBody<'_, R> {
         RequestBody {
             content_length: self.content_length,
-            reader: &mut self.reader,
+            reader: self.reader.reborrow(),
             read_position: &mut self.read_position,
             buffer: self.buffer,
             buffer_usage: &mut self.buffer_usage,
@@ -564,35 +623,70 @@ impl<'r, R: Read> RequestBodyConnection<'r, R> {
     }
 
     /// "Finalize" the connection, returning the underlying connection.
-    /// Also cancels the read timeout to avoid long-lived connections such as WebSockets triggering read timeout.
+    /// Also cancels the read timeout to avoid long-lived connections such as WebSockets triggering it.
     pub async fn finalize(
         self,
     ) -> Result<crate::response::Connection<'r, impl Read<Error = R::Error> + 'r>, R::Error> {
+        use crate::SwapErrors;
+
         let Self {
             content_length,
-            reader: ReaderWithReadRequestTimeoutSignal { reader, .. },
+            reader:
+                ReaderWithReadRequestTimeout {
+                    reader,
+                    read_request_timeout_signal,
+                    ..
+                },
             read_position,
             buffer,
             buffer_usage,
-            must_close_connection_notification,
+            connection_flags,
             shutdown_signal,
         } = self;
 
         let mode = if read_position > buffer_usage {
             // Case 1: The request handler had read past the end of the buffer.
             crate::response::AfterBodyReadMode::ReadFromReader
-        } else if let Some(body_bytes_remaining) = content_length
-            .checked_sub(self.buffer_usage)
+        } else if let Some(mut body_bytes_remaining) = content_length
+            .checked_sub(buffer_usage)
             .filter(|&body_bytes_remaining| body_bytes_remaining > 0)
         {
             // Case 2: The request handler has not read all of the request body, so close the connection after writing the response.
 
-            // In case not all bytes are read, close the connection after writing the response.
-            must_close_connection_notification.notify();
+            match crate::futures::select_either(
+                async {
+                    read_request_timeout_signal.await;
+                    crate::time::TimeoutError
+                },
+                async {
+                    while body_bytes_remaining > 0 {
+                        let read_buffer_size = body_bytes_remaining.min(buffer.len());
 
-            crate::response::AfterBodyReadMode::SkipRemainingBodyFromReader {
-                scratch_buffer: buffer,
-                body_bytes_remaining,
+                        let read_size = reader.read(&mut buffer[..read_buffer_size]).await?;
+
+                        if read_size == 0 {
+                            break;
+                        }
+
+                        body_bytes_remaining -= read_size;
+                    }
+
+                    Ok(())
+                },
+            )
+            .await
+            .first_is_error()
+            .swap_errors()?
+            {
+                Ok(()) => crate::response::AfterBodyReadMode::ReadFromReader,
+                Err(crate::time::TimeoutError) => {
+                    connection_flags.notify_connection_must_be_aborted_if_not_upgraded();
+
+                    crate::response::AfterBodyReadMode::SkipRemainingBodyFromReader {
+                        scratch_buffer: buffer,
+                        body_bytes_remaining,
+                    }
+                }
             }
         } else {
             // Case 4: The request handler has read the entire request body, but has not read past the end of the buffer.
@@ -610,7 +704,7 @@ impl<'r, R: Read> RequestBodyConnection<'r, R> {
 
         Ok(crate::response::Connection {
             reader: crate::response::AfterBodyReader { mode, reader },
-            must_close_connection_notification,
+            connection_flags,
             shutdown_signal,
         })
     }
@@ -624,21 +718,57 @@ pub struct Request<'r, R: Read> {
     pub body_connection: RequestBodyConnection<'r, R>,
 }
 
-struct ReaderWithReadRequestTimeoutSignal<'r, R: Read> {
+/// A [`Read`]er which times out on the `read_request` timeout.
+pub struct ReaderWithReadRequestTimeout<'r, R: Read> {
     reader: &'r mut R,
     read_request_timeout_signal: oneshot_broadcast::Listener<'r, ()>,
     make_read_timeout_error: fn() -> R::Error,
 }
 
-impl<R: Read> crate::io::ErrorType for ReaderWithReadRequestTimeoutSignal<'_, R> {
+impl<R: Read> ReaderWithReadRequestTimeout<'_, R> {
+    fn reborrow(&mut self) -> ReaderWithReadRequestTimeout<'_, R> {
+        ReaderWithReadRequestTimeout {
+            reader: self.reader,
+            read_request_timeout_signal: self.read_request_timeout_signal.clone(),
+            make_read_timeout_error: self.make_read_timeout_error,
+        }
+    }
+}
+
+impl<R: Read> crate::io::ErrorType for ReaderWithReadRequestTimeout<'_, R> {
     type Error = R::Error;
 }
 
-impl<R: Read> Read for ReaderWithReadRequestTimeoutSignal<'_, R> {
+impl<R: Read> Read for ReaderWithReadRequestTimeout<'_, R> {
     async fn read(&mut self, buf: &mut [u8]) -> Result<usize, Self::Error> {
         crate::futures::select(
             async {
                 self.read_request_timeout_signal.clone().await;
+
+                Err((self.make_read_timeout_error)())
+            },
+            self.reader.read(buf),
+        )
+        .await
+    }
+}
+
+/// A [`Read`]er which times out after its [`Future`] resolves.
+pub struct ReaderWithTimeoutFuture<'r, R: Read, F: Future + Unpin> {
+    reader: &'r mut R,
+    read_request_timeout_signal: F,
+    make_read_timeout_error: fn() -> R::Error,
+}
+
+impl<R: Read, F: Future + Unpin> crate::io::ErrorType for ReaderWithTimeoutFuture<'_, R, F> {
+    type Error = R::Error;
+}
+
+impl<R: Read, F: Future + Unpin> Read for ReaderWithTimeoutFuture<'_, R, F> {
+    async fn read(&mut self, buf: &mut [u8]) -> Result<usize, Self::Error> {
+        crate::futures::select(
+            async {
+                (&mut self.read_request_timeout_signal).await;
 
                 Err((self.make_read_timeout_error)())
             },
@@ -673,49 +803,44 @@ pub(crate) struct Reader<'a, R: Read> {
     read_position: usize,
     buffer: &'a mut [u8],
     buffer_usage: usize,
-    must_close_connection_notification: &'a mut MustCloseConnectionNotification,
+    connection_flags: &'a mut ConnectionFlags,
 }
 
 impl<'a, R: Read> Reader<'a, R> {
-    pub fn new(
-        reader: R,
-        buffer: &'a mut [u8],
-        must_close_connection_notification: &'a mut MustCloseConnectionNotification,
-    ) -> Self {
+    pub fn new(reader: R, buffer: &'a mut [u8], connection_flags: &'a mut ConnectionFlags) -> Self {
         Self {
             reader,
             read_position: 0,
             buffer,
             buffer_usage: 0,
-            must_close_connection_notification,
+            connection_flags,
         }
     }
 
     pub async fn request_is_pending(&mut self) -> Result<Option<RequestIsPending>, R::Error> {
-        Ok(
-            if self.must_close_connection_notification.has_been_triggered() {
-                false
+        Ok(if self.connection_flags.connection_must_be_closed() {
+            false
+        } else {
+            // Move the buffered section of the next request to the start of the buffer.
+            if let Some(used_buffer) = self.buffer.get_mut(..self.buffer_usage) {
+                used_buffer.rotate_left(self.read_position);
+
+                self.buffer_usage -= self.read_position;
             } else {
-                // Move the buffered section of the next request to the start of the buffer.
-                if let Some(used_buffer) = self.buffer.get_mut(..self.buffer_usage) {
-                    used_buffer.rotate_left(self.read_position);
-
-                    self.buffer_usage -= self.read_position;
-                } else {
-                    self.buffer_usage = 0;
-                }
-
-                self.read_position = 0;
-
-                if self.buffer_usage > 0 {
-                    true
-                } else {
-                    self.buffer_usage = self.reader.read(self.buffer).await?;
-                    self.buffer_usage > 0
-                }
+                self.buffer_usage = 0;
             }
-            .then_some(RequestIsPending(())),
-        )
+
+            self.read_position = 0;
+
+            if self.buffer_usage > 0 {
+                true
+            } else {
+                self.buffer_usage = self.reader.read(self.buffer).await?;
+
+                self.buffer_usage > 0
+            }
+        }
+        .then_some(RequestIsPending(())))
     }
 
     fn used_buffer(&self) -> &[u8] {
@@ -904,7 +1029,7 @@ impl<'a, R: Read> Reader<'a, R> {
             },
             body_connection: RequestBodyConnection {
                 content_length,
-                reader: ReaderWithReadRequestTimeoutSignal {
+                reader: ReaderWithReadRequestTimeout {
                     reader: &mut self.reader,
                     read_request_timeout_signal,
                     make_read_timeout_error,
@@ -912,7 +1037,7 @@ impl<'a, R: Read> Reader<'a, R> {
                 read_position: 0,
                 buffer: body_buffer,
                 buffer_usage: self.buffer_usage - parts_length,
-                must_close_connection_notification: self.must_close_connection_notification,
+                connection_flags: self.connection_flags,
                 shutdown_signal,
             },
         };

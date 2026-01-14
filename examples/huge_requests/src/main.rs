@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use picoserve::{io::Read, response::IntoResponse, routing::get_service};
 
@@ -15,22 +15,65 @@ impl picoserve::routing::RequestHandlerService<()> for MeasureBody {
         mut request: picoserve::request::Request<'_, R>,
         response_writer: W,
     ) -> Result<picoserve::ResponseSent, W::Error> {
-        let mut reader = request.body_connection.body().reader();
+        use sha2::Digest;
+
+        if request.body_connection.content_length() > 2_000_000 {
+            let response = (
+                picoserve::response::StatusCode::PAYLOAD_TOO_LARGE,
+                "The file must be smaller than 2MB",
+            )
+                .write_to(request.body_connection.finalize().await?, response_writer)
+                .await;
+
+            println!("Too large");
+
+            return response;
+        }
+
+        let timeout = Duration::from_nanos(request.body_connection.content_length() as u64 * 100);
+
+        println!("Allowed time: {:.2}s", timeout.as_millis() as f32 / 1000.0);
+        let start_time = Instant::now();
+
+        let mut reader = request
+            .body_connection
+            .body()
+            .reader()
+            // If you use the embassy feature, using `with_different_timeout` is preferable.
+            .with_different_timeout_signal(Box::pin(tokio::time::sleep(timeout)));
 
         let mut buffer = [0; 1024];
 
-        let mut total_size = 0;
+        let mut hasher = sha2::Sha256::new();
+        let mut upload_byte_count = 0_usize;
 
-        loop {
+        let mut last_log_time = Instant::now();
+
+        let hash = loop {
             let read_size = reader.read(&mut buffer).await?;
             if read_size == 0 {
-                break;
+                break hasher.finalize();
             }
 
-            total_size += read_size;
-        }
+            hasher.update(&buffer[..read_size]);
+            upload_byte_count += read_size;
 
-        format!("Total Size: {total_size}\r\n")
+            if last_log_time.elapsed() > Duration::from_secs(1) {
+                last_log_time = Instant::now();
+
+                println!(
+                    "Upload progress: {:.2}%",
+                    100.0 * (upload_byte_count as f32) / (reader.content_length() as f32)
+                )
+            }
+        };
+
+        println!(
+            "Done in {:.2}s",
+            start_time.elapsed().as_millis() as f32 / 1000.0
+        );
+
+        format_args!("SHA2 hash: {hash:x}\r\n")
             .write_to(request.body_connection.finalize().await?, response_writer)
             .await
     }
