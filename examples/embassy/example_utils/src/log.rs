@@ -9,17 +9,13 @@ pub struct CommandHandler {
 
 impl CommandHandler {
     fn push_bytes(position: &mut usize, data: &[u8]) {
-        let reset_command = b"elf2uf2-term\r\n";
+        let reset_command = b"elf2uf2-term";
 
-        for &b in data {
-            if b == reset_command[*position] {
-                *position += 1;
-
-                if *position == reset_command.len() {
-                    embassy_rp::rom_data::reset_to_usb_boot(0, 0);
-                }
-            } else {
-                *position = 0;
+        for b in data {
+            match reset_command.get(*position) {
+                Some(expected) if b == expected => *position += 1,
+                None if b"\r\n".contains(b) => embassy_rp::rom_data::reset_to_usb_boot(0, 0),
+                _ => *position = 0,
             }
         }
     }
