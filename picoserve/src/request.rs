@@ -503,7 +503,7 @@ pub enum ReadAllBodyError {
     UnexpectedEof,
     /// The socket failed to read.
     #[error("IO Error while reading body: {0}")]
-    #[status_code(INTERNAL_SERVER_ERROR)]
+    #[status_code(BAD_REQUEST)]
     IO(crate::io::ErrorKind),
 }
 

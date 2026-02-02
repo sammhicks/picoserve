@@ -161,7 +161,7 @@ impl<'r, State, const N: usize> FromRequest<'r, State> for heapless::Vec<u8, N> 
     }
 }
 
-#[cfg(feature = "alloc")]
+#[cfg(any(test, feature = "alloc"))]
 impl<'r, State> FromRequest<'r, State> for alloc::vec::Vec<u8> {
     type Rejection = ReadAllBodyError;
 
@@ -198,7 +198,7 @@ impl<'r, State> FromRequest<'r, State> for alloc::vec::Vec<u8> {
     }
 }
 
-#[cfg(feature = "alloc")]
+#[cfg(any(test, feature = "alloc"))]
 impl<'r, State> FromRequest<'r, State> for alloc::borrow::Cow<'r, [u8]> {
     type Rejection = ReadAllBodyError;
 
@@ -279,7 +279,7 @@ impl<'r, State, const N: usize> FromRequest<'r, State> for heapless::String<N> {
     }
 }
 
-#[cfg(feature = "alloc")]
+#[cfg(any(test, feature = "alloc"))]
 impl<'r, State> FromRequest<'r, State> for alloc::string::String {
     type Rejection = FailedToExtractEntireBodyAsStringError;
 
@@ -297,7 +297,7 @@ impl<'r, State> FromRequest<'r, State> for alloc::string::String {
     }
 }
 
-#[cfg(feature = "alloc")]
+#[cfg(any(test, feature = "alloc"))]
 impl<'r, State> FromRequest<'r, State> for alloc::borrow::Cow<'r, str> {
     type Rejection = FailedToExtractEntireBodyAsStringError;
 

@@ -54,4 +54,4 @@ http-body-util = "0.1.0"
 httparse = "1.10.1"
 hyper = { version = "1.1.0", features = ["client", "http1"] }
 ntest = "0.9.3"
-tokio = { version = "1.0.0", features = ["rt", "io-util", "net", "time", "macros", "sync"] }
+tokio = { version = "1.0.0", features = ["rt", "io-util", "net", "time", "macros", "sync", "test-util"] }

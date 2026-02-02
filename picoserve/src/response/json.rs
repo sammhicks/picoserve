@@ -23,7 +23,7 @@ impl serde::ser::Error for SerializeError {
     }
 }
 
-#[cfg(feature = "std")]
+#[cfg(any(test, feature = "std"))]
 impl std::error::Error for SerializeError {}
 
 impl From<fmt::Error> for SerializeError {

@@ -28,7 +28,7 @@ impl fmt::Display for UrlEncodedCharacterDecodeError {
     }
 }
 
-#[cfg(feature = "std")]
+#[cfg(any(test, feature = "std"))]
 impl std::error::Error for UrlEncodedCharacterDecodeError {}
 
 /// A decoded character.
@@ -198,7 +198,7 @@ impl fmt::Display for DecodeError {
     }
 }
 
-#[cfg(feature = "std")]
+#[cfg(any(test, feature = "std"))]
 impl std::error::Error for DecodeError {}
 
 struct NamedDecodeError<'a> {
@@ -247,7 +247,7 @@ impl<'a> UrlEncodedString<'a> {
         Ok(str)
     }
 
-    #[cfg(feature = "std")]
+    #[cfg(any(test, feature = "std"))]
     /// Try decoding the chars into a std::string::String.
     pub fn try_into_std_string(
         self,
@@ -311,7 +311,7 @@ impl serde::de::Error for DeserializationError {
     }
 }
 
-#[cfg(feature = "std")]
+#[cfg(any(test, feature = "std"))]
 impl std::error::Error for DeserializationError {}
 
 impl From<NamedDecodeError<'_>> for DeserializationError {
@@ -425,7 +425,7 @@ impl serde::de::Error for FormDeserializationError {
     }
 }
 
-#[cfg(feature = "std")]
+#[cfg(any(test, feature = "std"))]
 impl std::error::Error for FormDeserializationError {}
 
 impl From<super::url_encoded::DeserializationError> for FormDeserializationError {
