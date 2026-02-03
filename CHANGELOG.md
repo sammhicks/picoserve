@@ -11,27 +11,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Changed MSRV to 1.93.
 - Routing types which have `PathParameters` use tuples rather than one of `NoPathParameters`, `OnePathParameter`, `ManyPathParameters`.
-- [`Router`](https://docs.rs/picoserve/latest/picoserve/routing/struct.Router.html) has a different number of type parameters.
+- [`Router`](https://docs.rs/picoserve/0.18.0/picoserve/routing/struct.Router.html) has a different number of type parameters.
 - Updated `picoserve_derive` to version 0.1.4.
-- The method of [`PathRouterService`](https://docs.rs/picoserve/latest/picoserve/routing/trait.PathRouterService.html) is corrected, changing from `call_request_handler_service` to `call_path_router_service`.
+- The method of [`PathRouterService`](https://docs.rs/picoserve/0.18.0/picoserve/routing/trait.PathRouterService.html) is corrected, changing from `call_request_handler_service` to `call_path_router_service`.
 - Updated to `embedded-io-async` 0.7, `embassy-net` 0.8.0 and `embassy-time` 0.5.0, which have breaking changes.
-- [`Timer`](https://docs.rs/picoserve/latest/picoserve/time/trait.Timer.html) must use [`Duration`](https://docs.rs/picoserve/latest/picoserve/time/struct.Duration.html) instead of its own time. If the `embassy` feature is enabled, `Duration` becomes an alias of [`embassy_time::Duration`](https://docs.rs/embassy-time/latest/embassy_time/struct.Duration.html).
-- The [`Rejection](https://docs.rs/picoserve/latest/picoserve/extract/trait.FromRequest.html#associatedtype.Rejection) type for `&mut [u8]`, `&[u8]`, `alloc::vec::Vec<u8>`, and `alloc::borrow::Cow<'r, [u8]>` is now [`ReadAllBodyError`](https://docs.rs/picoserve/latest/picoserve/request/enum.ReadAllBodyError.html).
+- [`Timer`](https://docs.rs/picoserve/0.18.0/picoserve/time/trait.Timer.html) must use [`Duration`](https://docs.rs/picoserve/0.18.0/picoserve/time/struct.Duration.html) instead of its own time. If the `embassy` feature is enabled, `Duration` becomes an alias of [`embassy_time::Duration`](https://docs.rs/embassy-time/0.5.0/embassy_time/struct.Duration.html).
+- The [`Rejection](https://docs.rs/picoserve/0.18.0/picoserve/extract/trait.FromRequest.html#associatedtype.Rejection) type for `&mut [u8]`, `&[u8]`, `alloc::vec::Vec<u8>`, and `alloc::borrow::Cow<'r, [u8]>` is now [`ReadAllBodyError`](https://docs.rs/picoserve/0.18.0/picoserve/request/enum.ReadAllBodyError.html).
 - Timeouts are no longer optional.
 
 ### Fixed
-- The [`Debug`](https://doc.rust-lang.org/core/fmt/trait.Debug.html) implementation of [`HeaderName`](https://docs.rs/picoserve/latest/picoserve/request/struct.HeaderName.html) and [`HeaderValue`](https://docs.rs/picoserve/latest/picoserve/request/struct.HeaderValue.html) includes the surrounding double quotes.
+- The [`Debug`](https://doc.rust-lang.org/core/fmt/trait.Debug.html) implementation of [`HeaderName`](https://docs.rs/picoserve/0.18.0/picoserve/request/struct.HeaderName.html) and [`HeaderValue`](https://docs.rs/picoserve/0.18.0/picoserve/request/struct.HeaderValue.html) includes the surrounding double quotes.
 - The `read_request` timeout applies to reading the request body, not just the request head.
-- [`Config`](https://docs.rs/picoserve/latest/picoserve/struct.Config.html) can now be `const` or `static`.
+- [`Config`](https://docs.rs/picoserve/0.18.0/picoserve/struct.Config.html) can now be `const` or `static`.
 
 ### Changed
 - If a request handler doesn't read the entire request body and there is data waiting to be read from the socket, the connection is closed, avoiding needlessly reading and discarding a potentially large request body.
 
 ### Added
-- Added [`MethodHandlerService`](https://docs.rs/picoserve/latest/picoserve/routing/trait.MethodHandlerService.html) and [`Router::route_service`](https://docs.rs/picoserve/latest/picoserve/routing/struct.Router.html#method.route_service).
+- Added [`MethodHandlerService`](https://docs.rs/picoserve/0.18.0/picoserve/routing/trait.MethodHandlerService.html) and [`Router::route_service`](https://docs.rs/picoserve/0.18.0/picoserve/routing/struct.Router.html#method.route_service).
 - Added support for the `PATCH` and `TRACE` HTTP methods.
-- Added `const_new` methods to [`Config`](https://docs.rs/picoserve/latest/picoserve/struct.Config.html), [`Timeouts`]([`Config`](https://docs.rs/picoserve/latest/picoserve/struct.Timeouts.html)), and [`KeepAlive`](https://docs.rs/picoserve/latest/picoserve/enum.KeepAlive.html).
-- `heapless::Vec<u8, N>` and `heapless::String<N>` implements [`FromRequest`](https://docs.rs/picoserve/latest/picoserve/extract/trait.FromRequest.html).
+- Added `const_new` methods to [`Config`](https://docs.rs/picoserve/0.18.0/picoserve/struct.Config.html), [`Timeouts`]([`Config`](https://docs.rs/picoserve/0.18.0/picoserve/struct.Timeouts.html)), and [`KeepAlive`](https://docs.rs/picoserve/0.18.0/picoserve/enum.KeepAlive.html).
+- `heapless::Vec<u8, N>` and `heapless::String<N>` implements [`FromRequest`](https://docs.rs/picoserve/0.18.0/picoserve/extract/trait.FromRequest.html).
 
 ## [0.17.1] - 2025-11-07
 
