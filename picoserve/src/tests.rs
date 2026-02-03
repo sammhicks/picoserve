@@ -96,8 +96,7 @@ impl hyper::rt::Read for PipeRx {
             // Copied from MaybeUninit::slice_assume_init_mut.
             #[allow(unsafe_code, clippy::multiple_unsafe_ops_per_block)]
             unsafe {
-                // TODO - replace with MaybeUninit::slice_assume_init_mut when stable
-                &mut *(buf.as_mut() as *mut [std::mem::MaybeUninit<u8>] as *mut [u8])
+                buf.as_mut().assume_init_mut()
             },
         );
 

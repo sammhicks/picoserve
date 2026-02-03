@@ -52,6 +52,7 @@ macro_rules! log_info {
 pub use defmt::Debug2Format;
 
 #[cfg(not(feature = "defmt"))]
+#[allow(dead_code)]
 pub struct Debug2Format<'a, T: core::fmt::Debug + ?Sized>(pub &'a T);
 
 #[cfg(not(feature = "defmt"))]

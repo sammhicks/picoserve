@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Breaking
 
+- Changed MSRV to 1.93.
 - Routing types which have `PathParameters` use tuples rather than one of `NoPathParameters`, `OnePathParameter`, `ManyPathParameters`.
 - [`Router`](https://docs.rs/picoserve/latest/picoserve/routing/struct.Router.html) has a different number of type parameters.
 - Updated `picoserve_derive` to version 0.1.4.

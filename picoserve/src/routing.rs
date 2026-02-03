@@ -624,9 +624,9 @@ macro_rules! impl_tuple_push_path_segment_parameter {
                     ($($path_parameter,)* segment_parameter,)
                 }
 
-                #[allow(non_snake_case)]
+                #[allow(non_snake_case, clippy::unused_unit)]
                 fn pop_path_segment_parameter_from_output(($($path_parameter,)* _segment_parameter,): Self::NewPathParameters) -> Self {
-                    (($($path_parameter,)*))
+                    ($($path_parameter,)*)
                 }
             }
         )*
