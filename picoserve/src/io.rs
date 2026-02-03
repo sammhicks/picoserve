@@ -261,8 +261,6 @@ impl<'s> Socket<super::EmbassyRuntime> for embassy_net::tcp::TcpSocket<'s> {
         timeouts: &crate::Timeouts,
         timer: &mut Timer,
     ) -> Result<(), crate::Error<Self::Error>> {
-        log_info!("Shutting Down");
-
         self.close();
 
         let (mut rx, mut tx) = self.split();
