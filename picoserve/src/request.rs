@@ -814,7 +814,7 @@ pub(crate) enum ReadError<E> {
 pub(crate) struct RequestIsPending(());
 
 pub(crate) struct Reader<'a, R: Read> {
-    reader: R,
+    inner: R,
     read_position: usize,
     buffer: &'a mut [u8],
     buffer_usage: usize,
@@ -824,7 +824,7 @@ pub(crate) struct Reader<'a, R: Read> {
 impl<'a, R: Read> Reader<'a, R> {
     pub fn new(reader: R, buffer: &'a mut [u8], connection_flags: &'a mut ConnectionFlags) -> Self {
         Self {
-            reader,
+            inner: reader,
             read_position: 0,
             buffer,
             buffer_usage: 0,
@@ -850,7 +850,7 @@ impl<'a, R: Read> Reader<'a, R> {
             if self.buffer_usage > 0 {
                 true
             } else {
-                self.buffer_usage = self.reader.read(self.buffer).await?;
+                self.buffer_usage = self.inner.read(self.buffer).await?;
 
                 self.buffer_usage > 0
             }
@@ -865,7 +865,7 @@ impl<'a, R: Read> Reader<'a, R> {
     async fn next_byte(&mut self) -> Result<u8, ReadError<R::Error>> {
         if self.read_position == self.buffer_usage {
             let read_size = self
-                .reader
+                .inner
                 .read(&mut self.buffer[self.buffer_usage..])
                 .await
                 .map_err(ReadError::IO)?;
@@ -1045,7 +1045,7 @@ impl<'a, R: Read> Reader<'a, R> {
             body_connection: RequestBodyConnection {
                 content_length,
                 reader: ReaderWithReadRequestTimeout {
-                    reader: &mut self.reader,
+                    reader: &mut self.inner,
                     read_request_timeout_signal,
                     make_read_timeout_error,
                 },

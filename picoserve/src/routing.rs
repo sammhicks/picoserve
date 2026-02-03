@@ -1065,7 +1065,7 @@ impl<
 
         Self {
             router: router.clone(),
-            _data,
+            _data: PhantomData,
         }
     }
 }
@@ -1182,7 +1182,7 @@ impl<State, CurrentPathParameters, RouterInner: PathRouter<State, CurrentPathPar
                 handler,
                 fallback,
             },
-            _data,
+            _data: PhantomData,
         }
     }
 
@@ -1231,7 +1231,7 @@ impl<State, CurrentPathParameters, RouterInner: PathRouter<State, CurrentPathPar
                 service,
                 fallback,
             },
-            _data,
+            _data: PhantomData,
         }
     }
 
@@ -1304,7 +1304,7 @@ impl<State, CurrentPathParameters, RouterInner: PathRouter<State, CurrentPathPar
                 service: router.router,
                 fallback,
             },
-            _data,
+            _data: PhantomData,
         }
     }
 
@@ -1325,7 +1325,7 @@ impl<State, CurrentPathParameters, RouterInner: PathRouter<State, CurrentPathPar
                 service,
                 fallback,
             },
-            _data,
+            _data: PhantomData,
         }
     }
 
@@ -1550,7 +1550,7 @@ impl<State, CurrentPathParameters, RouterInner: PathRouter<State, CurrentPathPar
 
         Router {
             router: EitherPathRoute::Left { router },
-            _data,
+            _data: PhantomData,
         }
     }
 
@@ -1562,7 +1562,7 @@ impl<State, CurrentPathParameters, RouterInner: PathRouter<State, CurrentPathPar
 
         Router {
             router: EitherPathRoute::Right { router },
-            _data,
+            _data: PhantomData,
         }
     }
 }

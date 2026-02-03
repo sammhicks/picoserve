@@ -473,11 +473,8 @@ impl<R: Read> SocketRx<R> {
 
                 match opcode {
                     Opcode::Data(Data::Continue) => (),
-                    Opcode::Data(Data::Text)
-                    | Opcode::Data(Data::Binary)
-                    | Opcode::Control(Control::Close)
-                    | Opcode::Control(Control::Ping)
-                    | Opcode::Control(Control::Pong) => {
+                    Opcode::Data(Data::Text | Data::Binary)
+                    | Opcode::Control(Control::Close | Control::Ping | Control::Pong) => {
                         return Err(ReadMessageError::UnexpectedMessageStart.into())
                     }
                     Opcode::Data(Data::Reserved(opcode))
@@ -639,7 +636,7 @@ impl<W: Write> Write for FrameWriter<'_, W> {
         self.tx
             .write_frame(false, core::mem::replace(self.opcode, 0), data)
             .await
-            .map(|_| data.len())
+            .map(|()| data.len())
     }
 
     async fn flush(&mut self) -> Result<(), Self::Error> {

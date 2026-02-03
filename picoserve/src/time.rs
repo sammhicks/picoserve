@@ -83,7 +83,7 @@ pub struct TokioTimer;
 #[cfg(any(feature = "tokio", test))]
 impl Timer<super::TokioRuntime> for TokioTimer {
     async fn delay(&self, duration: Duration) {
-        tokio::time::sleep(std::time::Duration::from_millis(duration.as_millis())).await
+        tokio::time::sleep(std::time::Duration::from_millis(duration.as_millis())).await;
     }
 
     async fn run_with_timeout<F: core::future::Future>(

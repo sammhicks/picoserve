@@ -126,7 +126,7 @@ impl<H: HeadersIter, B: CustomBody> CustomResponseBuilder<H, B> {
         CustomResponseBuilder {
             status_code,
             headers: super::HeadersChain(current_headers, headers),
-            _body,
+            _body: core::marker::PhantomData,
         }
     }
 

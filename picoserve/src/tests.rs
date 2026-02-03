@@ -105,8 +105,8 @@ impl hyper::rt::Read for PipeRx {
         // read_size comes from reading from the buffer and thus is at most the size of the buffer.
         #[allow(unsafe_code)]
         unsafe {
-            buf.advance(read_size)
-        };
+            buf.advance(read_size);
+        }
 
         Poll::Ready(Ok(()))
     }
@@ -784,9 +784,10 @@ async fn upgrade_with_request_body() {
                 )
                 .unwrap();
 
-                if !upgrade_header.eq_ignore_ascii_case("upgrade") {
-                    panic!(r#"Invalid "connection" header for upgrade response: {upgrade_header}"#);
-                }
+                assert!(
+                    upgrade_header.eq_ignore_ascii_case("upgrade"),
+                    r#"Invalid "connection" header for upgrade response: {upgrade_header}"#
+                );
 
                 assert_eq!(read_position, response_bytes.len());
             }
@@ -796,8 +797,6 @@ async fn upgrade_with_request_body() {
 
 #[tokio::test]
 async fn huge_request() {
-    let request_body = ('a'..='z').cycle().take(10000).collect::<String>();
-
     struct ReadBody {
         expected_body: Option<String>,
     }
@@ -835,6 +834,8 @@ async fn huge_request() {
                 .await
         }
     }
+
+    let request_body = ('a'..='z').cycle().take(10000).collect::<String>();
 
     for read_length in [None, Some(26), Some(request_body.len())] {
         let expected_body = read_length.map(|length| request_body[..length].into());
@@ -980,7 +981,7 @@ async fn rudy_protection() {
                 panic!("Request Handler mustn't be called");
             }
 
-            fail()
+            fail();
         }),
     );
     let mut timer = crate::time::TokioTimer;

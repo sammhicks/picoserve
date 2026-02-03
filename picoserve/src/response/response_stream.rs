@@ -287,7 +287,7 @@ mod tests {
                             target_token,
                             sections,
                             expected_outcome,
-                        })
+                        });
                     }
                 }
             }
@@ -303,8 +303,6 @@ mod tests {
             }
         }
 
-        if !failures.is_empty() {
-            panic!("Test failed: {failures:#?}");
-        }
+        assert!(failures.is_empty(), "Test failed: {failures:#?}");
     }
 }
