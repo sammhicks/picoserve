@@ -21,6 +21,13 @@ use super::*;
 
 use super::io::{Read, Write};
 
+const TEST_CONFIG: crate::Config = crate::Config::new(crate::Timeouts {
+    start_read_request: crate::time::Duration::from_secs(10),
+    persistent_start_read_request: crate::time::Duration::from_secs(10),
+    read_request: crate::time::Duration::from_secs(10),
+    write: crate::time::Duration::from_secs(10),
+});
+
 struct VecRead(Vec<u8>);
 
 impl VecRead {
@@ -268,17 +275,10 @@ async fn run_single_request_test(
 ) -> (hyper::http::response::Parts, hyper::body::Bytes) {
     let (client_socket, server_socket) = TestSocket::pipe_pair();
 
-    let config = Config::new(Timeouts {
-        start_read_request: None,
-        persistent_start_read_request: None,
-        read_request: None,
-        write: None,
-    });
-
     let mut http_buffer = [0; 2048];
 
     let server =
-        std::pin::pin!(Server::new_tokio(app, &config, &mut http_buffer).serve(server_socket));
+        std::pin::pin!(Server::new_tokio(app, &TEST_CONFIG, &mut http_buffer).serve(server_socket));
 
     let (mut request_sender, connection) = hyper::client::conn::http1::handshake(client_socket)
         .now_or_never()
@@ -532,16 +532,9 @@ async fn only_one_request() {
 
     let app = Router::new().route("/", routing::get(|| async move { "Hello World" }));
 
-    let config = Config::new(Timeouts {
-        start_read_request: None,
-        persistent_start_read_request: None,
-        read_request: None,
-        write: None,
-    });
-
     let mut http_buffer = [0; 2048];
 
-    let server = Server::new_tokio(&app, &config, &mut http_buffer).serve(server_socket);
+    let server = Server::new_tokio(&app, &TEST_CONFIG, &mut http_buffer).serve(server_socket);
 
     client_socket
         .send("GET / HTTP/1.1\r\n\r\nGET / HTTP/1.1\r\n\r\n")
@@ -566,13 +559,7 @@ async fn only_one_request() {
 async fn keep_alive() {
     let app = Router::new().route("/", routing::get(|| async move { "Hello World" }));
 
-    let config = Config::new(Timeouts {
-        start_read_request: None,
-        persistent_start_read_request: None,
-        read_request: None,
-        write: None,
-    })
-    .keep_connection_alive();
+    let config = TEST_CONFIG.keep_connection_alive();
 
     let mut http_buffer = [0; 2048];
 
@@ -740,13 +727,6 @@ async fn upgrade_with_request_body() {
         }
     }
 
-    let config = Config::new(Timeouts {
-        start_read_request: None,
-        persistent_start_read_request: None,
-        read_request: None,
-        write: None,
-    });
-
     let mut http_buffer = [0; 2048];
 
     for a in 0..REQUEST_PAYLOAD.len() {
@@ -759,21 +739,22 @@ async fn upgrade_with_request_body() {
 
                 let mut response_bytes = Vec::new();
 
-                let server = Server::new_tokio(&app, &config, &mut http_buffer).serve(TestSocket {
-                    rx: VecSequence {
-                        current: VecRead(Vec::new()),
-                        rest_reversed: [
-                            &REQUEST_PAYLOAD[b..],
-                            &REQUEST_PAYLOAD[a..b],
-                            &REQUEST_PAYLOAD[..a],
-                        ]
-                        .into_iter()
-                        .filter(|s| !s.is_empty())
-                        .map(Vec::from)
-                        .collect(),
-                    },
-                    tx: &mut response_bytes,
-                });
+                let server =
+                    Server::new_tokio(&app, &TEST_CONFIG, &mut http_buffer).serve(TestSocket {
+                        rx: VecSequence {
+                            current: VecRead(Vec::new()),
+                            rest_reversed: [
+                                &REQUEST_PAYLOAD[b..],
+                                &REQUEST_PAYLOAD[a..b],
+                                &REQUEST_PAYLOAD[..a],
+                            ]
+                            .into_iter()
+                            .filter(|s| !s.is_empty())
+                            .map(Vec::from)
+                            .collect(),
+                        },
+                        tx: &mut response_bytes,
+                    });
 
                 assert_eq!(
                     server
@@ -947,12 +928,12 @@ async fn not_reading_the_entire_request_body_closes_the_connection() {
     let (mut client_socket, server_socket) = TestSocket::pipe_pair();
 
     let app = Router::new().route("/", crate::routing::post(|| async {}));
-    let config = Config::default();
     let mut http_buffer = [0; 1024];
 
-    let mut server_task = std::pin::pin!(
-        crate::Server::new_tokio(&app, &config, &mut http_buffer).serve(server_socket)
-    );
+    let mut server_task =
+        std::pin::pin!(
+            crate::Server::new_tokio(&app, &TEST_CONFIG, &mut http_buffer).serve(server_socket)
+        );
 
     client_socket
         .send("POST / HTTP/1.1\r\nContent-Length: 1024\r\n\r\nINCOMPLETE_DATA")
@@ -962,7 +943,10 @@ async fn not_reading_the_entire_request_body_closes_the_connection() {
 
     assert!(server_task.as_mut().now_or_never().is_none());
 
-    tokio::time::advance(std::time::Duration::from_secs(4)).await;
+    tokio::time::advance(std::time::Duration::from_secs(
+        TEST_CONFIG.timeouts.read_request.as_secs() + 1,
+    ))
+    .await;
 
     assert_eq!(
         server_task
@@ -1000,16 +984,15 @@ async fn rudy_protection() {
         }),
     );
     let mut timer = crate::time::TokioTimer;
-    let config = Config::default();
     let mut http_buffer = [0; 1024];
 
     let mut server_task = std::pin::pin!(crate::serve_and_shutdown(
         &app,
         &mut timer,
-        &config,
+        &TEST_CONFIG,
         &mut http_buffer,
         server_socket,
-        core::future::pending::<((), Option<crate::time::Duration>)>(),
+        core::future::pending::<((), crate::time::Duration)>(),
     ));
 
     client_socket
@@ -1090,16 +1073,15 @@ async fn ignoring_rudy_protection() {
 
     let app = Router::new().route("/", crate::routing::post_service(IgnoringRudyProtection));
     let mut timer = crate::time::TokioTimer;
-    let config = Config::default();
     let mut http_buffer = [0; 1024];
 
     let mut server_task = std::pin::pin!(crate::serve_and_shutdown(
         &app,
         &mut timer,
-        &config,
+        &TEST_CONFIG,
         &mut http_buffer,
         server_socket,
-        core::future::pending::<((), Option<crate::time::Duration>)>(),
+        core::future::pending::<((), crate::time::Duration)>(),
     ));
 
     client_socket

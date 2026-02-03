@@ -109,22 +109,22 @@ impl<T, E0, E1> SwapErrors for Result<Result<T, E0>, E1> {
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct Timeouts {
     /// The duration of time to wait when starting to read the first request before the connection is closed due to inactivity.
-    pub start_read_request: Option<Duration>,
+    pub start_read_request: Duration,
     /// The duration of time to wait when starting to read persistent (i.e. not the first) requests before the connection is closed due to inactivity.
-    pub persistent_start_read_request: Option<Duration>,
+    pub persistent_start_read_request: Duration,
     /// The duration of time to wait when partway reading a request before the connection is aborted and closed.
-    pub read_request: Option<Duration>,
+    pub read_request: Duration,
     /// The duration of time to wait when writing the response before the connection is aborted and closed.
-    pub write: Option<Duration>,
+    pub write: Duration,
 }
 
 impl Timeouts {
     pub const fn const_default() -> Self {
         Self {
-            start_read_request: Some(Duration::from_secs(5)),
-            persistent_start_read_request: Some(Duration::from_secs(1)),
-            read_request: Some(Duration::from_secs(3)),
-            write: Some(Duration::from_secs(1)),
+            start_read_request: Duration::from_secs(5),
+            persistent_start_read_request: Duration::from_secs(1),
+            read_request: Duration::from_secs(3),
+            write: Duration::from_secs(1),
         }
     }
 }
@@ -301,7 +301,7 @@ async fn serve_and_shutdown<
     P: routing::PathRouter,
     S: io::Socket<Runtime>,
     ShutdownReason,
-    ShutdownSignal: core::future::Future<Output = (ShutdownReason, Option<Duration>)>,
+    ShutdownSignal: core::future::Future<Output = (ShutdownReason, Duration)>,
 >(
     app: &Router<P>,
     timer: &mut T,
@@ -345,7 +345,7 @@ async fn serve_and_shutdown<
             let request_count = request_count_iter();
 
             let request_is_pending = match timer
-                .run_with_maybe_timeout(
+                .run_with_timeout(
                     if request_count == 0 {
                         config.timeouts.start_read_request
                     } else {
@@ -381,7 +381,7 @@ async fn serve_and_shutdown<
             };
 
             let mut read_request_timeout = core::pin::pin!(async {
-                let timeout = timer.maybe_timeout(config.timeouts.read_request).await;
+                let timeout = timer.timeout(config.timeouts.read_request).await;
 
                 read_request_timeout_signal.notify(());
 
@@ -429,7 +429,7 @@ async fn serve_and_shutdown<
 
                                 DisconnectionInfo::with_shutdown_reason(
                                     match timer
-                                        .run_with_maybe_timeout(shutdown_timeout, handle_request)
+                                        .run_with_timeout(shutdown_timeout, handle_request)
                                         .await
                                         .swap_errors()?
                                     {
@@ -464,7 +464,7 @@ async fn serve_and_shutdown<
                     };
 
                     let ResponseSent { .. } = timer
-                        .run_with_maybe_timeout(
+                        .run_with_timeout(
                             config.timeouts.write,
                             (response::StatusCode::BAD_REQUEST, message).write_to(
                                 response::Connection::empty(&mut Default::default()),
@@ -527,7 +527,7 @@ pub struct Server<
 }
 
 impl<'a, Runtime, T: Timer<Runtime>, P: routing::PathRouter>
-    Server<'a, Runtime, T, P, core::future::Pending<(NoGracefulShutdown, Option<Duration>)>>
+    Server<'a, Runtime, T, P, core::future::Pending<(NoGracefulShutdown, Duration)>>
 {
     /// Create a new [`Router`] with a custom timer.
     ///
@@ -555,13 +555,13 @@ impl<'a, Runtime, T: Timer<Runtime>, P: routing::PathRouter>
     pub fn with_graceful_shutdown<ShutdownSignal: core::future::Future>(
         self,
         shutdown_signal: ShutdownSignal,
-        shutdown_timeout: impl Into<Option<Duration>>,
+        shutdown_timeout: impl Into<Duration>,
     ) -> Server<
         'a,
         Runtime,
         T,
         P,
-        impl core::future::Future<Output = (ShutdownSignal::Output, Option<Duration>)>,
+        impl core::future::Future<Output = (ShutdownSignal::Output, Duration)>,
     > {
         let Self {
             app,
@@ -594,7 +594,7 @@ impl<
         T: Timer<Runtime>,
         P: routing::PathRouter,
         ShutdownReason,
-        ShutdownSignal: core::future::Future<Output = (ShutdownReason, Option<Duration>)>,
+        ShutdownSignal: core::future::Future<Output = (ShutdownReason, Duration)>,
     > Server<'_, Runtime, T, P, ShutdownSignal>
 {
     /// Serve requests read from the connected socket.
@@ -634,7 +634,7 @@ impl<'a, P: routing::PathRouter>
         TokioRuntime,
         time::TokioTimer,
         P,
-        core::future::Pending<(NoGracefulShutdown, Option<time::Duration>)>,
+        core::future::Pending<(NoGracefulShutdown, time::Duration)>,
     >
 {
     /// Create a new server using the `tokio` runtime, and typically with a `tokio::net::TcpSocket` as the socket.
@@ -661,7 +661,7 @@ impl<'a, P: routing::PathRouter>
         EmbassyRuntime,
         time::EmbassyTimer,
         P,
-        core::future::Pending<(NoGracefulShutdown, Option<Duration>)>,
+        core::future::Pending<(NoGracefulShutdown, Duration)>,
     >
 {
     /// Create a new server using the `embassy` runtime.
@@ -682,7 +682,7 @@ impl<
         'a,
         P: routing::PathRouter,
         ShutdownReason,
-        ShutdownSignal: core::future::Future<Output = (ShutdownReason, Option<embassy_time::Duration>)>,
+        ShutdownSignal: core::future::Future<Output = (ShutdownReason, embassy_time::Duration)>,
     > Server<'a, EmbassyRuntime, time::EmbassyTimer, P, ShutdownSignal>
 {
     /// Listen for incoming connections, and serve requests read from the connection.

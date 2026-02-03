@@ -196,10 +196,8 @@ pub(crate) mod tokio_support {
             timeouts: &crate::Timeouts,
             timer: &mut T,
         ) -> Result<(), crate::Error<Self::Error>> {
-            use crate::time::TimerExt;
-
             timer
-                .run_with_maybe_timeout(
+                .run_with_timeout(
                     timeouts.write,
                     tokio::io::AsyncWriteExt::shutdown(&mut self),
                 )
@@ -210,7 +208,7 @@ pub(crate) mod tokio_support {
             let mut buffer = [0; 128];
 
             while timer
-                .run_with_maybe_timeout(
+                .run_with_timeout(
                     timeouts.read_request,
                     tokio::io::AsyncReadExt::read(&mut self, &mut buffer),
                 )
@@ -246,15 +244,13 @@ impl<'s> Socket<super::EmbassyRuntime> for embassy_net::tcp::TcpSocket<'s> {
         timeouts: &crate::Timeouts,
         timer: &mut Timer,
     ) -> Result<(), crate::Error<Self::Error>> {
-        use crate::time::TimerExt;
-
         log_info!("Abort");
 
         Self::abort(&mut self);
 
         // Send the abort
         timer
-            .run_with_maybe_timeout(timeouts.write.clone(), self.flush())
+            .run_with_timeout(timeouts.write.clone(), self.flush())
             .await
             .map_err(crate::Error::WriteTimeout)?
             .map_err(crate::Error::Write)
@@ -265,8 +261,6 @@ impl<'s> Socket<super::EmbassyRuntime> for embassy_net::tcp::TcpSocket<'s> {
         timeouts: &crate::Timeouts,
         timer: &mut Timer,
     ) -> Result<(), crate::Error<Self::Error>> {
-        use crate::time::TimerExt;
-
         log_info!("Shutting Down");
 
         self.close();
@@ -277,7 +271,7 @@ impl<'s> Socket<super::EmbassyRuntime> for embassy_net::tcp::TcpSocket<'s> {
         crate::futures::select(
             async {
                 timer
-                    .run_with_maybe_timeout(timeouts.read_request.clone(), rx.discard_all_data())
+                    .run_with_timeout(timeouts.read_request.clone(), rx.discard_all_data())
                     .await
                     .map_err(crate::Error::ReadTimeout)?
                     .map_err(crate::Error::Read)
@@ -291,7 +285,7 @@ impl<'s> Socket<super::EmbassyRuntime> for embassy_net::tcp::TcpSocket<'s> {
 
         // Flush the write half until the socket is closed.
         timer
-            .run_with_maybe_timeout(timeouts.write.clone(), self.flush())
+            .run_with_timeout(timeouts.write.clone(), self.flush())
             .await
             .map_err(crate::Error::WriteTimeout)?
             .map_err(crate::Error::Write)

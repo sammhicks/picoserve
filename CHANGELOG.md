@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Updated to `embedded-io-async` 0.7, `embassy-net` 0.8.0 and `embassy-time` 0.5.0, which have breaking changes.
 - [`Timer`](https://docs.rs/picoserve/latest/picoserve/time/trait.Timer.html) must use [`Duration`](https://docs.rs/picoserve/latest/picoserve/time/struct.Duration.html) instead of its own time. If the `embassy` feature is enabled, `Duration` becomes an alias of [`embassy_time::Duration`](https://docs.rs/embassy-time/latest/embassy_time/struct.Duration.html).
 - The [`Rejection](https://docs.rs/picoserve/latest/picoserve/extract/trait.FromRequest.html#associatedtype.Rejection) type for `&mut [u8]`, `&[u8]`, `alloc::vec::Vec<u8>`, and `alloc::borrow::Cow<'r, [u8]>` is now [`ReadAllBodyError`](https://docs.rs/picoserve/latest/picoserve/request/enum.ReadAllBodyError.html).
+- Timeouts are no longer optional.
 
 ### Fixed
 - The [`Debug`](https://doc.rust-lang.org/core/fmt/trait.Debug.html) implementation of [`HeaderName`](https://docs.rs/picoserve/latest/picoserve/request/struct.HeaderName.html) and [`HeaderValue`](https://docs.rs/picoserve/latest/picoserve/request/struct.HeaderValue.html) includes the surrounding double quotes.

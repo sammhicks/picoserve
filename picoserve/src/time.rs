@@ -66,26 +66,6 @@ pub(crate) trait TimerExt<Runtime>: Timer<Runtime> {
 
         TimeoutError
     }
-
-    async fn maybe_timeout(&self, duration: Option<Duration>) -> TimeoutError {
-        if let Some(duration) = duration {
-            self.timeout(duration).await
-        } else {
-            core::future::pending().await
-        }
-    }
-
-    async fn run_with_maybe_timeout<F: core::future::Future>(
-        &self,
-        duration: Option<Duration>,
-        future: F,
-    ) -> Result<F::Output, TimeoutError> {
-        if let Some(duration) = duration {
-            self.run_with_timeout(duration, future).await
-        } else {
-            Ok(future.await)
-        }
-    }
 }
 
 impl<Runtime, T: Timer<Runtime>> TimerExt<Runtime> for T {}
@@ -140,7 +120,7 @@ impl Timer<super::EmbassyRuntime> for EmbassyTimer {
 pub(crate) struct WriteWithTimeout<'t, Runtime, W: crate::io::Write, T: Timer<Runtime>> {
     pub inner: W,
     pub timer: &'t T,
-    pub timeout_duration: Option<Duration>,
+    pub timeout_duration: Duration,
     pub _runtime: core::marker::PhantomData<fn(&Runtime)>,
 }
 
@@ -159,7 +139,7 @@ where
 {
     async fn write(&mut self, buf: &[u8]) -> Result<usize, Self::Error> {
         self.timer
-            .run_with_maybe_timeout(self.timeout_duration, self.inner.write(buf))
+            .run_with_timeout(self.timeout_duration, self.inner.write(buf))
             .await
             .map_err(super::Error::WriteTimeout)?
             .map_err(super::Error::Write)
@@ -167,7 +147,7 @@ where
 
     async fn flush(&mut self) -> Result<(), Self::Error> {
         self.timer
-            .run_with_maybe_timeout(self.timeout_duration, self.inner.flush())
+            .run_with_timeout(self.timeout_duration, self.inner.flush())
             .await
             .map_err(super::Error::WriteTimeout)?
             .map_err(super::Error::Write)
