@@ -1,9 +1,9 @@
 //! Route requests to the appropriate handler.
 //!
 //! At its core are "handler" functions, which are async functions with zero or more ["extractors"](crate::extract) and which return ["responses"](crate::response::IntoResponse).
-//! There are also "request handler services", which are types that implement ["RequestHandlerService"], such as:
-//!     + [File](crate::response::fs::File)
-//!     + [Directory](crate::response::fs::File)
+//! There are also "request handler services", which are types that implement [`RequestHandlerService`], such as:
+//!     + [`File`](crate::response::fs::File)
+//!     + [`Directory`](crate::response::fs::File)
 
 use core::{fmt, marker::PhantomData, str::FromStr};
 
@@ -47,11 +47,11 @@ use request_handler_function_components::{
     ManyPathParameters, OnePathParameter, ParameterFromRequest, ParametersFromRequestParts,
 };
 
-/// Functions which can be used as a [RequestHandler].
+/// Functions which can be used as a [`RequestHandler`].
 pub trait RequestHandlerFunction<State, PathParameters, HandlerTypeSigniature>:
     sealed::RequestHandlerFunctionIsSealed<State, PathParameters, HandlerTypeSigniature>
 {
-    /// Call the handler function and write the response to the [ResponseWriter].
+    /// Call the handler function and write the response to the [`ResponseWriter`].
     async fn call_request_handler_function<R: Read, W: ResponseWriter<Error = R::Error>>(
         &self,
         state: &State,
@@ -297,9 +297,9 @@ declare_handler_func!(
     E1 E2 E3 E4 E5 E6 E7 E8 E9 E10 E11 E12 E13 E14 E15 E16;
 );
 
-/// Handles [Request]s and writes the response to the provided [ResponseWriter].
+/// Handles [`Request`]s and writes the response to the provided [`ResponseWriter`].
 pub trait RequestHandler<State, PathParameters>: sealed::RequestHandlerIsSealed {
-    /// Handle the request and write the response to the provided  [ResponseWriter].
+    /// Handle the request and write the response to the provided  [`ResponseWriter`].
     async fn call_request_handler<R: Read, W: ResponseWriter<Error = R::Error>>(
         &self,
         state: &State,
@@ -349,9 +349,9 @@ impl<
     }
 }
 
-/// A service which handles [Request]s and writes the response to the provided [ResponseWriter].
+/// A service which handles [`Request`]s and writes the response to the provided [`ResponseWriter`].
 pub trait RequestHandlerService<State = (), PathParameters = ()> {
-    /// Handle the request and write the response to the provided  [ResponseWriter].
+    /// Handle the request and write the response to the provided  [`ResponseWriter`].
     async fn call_request_handler_service<R: Read, W: ResponseWriter<Error = R::Error>>(
         &self,
         state: &State,
@@ -383,7 +383,7 @@ impl<State, PathParameters, Service: RequestHandlerService<State, PathParameters
     }
 }
 
-/// [RequestHandler] for unsupported methods.
+/// [`RequestHandler`] for unsupported methods.
 pub struct MethodNotAllowed;
 
 impl sealed::RequestHandlerIsSealed for MethodNotAllowed {}
@@ -463,7 +463,7 @@ mod head_method_util {
 
 /// Routes a request based on its method.
 pub trait MethodHandler<State = (), PathParameters = ()>: sealed::MethodHandlerIsSealed {
-    /// Handle the request and write the response to the provided  [ResponseWriter].
+    /// Handle the request and write the response to the provided  [`ResponseWriter`].
     async fn call_method_handler<R: Read, W: ResponseWriter<Error = R::Error>>(
         &self,
         state: &State,
@@ -477,7 +477,7 @@ picoserve_derive::generate_method_router!(get, post, put, delete, options, trace
 
 /// Routes a request based on its path.
 pub trait PathRouter<State = (), CurrentPathParameters = ()>: sealed::PathRouterIsSealed {
-    /// Handle the request and write the response to the provided  [ResponseWriter].
+    /// Handle the request and write the response to the provided  [`ResponseWriter`].
     async fn call_path_router<R: Read, W: ResponseWriter<Error = R::Error>>(
         &self,
         state: &State,
@@ -488,7 +488,7 @@ pub trait PathRouter<State = (), CurrentPathParameters = ()>: sealed::PathRouter
     ) -> Result<ResponseSent, W::Error>;
 }
 
-/// [RequestHandler] for unhandled paths.
+/// [`RequestHandler`] for unhandled paths.
 pub struct NotFound;
 
 impl sealed::PathRouterIsSealed for NotFound {}
@@ -519,14 +519,14 @@ impl<State, CurrentPathParameters> PathRouter<State, CurrentPathParameters> for 
 ///     + `/foo`
 ///     + `/foo/bar`
 /// + `parse_path_segment::<T>()`, which captures a single segment and tries to parse it using the `core::str::FromStr` implementation of `T`
-/// + A tuple of types implementing PathDescription, thus allowing paths consisting of both static segments and captured segments, e.g.:
+/// + A tuple of types implementing `PathDescription`, thus allowing paths consisting of both static segments and captured segments, e.g.:
 ///     + `("/add", parse_path_segment::<i32>(), parse_path_segment::<i32>())`
 ///     + `("/user", parse_path_segment::<UserId>(), "/set_name", parse_path_segment::<UserName>())`
 pub trait PathDescription<CurrentPathParameters>: Copy + fmt::Debug {
     /// The current path parameters, and the new path parameter, if any.
     type NewPathParameters;
 
-    /// Parse the section of the path described by `Self`` and then call the validation function with the new path parameters and the rest of the path.
+    /// Parse the section of the path described by `Self` and then call the validation function with the new path parameters and the rest of the path.
     fn parse_and_validate<
         'r,
         T,
@@ -645,7 +645,7 @@ impl_tuple_push_path_segment_parameter!(
     P1 P2 P3 P4 P5 P6 P7 P8;
 );
 
-/// A [PathDescription] which parses a single segment using the implementation of `core::str::FromStr` of `T`.
+/// A [`PathDescription`] which parses a single segment using the implementation of `core::str::FromStr` of `T`.
 pub struct ParsePathSegment<P>(PhantomData<fn() -> P>);
 
 impl<P> Clone for ParsePathSegment<P> {
@@ -817,7 +817,7 @@ impl<
 
 /// A service which handles requests at a given path.
 pub trait MethodHandlerService<State = (), CurrentPathParameters = ()> {
-    /// Handle the request and write the response to the provided  [ResponseWriter].
+    /// Handle the request and write the response to the provided  [`ResponseWriter`].
     async fn call_method_handler_service<R: Read, W: ResponseWriter<Error = R::Error>>(
         &self,
         state: &State,
@@ -945,7 +945,7 @@ impl<
 
 /// A service which handles both path routing and subsequent request handling.
 pub trait PathRouterService<State = (), CurrentPathParameters = ()> {
-    /// Handle the request and write the response to the provided  [ResponseWriter].
+    /// Handle the request and write the response to the provided  [`ResponseWriter`].
     async fn call_path_router_service<R: Read, W: ResponseWriter<Error = R::Error>>(
         &self,
         state: &State,
@@ -1014,7 +1014,7 @@ impl<
     }
 }
 
-/// A [PathRouter] which forwards all requests to the provided [PathRouterService]
+/// A [`PathRouter`] which forwards all requests to the provided [`PathRouterService`]
 pub struct ServicePathRouter<Service> {
     service: Service,
 }
@@ -1044,7 +1044,7 @@ impl<State, CurrentPathParameters, Service: PathRouterService<State, CurrentPath
     }
 }
 
-/// A [PathRouter] which routes requests to a [MethodHandler].
+/// A [`PathRouter`] which routes requests to a [`MethodHandler`].
 pub struct Router<
     RouterInner: PathRouter<State, CurrentPathParameters>,
     State = (),
@@ -1097,7 +1097,7 @@ impl<State, CurrentPathParameters> Default for Router<NotFound, State, CurrentPa
 impl<State, CurrentPathParameters, Service: PathRouterService<State, CurrentPathParameters>>
     Router<ServicePathRouter<Service>, State, CurrentPathParameters>
 {
-    /// Create a [Router] which forwards all requests to the provided [PathRouterService].
+    /// Create a [`Router`] which forwards all requests to the provided [`PathRouterService`].
     pub fn from_service(service: Service) -> Self {
         Self {
             router: ServicePathRouter { service },
@@ -1235,7 +1235,7 @@ impl<State, CurrentPathParameters, RouterInner: PathRouter<State, CurrentPathPar
         }
     }
 
-    /// Nest a [Router] at some path.
+    /// Nest a [`Router`] at some path.
     ///
     /// After removing the prefix described by `path_description`, the rest of the path is passed to `router`.
     ///
@@ -1308,7 +1308,7 @@ impl<State, CurrentPathParameters, RouterInner: PathRouter<State, CurrentPathPar
         }
     }
 
-    /// Nest a [PathRouterService] at some path, like [nest](Self::nest) but accepts an arbitary service.
+    /// Nest a [`PathRouterService`] at some path, like [`nest`](Self::nest) but accepts an arbitary service.
     pub fn nest_service<PD: PathDescription<CurrentPathParameters>>(
         self,
         path_description: PD,
@@ -1329,7 +1329,7 @@ impl<State, CurrentPathParameters, RouterInner: PathRouter<State, CurrentPathPar
         }
     }
 
-    /// Apply a [Layer] to all routes in the router.
+    /// Apply a [`Layer`] to all routes in the router.
     pub fn layer<
         OuterState,
         OuterPathParameters,
@@ -1487,9 +1487,9 @@ impl<RouterInner: PathRouter> Router<RouterInner> {
     }
 }
 
-/// A [PathRouter] which is either the "Left" route or the "Right" route.
+/// A [`PathRouter`] which is either the "Left" route or the "Right" route.
 ///
-/// Used by [Router::either_left_route] and [Router::either_right_route] to create config-time conditional [Router]s.
+/// Used by [`Router::either_left_route`] and [`Router::either_right_route`] to create config-time conditional [`Router`]s.
 pub enum EitherPathRoute<L, R> {
     Left { router: L },
     Right { router: R },
@@ -1542,7 +1542,7 @@ impl<
 impl<State, CurrentPathParameters, RouterInner: PathRouter<State, CurrentPathParameters>>
     Router<RouterInner, State, CurrentPathParameters>
 {
-    /// Transforms the [Router] into the "Left" route of a config-time conditional router.
+    /// Transforms the [`Router`] into the "Left" route of a config-time conditional router.
     pub fn either_left_route<Right: PathRouter<State, CurrentPathParameters>>(
         self,
     ) -> Router<EitherPathRoute<RouterInner, Right>, State, CurrentPathParameters> {
@@ -1554,7 +1554,7 @@ impl<State, CurrentPathParameters, RouterInner: PathRouter<State, CurrentPathPar
         }
     }
 
-    /// Transforms the [Router] into the "Right" route of a config-time conditional router.
+    /// Transforms the [`Router`] into the "Right" route of a config-time conditional router.
     pub fn either_right_route<Left: PathRouter<State, CurrentPathParameters>>(
         self,
     ) -> Router<EitherPathRoute<Left, RouterInner>, State, CurrentPathParameters> {

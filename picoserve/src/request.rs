@@ -389,7 +389,7 @@ impl<'r> RequestParts<'r> {
     }
 }
 
-/// Reads the body asynchronously. Implements [Read].
+/// Reads the body asynchronously. Implements [`Read`].
 pub struct RequestBodyReader<'r, R: Read> {
     content_length: usize,
     reader: R,

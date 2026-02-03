@@ -503,7 +503,7 @@ impl<T: serde::Serialize> Json<T> {
         JsonStream::new(&self.0).write_json_value(writer).await
     }
 
-    /// Convert JSON payload into a [super::Response] with a status code of "OK"
+    /// Convert JSON payload into a [`Response`](super::Response) with a status code of "OK"
     pub fn into_response(self) -> super::Response<impl super::HeadersIter, impl super::Body> {
         super::Response::ok(JsonBody(JsonStream::new(self.0)))
     }

@@ -73,7 +73,7 @@ impl FormatBuffer {
     }
 }
 
-/// An extension trait for [Write] which allows writing of [core::fmt::Arguments].
+/// An extension trait for [`Write`] which allows writing of [`core::fmt::Arguments`].
 pub trait WriteExt: Write {
     /// Write a formatted string into the writer. If the string cannot be written in one go, the string might be formatted multiple times.
     /// It's crucial that the same output is produced each time the string is formatted.

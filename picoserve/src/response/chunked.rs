@@ -3,7 +3,7 @@
 /// A marker showing that all of the chunks have been written.
 pub struct ChunksWritten(());
 
-/// Writing chunks to a [ChunkWriter] will send them to the client and flush the stream
+/// Writing chunks to a [`ChunkWriter`] will send them to the client and flush the stream
 pub struct ChunkWriter<W: crate::io::Write> {
     writer: W,
 }
@@ -69,27 +69,27 @@ pub trait Chunks {
     /// The Content Type of the response.
     fn content_type(&self) -> &'static str;
 
-    /// Write the chunks to the [ChunkWriter] then finalize it.
+    /// Write the chunks to the [`ChunkWriter`] then finalize it.
     async fn write_chunks<W: crate::io::Write>(
         self,
         chunk_writer: ChunkWriter<W>,
     ) -> Result<ChunksWritten, W::Error>;
 }
 
-/// A response with a Chunked body. Implements [super::IntoResponse], so can be returned by handlers.
-/// By default, it sends a status code of 200 (OK), to customise the response, call [into_response](Self::into_response),
-/// which converts it into [response](super::Response) which can have the status code changed or headers added.
+/// A response with a Chunked body. Implements [`IntoResponse`](super::IntoResponse), so can be returned by handlers.
+/// By default, it sends a status code of 200 (OK), to customise the response, call [`into_response`](Self::into_response),
+/// which converts it into [`response`](super::Response) which can have the status code changed or headers added.
 pub struct ChunkedResponse<C: Chunks> {
     chunks: C,
 }
 
 impl<C: Chunks> ChunkedResponse<C> {
-    /// Create a response from [Chunks].
+    /// Create a response from [`Chunks`].
     pub fn new(chunks: C) -> Self {
         Self { chunks }
     }
 
-    /// Convert the response into a [Response](super::Response), which can then have its status code changed or headers added.
+    /// Convert the response into a [`Response`](super::Response), which can then have its status code changed or headers added.
     pub fn into_response(self) -> super::Response<impl super::HeadersIter, impl super::Body> {
         struct Body<C: Chunks>(C);
 

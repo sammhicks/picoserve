@@ -43,7 +43,7 @@ impl EventWriterState {
     }
 }
 
-/// Writing events to an [EventWriter] will send the events to the client.
+/// Writing events to an [`EventWriter`] will send the events to the client.
 pub struct EventWriter<'a, W: Write> {
     writer: W,
     event_writer_state: &'a EventWriterState,
@@ -174,7 +174,7 @@ pub trait EventSource {
 pub struct EventStream<S: EventSource>(pub S);
 
 impl<S: EventSource> EventStream<S> {
-    /// Convert SSE stream into a [super::Response] with a status code of "OK"
+    /// Convert SSE stream into a [`Response`](super::Response) with a status code of "OK"
     pub fn into_response(self) -> super::Response<impl super::HeadersIter, impl super::Body> {
         super::Response {
             status_code: StatusCode::OK,

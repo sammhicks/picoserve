@@ -86,7 +86,7 @@ impl super::HeadersIter for ETag {
     }
 }
 
-/// [RequestHandlerService] that serves a single file.
+/// [`RequestHandlerService`] that serves a single file.
 #[derive(Debug, Clone)]
 pub struct File {
     content_type: &'static str,
@@ -190,7 +190,7 @@ impl<State, PathParameters> crate::routing::RequestHandlerService<State, PathPar
     }
 }
 
-/// [PathRouter] that serves a single file based on the request path.
+/// [`PathRouter`] that serves a single file based on the request path.
 #[derive(Debug, Default)]
 pub struct Directory {
     /// The files in the directory.

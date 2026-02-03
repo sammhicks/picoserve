@@ -1,10 +1,10 @@
-//! [UrlEncodedString] and related types.
+//! [`UrlEncodedString`] and related types.
 
 use core::fmt;
 
 use serde::de::Error;
 
-/// The error returned when attempting to decode a character in a [UrlEncodedString].
+/// The error returned when attempting to decode a character in a [`UrlEncodedString`].
 #[derive(Debug)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum UrlEncodedCharacterDecodeError {
@@ -40,7 +40,7 @@ pub enum UrlDecodedCharacter {
 }
 
 impl UrlDecodedCharacter {
-    /// Convert into a [char], ignoring whether the character was present in the encoded string or percent-encoded.
+    /// Convert into a [`char`], ignoring whether the character was present in the encoded string or percent-encoded.
     pub const fn into_char(self) -> char {
         match self {
             UrlDecodedCharacter::Literal(c) | UrlDecodedCharacter::Encoded(c) => c,
@@ -48,7 +48,7 @@ impl UrlDecodedCharacter {
     }
 }
 
-/// An iterator over the decoded [UrlDecodedCharacter]s of a [UrlEncodedString].
+/// An iterator over the decoded [`UrlDecodedCharacter`]s of a [`UrlEncodedString`].
 pub struct UrlDecodedCharacters<'a>(core::str::Chars<'a>);
 
 impl<'a> UrlDecodedCharacters<'a> {
@@ -177,7 +177,7 @@ struct UrlEncodedRepresentation<'a> {
     value: &'a str,
 }
 
-/// The error returned when attempting to decode a [UrlEncodedString] into a string.
+/// The error returned when attempting to decode a [`UrlEncodedString`] into a string.
 #[derive(Debug)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum DecodeError {
@@ -230,7 +230,7 @@ impl<'de> From<UrlEncodedRepresentation<'de>> for UrlEncodedString<'de> {
 }
 
 impl<'a> UrlEncodedString<'a> {
-    /// Returns an iterator over the decoded [UrlDecodedCharacter]s of the string.
+    /// Returns an iterator over the decoded [`UrlDecodedCharacter`]s of the string.
     pub fn chars(self) -> UrlDecodedCharacters<'a> {
         UrlDecodedCharacters(self.0.chars())
     }
@@ -248,7 +248,7 @@ impl<'a> UrlEncodedString<'a> {
     }
 
     #[cfg(any(test, feature = "std"))]
-    /// Try decoding the chars into a std::string::String.
+    /// Try decoding the chars into a `std::string::String`.
     pub fn try_into_std_string(
         self,
     ) -> Result<std::string::String, UrlEncodedCharacterDecodeError> {

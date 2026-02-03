@@ -1,3 +1,5 @@
+#![warn(clippy::doc_markdown)]
+
 use proc_macro2::TokenStream;
 use quote::{quote, ToTokens};
 use syn::{parse_macro_input, spanned::Spanned, DeriveInput};
@@ -218,15 +220,15 @@ fn try_derive_error_with_status_code(input: &DeriveInput) -> Result<TokenStream,
 ///
 /// # Structs
 ///
-/// There must be an attribute `status_code` containing the StatusCode of the error, e.g. `#[status_code(INTERNAL_SERVER_ERROR)]`.
+/// There must be an attribute `status_code` containing the [`StatusCode`](https://docs.rs/picoserve/latest/picoserve/response/status/struct.StatusCode.html) of the error, e.g. `#[status_code(INTERNAL_SERVER_ERROR)]`.
 ///
 /// If the `status_code` is `transparent`, the struct must contain a single field which implements `ErrorWithStatusCode`.
 ///
 /// # Enums
 ///
-/// There may be an attribute `status_code` on the enum itself containing the default StatusCode of the error.
+/// There may be an attribute `status_code` on the enum itself containing the default [`StatusCode`](https://docs.rs/picoserve/latest/picoserve/response/status/struct.StatusCode.html) of the error.
 ///
-/// There may also be an attribute `status_code` on a variant, which overrides the default StatusCode.
+/// There may also be an attribute `status_code` on a variant, which overrides the default [`StatusCode`](https://docs.rs/picoserve/latest/picoserve/response/status/struct.StatusCode.html).
 /// If all variants have their own attribute `status_code`, the default may be omitted.
 ///
 /// Variants with a `status_code` of `transparent` must contain a single field which implements `ErrorWithStatusCode`.

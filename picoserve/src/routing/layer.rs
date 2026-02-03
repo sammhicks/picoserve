@@ -12,7 +12,7 @@ mod sealed {
 
 /// The remainer of a middleware stack, including the handler.
 pub trait Next<'a, R: Read + 'a, State, PathParameters>: sealed::NextIsSealed + Sized {
-    /// Run the next layer, writing the final response to the [ResponseWriter]
+    /// Run the next layer, writing the final response to the [`ResponseWriter`]
     async fn run<W: ResponseWriter<Error = R::Error>>(
         self,
         state: &State,
@@ -39,7 +39,7 @@ pub trait Next<'a, R: Read + 'a, State, PathParameters>: sealed::NextIsSealed + 
 /// + send a different response than the one returned by the inner handler
 /// + and more...
 ///
-/// To modify the response, create a struct that implements [ResponseWriter] and wraps `response_writer`,
+/// To modify the response, create a struct that implements [`ResponseWriter`] and wraps `response_writer`,
 /// and pass an instance of that struct to `next`
 pub trait Layer<State, PathParameters> {
     /// The state passed to the next layer

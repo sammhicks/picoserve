@@ -1,24 +1,24 @@
 //! HTTP response types.
 //!
-//! Anything that implements [IntoResponse] can be returned from handlers, such as
+//! Anything that implements [`IntoResponse`] can be returned from handlers, such as
 //!
-//! + [Response]
-//! + [Json]
-//! + [Redirect]
+//! + [`Response`]
+//! + [`Json`]
+//! + [`Redirect`]
 //! + `(("HeaderName", "HeaderValue"), impl Content)`
 //! + `(("HeaderName0", "HeaderValue0"), ("HeaderName1", "HeaderValue1"), impl Content)`
 //! + `([("HeaderName0", "HeaderValue0"), ("HeaderName1", "HeaderValue1")], impl Content)`
-//! + `([StatusCode], impl Content)`
-//! + `([StatusCode], ("HeaderName", "HeaderValue"), impl Content)`
+//! + `(StatusCode, impl Content)`
+//! + `(StatusCode, ("HeaderName", "HeaderValue"), impl Content)`
 //! + Tuples consisting of:
-//!     1. Optionally, a status code. If not provided, a status code of [StatusCode::OK] is used
-//!     2. A number of values which implement [HeadersIter], such as:
+//!     1. Optionally, a status code. If not provided, a status code of [`StatusCode::OK`] is used
+//!     2. A number of values which implement [`HeadersIter`], such as:
 //!         + `(&str, impl Display)`
 //!         + `Option<impl HeadersIter>`
 //!         + `[impl HeadersIter; N]`
-//!     3. A value which implements [Content]
+//!     3. A value which implements [`Content`]
 //!
-//! For a complete list, see [IntoResponse].
+//! For a complete list, see [`IntoResponse`].
 
 use core::fmt;
 
@@ -359,12 +359,12 @@ impl Body for NoBody {
     }
 }
 
-/// Indicates that a [Response] has no content.
+/// Indicates that a [`Response`] has no content.
 ///
-/// Tuples where the first element is a [StatusCode], the last element is [NoContent] and the others implement [HeadersIter] implement [IntoResponse].
+/// Tuples where the first element is a [`StatusCode`], the last element is [`NoContent`] and the others implement [`HeadersIter`] implement [`IntoResponse`].
 pub struct NoContent;
 
-/// A [Response] body containing data with a known type and length.
+/// A [`Response`] body containing data with a known type and length.
 pub trait Content {
     /// The value of the "Content-Type" header.
     fn content_type(&self) -> &'static str;
@@ -592,9 +592,9 @@ pub trait ResponseWriter: Sized {
 
 /// Trait for generating responses.
 ///
-/// Types that implement IntoResponse can be returned from handlers.
+/// Types that implement `IntoResponse` can be returned from handlers.
 pub trait IntoResponse: Sized {
-    /// Write the generated response into the given [ResponseWriter].
+    /// Write the generated response into the given [`ResponseWriter`].
     async fn write_to<R: Read, W: ResponseWriter<Error = R::Error>>(
         self,
         connection: Connection<'_, R>,
@@ -722,7 +722,7 @@ declare_tuple_into_response!(
     H1 H2 H3 H4 H5 H6 H7 H8 H9 H10 H11 H12 H13 H14 H15 H16;
 );
 
-/// Returns a value in [core::fmt::Debug] form as text.
+/// Returns a value in [`core::fmt::Debug`] form as text.
 pub struct DebugValue<D>(pub D);
 
 impl<D: fmt::Debug> IntoResponse for DebugValue<D> {
@@ -744,7 +744,7 @@ pub struct Redirect {
 }
 
 impl Redirect {
-    /// Create a new [Redirect] that uses a 303 "See Other" status code.
+    /// Create a new [`Redirect`] that uses a 303 "See Other" status code.
     pub fn to(location: &'static str) -> Self {
         Self {
             status_code: StatusCode::SEE_OTHER,
@@ -769,10 +769,10 @@ impl IntoResponse for Redirect {
     }
 }
 
-/// Error Responses consisting of a `text/plain` message and a [StatusCode].
+/// Error Responses consisting of a `text/plain` message and a [`StatusCode`].
 ///
-/// This trait is derivable. See [picoserve_derive::ErrorWithStatusCode].
+/// This trait is derivable. See [`picoserve_derive::ErrorWithStatusCode`].
 pub trait ErrorWithStatusCode: fmt::Display + IntoResponse {
-    /// The [StatusCode] to return for this error.
+    /// The [`StatusCode`] to return for this error.
     fn status_code(&self) -> StatusCode;
 }

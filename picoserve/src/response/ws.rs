@@ -417,8 +417,8 @@ impl<R: Read> SocketRx<R> {
     }
 
     /// Read the next frame unless `signal` resolves before receiving the start of the frame. `signal` **must** be cancel-safe.
-    /// If the frame is not final, then before calling next_message,
-    /// next_frame must be repeatedly called until a final frame is received.
+    /// If the frame is not final, then before calling [`next_message`](Self::next_message),
+    /// `next_frame` must be repeatedly called until a final frame is received.
     ///
     /// `next_frame` is *not* cancel-safe.
     pub async fn next_frame<Signal: core::future::Future>(
@@ -572,8 +572,8 @@ impl<W: Write> SocketTx<W> {
         self.flush().await
     }
 
-    /// Send the given value as UTF-8 text using its [Display](core::fmt::Display) implementation.
-    /// If the message is long, the message will be sent as several frames, [Display::fmt](core::fmt::Display::fmt) will be repeatedly called
+    /// Send the given value as UTF-8 text using its [`Display`](core::fmt::Display) implementation.
+    /// If the message is long, the message will be sent as several frames, [`Display::fmt`](core::fmt::Display::fmt) will be repeatedly called
     /// so must produce the same output each time.
     pub async fn send_display(&mut self, data: impl core::fmt::Display) -> Result<(), W::Error> {
         let opcode = &mut 1;
@@ -647,7 +647,7 @@ impl<W: Write> Write for FrameWriter<'_, W> {
     }
 }
 
-/// Implement [WebSocketCallback] to handle and send web socket messages.
+/// Implement [`WebSocketCallback`] to handle and send web socket messages.
 pub trait WebSocketCallback {
     /// Run the WebSocket connection, reading and writing to the socket.
     async fn run<R: Read, W: Write<Error = R::Error>>(
@@ -672,7 +672,7 @@ impl<C: WebSocketCallback> WebSocketCallbackWithShutdownSignal for C {
     }
 }
 
-/// A [WebSocketCallback] which is signalled when the server shuts down gracefully.
+/// A [`WebSocketCallback`] which is signalled when the server shuts down gracefully.
 pub trait WebSocketCallbackWithShutdownSignal {
     /// Run the WebSocket connection, reading and writing to the socket.
     /// If the server has graceful shutdown configured, `shutdown_signal` resolves when the server shuts down.
@@ -688,7 +688,7 @@ pub trait WebSocketCallbackWithShutdownSignal {
     ) -> Result<(), W::Error>;
 }
 
-/// A [WebSocketCallback] with access to the server state.
+/// A [`WebSocketCallback`] with access to the server state.
 pub trait WebSocketCallbackWithState<State> {
     /// Run the WebSocket connection, reading and writing to the socket.
     async fn run_with_state<R: Read, W: Write<Error = R::Error>>(
@@ -710,7 +710,7 @@ impl<State, C: WebSocketCallback> WebSocketCallbackWithState<State> for C {
     }
 }
 
-/// A [WebSocketCallback] with access to the server state, and which is signalled when the server shuts down gracefully..
+/// A [`WebSocketCallback`] with access to the server state, and which is signalled when the server shuts down gracefully..
 pub trait WebSocketCallbackWithStateAndShutdownSignal<State> {
     /// Run the WebSocket connection, reading and writing to the socket.
     async fn run_with_state_and_shutdown_signal<
@@ -786,7 +786,7 @@ pub struct CallbackUsingState<State, C: WebSocketCallbackWithStateAndShutdownSig
 }
 
 impl WebSocketUpgrade {
-    /// Handle the websocket upgrade. The returned [UpgradedWebSocket] should be returned by the request handler,
+    /// Handle the websocket upgrade. The returned [`UpgradedWebSocket`] should be returned by the request handler,
     /// and thus returned to the client.
     ///
     /// `on_upgrade` also accepts a [`WebSocketCallback`], as all [`WebSocketCallback`] also implement [`WebSocketCallbackWithShutdownSignal`].
@@ -802,7 +802,7 @@ impl WebSocketUpgrade {
         })
     }
 
-    /// Handle the websocket upgrade, which requires access to the state. The returned [UpgradedWebSocket] should be returned by the request handler,
+    /// Handle the websocket upgrade, which requires access to the state. The returned [`UpgradedWebSocket`] should be returned by the request handler,
     /// and thus returned to the client.
     ///
     /// `on_upgrade` also accepts a [`WebSocketCallbackWithState`], as all [`WebSocketCallbackWithState`] also implement [`WebSocketCallbackWithStateAndShutdownSignal`].

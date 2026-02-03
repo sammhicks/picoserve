@@ -1,17 +1,17 @@
 //! Types and traits for extracting data from requests.
 //!
-//! A handler function is an async function that takes any number of "extractors" as arguments. All arguments must implement [FromRequestParts], and the final extractory may optionally implement [FromRequest].
+//! A handler function is an async function that takes any number of "extractors" as arguments. All arguments must implement [`FromRequestParts`], and the final extractory may optionally implement [`FromRequest`].
 //!
 //! For example:
 //!
 //! + [`State<T>`] will extract part or all of the application state.
 //! + [`Form<T: serde::DeserializeOwned>`] will extract the body of a request as Form data.
 //!
-//! For an example of how to implement [FromRequest], see [custom_extractor](https://github.com/sammhicks/picoserve/blob/main/examples/custom_extractor/src/main.rs)
+//! For an example of how to implement [`FromRequest`], see [custom_extractor](https://github.com/sammhicks/picoserve/blob/main/examples/custom_extractor/src/main.rs)
 //!
 //! ## Requests and Borrowing
 //!
-//! Although [RequestHandlerFunctions](crate::routing::RequestHandlerFunction) may not borrow from request due to restrictions with Higher-Order-Lifetime-Bounds, by using [from_request](crate::from_request) and [from_request_parts](crate::from_request_parts), [RequestHandlerServices](crate::routing::RequestHandlerService) and [PathRouterServices](crate::routing::PathRouterService) may do so.
+//! Although [`RequestHandlerFunctions`](crate::routing::RequestHandlerFunction) may not borrow from request due to restrictions with Higher-Order-Lifetime-Bounds, by using [`from_request`](crate::from_request) and [`from_request_parts`](crate::from_request_parts), [`RequestHandlerServices`](crate::routing::RequestHandlerService) and [`PathRouterServices`](crate::routing::PathRouterService) may do so.
 
 use crate::{
     self as picoserve,
@@ -50,7 +50,7 @@ pub trait FromRequestParts<'r, State>: Sized {
     ) -> Result<Self, Self::Rejection>;
 }
 
-/// Extract values from Request Parts. Each `$name` must implement [FromRequestParts], but may borrow from the request.
+/// Extract values from Request Parts. Each `$name` must implement [`FromRequestParts`], but may borrow from the request.
 /// If extraction is rejected, the rejection is written to `$response_writer` and the function returns.
 #[macro_export]
 macro_rules! from_request_parts {
@@ -79,7 +79,7 @@ pub trait FromRequest<'r, State, M = private::ViaRequest>: Sized {
     ) -> Result<Self, Self::Rejection>;
 }
 
-/// Extract a value from a request. `$name` must implement [FromRequest], but may borrow from the request.
+/// Extract a value from a request. `$name` must implement [`FromRequest`], but may borrow from the request.
 /// If extraction is rejected, the rejection is written to `$response_writer` and the function returns.
 #[macro_export]
 macro_rules! from_request {
@@ -350,7 +350,7 @@ impl<T: serde::de::DeserializeOwned> core::ops::DerefMut for Query<T> {
     }
 }
 
-/// Rejection used for [Query].
+/// Rejection used for [`Query`].
 #[derive(Debug, thiserror::Error, ErrorWithStatusCode)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[error("Bad Query")]
@@ -387,7 +387,7 @@ impl<T: serde::de::DeserializeOwned> core::ops::DerefMut for Form<T> {
     }
 }
 
-/// Rejection used for [Form].
+/// Rejection used for [`Form`].
 #[derive(Debug, thiserror::Error, ErrorWithStatusCode)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[status_code(BAD_REQUEST)]
@@ -422,7 +422,8 @@ impl<'r, State, T: serde::de::DeserializeOwned> FromRequest<'r, State> for Form<
     }
 }
 
-/// Rejection used for [Json].
+/// Rejection used for [`Json`].
+#[cfg(feature = "json")]
 #[derive(Debug, thiserror::Error, ErrorWithStatusCode)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum JsonRejection {
@@ -473,7 +474,7 @@ impl<'r, State, T: serde::Deserialize<'r>> FromRequest<'r, State, T> for Json<T>
     }
 }
 
-/// Used to do reference to value conversions, mainly used with the [State] extractor to extract parts of the application state.
+/// Used to do reference to value conversions, mainly used with the [`State`] extractor to extract parts of the application state.
 pub trait FromRef<T> {
     /// Perform the reference to value conversion
     fn from_ref(input: &T) -> Self;

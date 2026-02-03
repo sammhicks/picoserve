@@ -246,7 +246,7 @@ impl Default for Config {
     }
 }
 
-/// Maps Read errors to [Error]s
+/// Maps Read errors to [`Error`]s
 struct MapReadErrorReader<R: io::Read>(R);
 
 impl<R: io::Read> io::ErrorType for MapReadErrorReader<R>
@@ -771,7 +771,7 @@ impl<
     }
 }
 
-/// A helper trait which simplifies creating a static [Router] with no state.
+/// A helper trait which simplifies creating a static [`Router`] with no state.
 ///
 /// In practice usage requires the nightly Rust toolchain.
 pub trait AppBuilder {
@@ -780,7 +780,7 @@ pub trait AppBuilder {
     fn build_app(self) -> Router<Self::PathRouter>;
 }
 
-/// A helper trait which simplifies creating a static [Router] with a declared state.
+/// A helper trait which simplifies creating a static [`Router`] with a declared state.
 ///
 /// In practice usage requires the nightly Rust toolchain.
 pub trait AppWithStateBuilder {
@@ -799,7 +799,7 @@ impl<T: AppBuilder> AppWithStateBuilder for T {
     }
 }
 
-/// The [Router] for the app constructed from the Props (which implement [AppBuilder]).
+/// The [`Router`] for the app constructed from the Props (which implement [`AppBuilder`]).
 pub type AppRouter<Props> =
     Router<<Props as AppWithStateBuilder>::PathRouter, <Props as AppWithStateBuilder>::State>;
 

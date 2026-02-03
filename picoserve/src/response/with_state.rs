@@ -5,7 +5,7 @@ use crate::{
 
 use super::{Connection, Content, IntoResponse, ResponseWriter};
 
-/// [Content] which uses the State to calculate its properties
+/// [`Content`] which uses the State to calculate its properties
 pub trait ContentUsingState<State> {
     fn content_type(&self, state: &State) -> &'static str;
 
@@ -13,7 +13,7 @@ pub trait ContentUsingState<State> {
 
     async fn write_content<W: Write>(self, state: &State, writer: W) -> Result<(), W::Error>;
 
-    /// Convert into a type which implements [Content] and thus can be passed into [Response::new](super::Response::new),
+    /// Convert into a type which implements [`Content`] and thus can be passed into [`Response::new`](super::Response::new),
     ///  or as the last field in a tuple.
     fn using_state(self, state: &State) -> ContentUsingStateWithState<'_, State, Self>
     where
@@ -26,7 +26,7 @@ pub trait ContentUsingState<State> {
     }
 }
 
-/// A [Content] which passes the State to the [ContentUsingState].
+/// A [`Content`] which passes the State to the [`ContentUsingState`].
 pub struct ContentUsingStateWithState<'s, State, C: ContentUsingState<State>> {
     content: C,
     state: &'s State,
@@ -48,10 +48,10 @@ impl<State, C: ContentUsingState<State>> Content for ContentUsingStateWithState<
 
 /// Trait for generating responses which use the State when writing themselves to the socket.
 ///
-/// Types that implement IntoResponseWithState can be returned from handlers.
-/// [IntoResponse] should be preferred, with [IntoResponseWithState] used if copying out the appropriate part of State is costly.
+/// Types that implement `IntoResponseWithState` can be returned from handlers.
+/// [`IntoResponse`] should be preferred, with [`IntoResponseWithState`] used if copying out the appropriate part of State is costly.
 pub trait IntoResponseWithState<State>: Sized {
-    /// Write the generated response into the given [ResponseWriter].
+    /// Write the generated response into the given [`ResponseWriter`].
     async fn write_to_with_state<R: Read, W: ResponseWriter<Error = R::Error>>(
         self,
         state: &State,
