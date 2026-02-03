@@ -35,3 +35,8 @@ picoserve = { path = "../../picoserve", features = ["embassy", "log"] }
 portable-atomic = { version = "1.7.0", features = ["critical-section"], default-features = false }
 rand = { version = "0.9.2", default-features = false }
 static_cell = "2.1.0"
+
+[profile.dev]
+# Rust debug is too slow.
+# For debug builds always builds with some optimization
+opt-level = "s"
