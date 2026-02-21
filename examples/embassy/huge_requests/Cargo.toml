@@ -2,6 +2,8 @@
 name = "huge_requests"
 version = "0.1.0"
 edition = "2021"
+description = "Extending the read timeout to support huge requests."
+categories = ["Embassy on Raspberry Pi Pico"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

@@ -2,6 +2,8 @@
 name = "static_content"
 version = "0.1.0"
 edition = "2021"
+description = "Serving static files such as HTML and CSS."
+categories = ["Tokio"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

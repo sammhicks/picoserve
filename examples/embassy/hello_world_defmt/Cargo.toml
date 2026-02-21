@@ -2,6 +2,8 @@
 name = "hello_world_defmt"
 version = "0.1.0"
 edition = "2021"
+description = "A minimal example showing how to set up a `Router` using a debugger and defmt for logging."
+categories = ["Embassy on Raspberry Pi Pico", ":pinned"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

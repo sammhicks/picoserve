@@ -2,6 +2,8 @@
 name = "custom_extractor"
 version = "0.1.0"
 edition = "2021"
+description = "How to extract custom data from a request."
+categories = ["Tokio"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

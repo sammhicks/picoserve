@@ -2,6 +2,8 @@
 name = "graceful_shutdown_web_sockets"
 version = "0.1.0"
 edition = "2021"
+description = "Gracefully shutting down a server and its WS connections."
+categories = ["Tokio"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

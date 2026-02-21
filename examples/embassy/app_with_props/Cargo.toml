@@ -2,6 +2,8 @@
 name = "app_with_props"
 version = "0.1.0"
 edition = "2021"
+description = "Passing data when building the App."
+categories = ["Embassy on Raspberry Pi Pico"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

@@ -2,6 +2,8 @@
 name = "path_parameters"
 version = "0.1.0"
 edition = "2021"
+description = "Extracing data from path segments."
+categories = ["Tokio"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

@@ -2,6 +2,8 @@
 name = "nested_router"
 version = "0.1.0"
 edition = "2021"
+description = "Nesting `Router`s inside other `Router`s."
+categories = ["Tokio"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

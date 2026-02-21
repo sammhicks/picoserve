@@ -2,6 +2,8 @@
 name = "response_using_state"
 version = "0.1.0"
 edition = "2021"
+description = "Returning a response which uses the State when writing itself to the socket."
+categories = ["Tokio"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
