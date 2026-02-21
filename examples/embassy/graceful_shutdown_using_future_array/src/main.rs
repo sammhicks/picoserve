@@ -163,6 +163,8 @@ async fn main(spawner: embassy_executor::Spawner) {
 
     let mut server_state = SERVER_STATE.receiver().unwrap();
 
+    log::info!("{}", example_utils::WELCOME_MESSAGE);
+
     loop {
         log::info!("Waiting for startup");
 

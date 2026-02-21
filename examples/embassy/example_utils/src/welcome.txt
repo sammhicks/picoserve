@@ -1,0 +1,1 @@
+Connect to the device with a static IP in the `10.0.0.*` range (e.g. `10.0.0.2`) and open http://10.0.0.1 to view the example.

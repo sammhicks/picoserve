@@ -214,6 +214,8 @@ async fn main(spawner: embassy_executor::Spawner) {
 
     let app = make_static!(AppRouter<AppProps>, AppProps.build_app());
 
+    log::info!("{}", example_utils::WELCOME_MESSAGE);
+
     for task_id in 0..WEB_TASK_POOL_SIZE {
         spawner.must_spawn(web_task(task_id, stack, app));
     }
