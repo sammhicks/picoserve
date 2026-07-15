@@ -17,7 +17,7 @@ cortex-m-rt = "0.7.3"
 defmt-rtt = "1.0.0"
 embassy-executor = { version = "0.9.1", features = ["arch-cortex-m", "executor-thread", "nightly"] }
 embassy-futures = "0.1.2"
-embassy-net = { version = "0.8.0", features = ["tcp", "proto-ipv4", "medium-ethernet"] }
+embassy-net = { version = "0.9.1", features = ["tcp", "proto-ipv4", "medium-ethernet"] }
 embassy-sync = "0.7.2"
 embassy-time = { version = "0.5.0", features = ["defmt-timestamp-uptime"] }
 log = { version = "0.4.20", default-features = false }
