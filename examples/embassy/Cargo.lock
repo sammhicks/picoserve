@@ -1006,8 +1006,6 @@ name = "hello_world_usb_ncm"
 version = "0.1.0"
 dependencies = [
  "cortex-m-rt",
- "cyw43",
- "cyw43-pio",
  "embassy-executor",
  "embassy-futures",
  "embassy-net",
@@ -1018,7 +1016,6 @@ dependencies = [
  "embassy-usb-driver",
  "embassy-usb-host",
  "embassy-usb-logger",
- "example_secrets",
  "example_utils",
  "log",
  "panic-persist",
