@@ -32,7 +32,7 @@ embassy-time = "0.5.0"
 embassy-usb = "0.6.0"
 embassy-usb-host = "0.1.0"
 embassy-usb-driver = "0.2.2"
-embassy-usb-logger = "0.5.1"
+embassy-usb-logger = "0.6.0"
 log = { version = "0.4.22", default-features = false }
 panic-persist = { version = "0.3.0", features = ["utf8"] }
 picoserve = { path = "../../picoserve", features = ["embassy", "log"] }
