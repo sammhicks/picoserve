@@ -7,7 +7,8 @@ use embassy_rp::{
 };
 use embassy_usb::{
     class::cdc_ncm::embassy_net::{Device, Runner, State as NetState},
-    class::cdc_ncm::{CdcNcmClass, State},
+    class::cdc_ncm::{CdcNcmClass, State as NcmState},
+    class::cdc_acm::{CdcAcmClass, State as AcmState},
     Builder, Config, UsbDevice,
 };
 use static_cell::StaticCell;
@@ -16,6 +17,7 @@ use panic_persist as _;
 use picoserve::{make_static, routing::get, AppBuilder, AppRouter};
 use rand::Rng;
 
+// USB IRQs are handled by embassy_rp::usb directly
 embassy_rp::bind_interrupts!(struct Irqs {
     USBCTRL_IRQ => embassy_rp::usb::InterruptHandler<USB>;
 });
@@ -24,14 +26,12 @@ type MyDriver = embassy_rp::usb::Driver<'static, USB>;
 
 const MTU: usize = 1514;
 
-// TODO: Change to logger from class
-//#[embassy_executor::task]
-//async fn logger_task(usb: embassy_rp::Peri<'static, embassy_rp::peripherals::USB>) {
-//    use example_utils::log::{CommandHandler, ReceiverHandler};
-//
-//    //let driver = embassy_rp::usb::Driver::new(usb, Irqs);
-//    //embassy_usb_logger::run!(1024, log::LevelFilter::Info, driver, CommandHandler);
-//}
+// This example uses with_class! instead of run! since we have a composite USB device
+// with one NCM and one ACM interface
+#[embassy_executor::task]
+async fn logger_task(class: CdcAcmClass<'static, MyDriver>) {
+    embassy_usb_logger::with_class!(1024, log::LevelFilter::Info, class).await
+}
 
 #[embassy_executor::task]
 async fn usb_task(mut device: UsbDevice<'static, MyDriver>) -> ! {
@@ -86,14 +86,7 @@ async fn main(spawner: embassy_executor::Spawner) {
     // Create the driver, from the HAL.
     let driver = embassy_rp::usb::Driver::new(p.USB, Irqs);
 
-    //spawner.must_spawn(logger_task(p.USB));
-
-    //if let Some(panic_message) = panic_persist::get_panic_message_utf8() {
-    //    loop {
-    //        log::error!("{panic_message}");
-    //        embassy_time::Timer::after_secs(5).await;
-    //    }
-    //}
+    // Logger will be created after the composite USB device has been built
 
     // Create embassy-usb Config
     let mut config = Config::new(0xc0de, 0xcafe);
@@ -121,19 +114,27 @@ async fn main(spawner: embassy_executor::Spawner) {
     // Host's MAC addr. This is the MAC the host "thinks" its USB-to-ethernet adapter has.
     let host_mac_addr = [0x88, 0x88, 0x88, 0x88, 0x88, 0x88];
 
-    // Create classes on the builder.
-    static STATE: StaticCell<State> = StaticCell::new();
-    let ncm_class = CdcNcmClass::new(&mut builder, STATE.init(State::new()), host_mac_addr, 64);
+    // Create classes on the builder
+    // CDC NCM for the Ethernet emulation and the web server
+    static STATE: StaticCell<NcmState> = StaticCell::new();
+    let ncm_class = CdcNcmClass::new(&mut builder, STATE.init(NcmState::new()), host_mac_addr, 64);
+
+    // CDC ACM for the logger via emulated serial
+    static LOGGER_STATE: StaticCell<AcmState> = StaticCell::new();
+    let logger_class = CdcAcmClass::new(&mut builder, LOGGER_STATE.init(AcmState::new()), 64);
 
     // Build the builder.
     let usb = builder.build();
 
     spawner.must_spawn(usb_task(usb));
+    spawner.must_spawn(logger_task(logger_class));
 
+    // Create the NCM net_device from the NCM class
     static NET_STATE: StaticCell<NetState<MTU, 4, 4>> = StaticCell::new();
     let (runner, net_device) = ncm_class.into_embassy_net_device::<MTU, 4, 4>(NET_STATE.init(NetState::new()), our_mac_addr);
     let _ = spawner.spawn(usb_ncm_task(runner));
 
+    // Init the network stack with static IPv4 and using the NCM device
     let (stack, runner) = embassy_net::new(
         net_device,
         embassy_net::Config::ipv4_static(embassy_net::StaticConfigV4 {
@@ -150,6 +151,7 @@ async fn main(spawner: embassy_executor::Spawner) {
 
     spawner.must_spawn(net_task(runner));
 
+    // Start the web server and span its tasks
     let app = make_static!(AppRouter<AppProps>, AppProps.build_app());
 
     log::info!("{}", example_utils::WELCOME_MESSAGE);
