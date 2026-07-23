@@ -36,10 +36,10 @@ impl fmt::Write for FormatBuffer {
             match self.ignore_count.checked_sub(1) {
                 Some(ignore_count) => self.ignore_count = ignore_count,
                 None => {
-                    if self.data.push(b).is_err() {
+                    self.data.push(b).map_err(|_| {
                         self.error_state = FormatBufferWriteError::OutOfSpace(());
-                        return Err(fmt::Error);
-                    }
+                        fmt::Error
+                    })?;
                 }
             }
         }
@@ -57,12 +57,11 @@ impl FormatBuffer {
         }
     }
 
-    pub fn write(
+    pub fn write_args(
         &mut self,
-        value: impl fmt::Display,
+        fmt: core::fmt::Arguments<'_>,
     ) -> Result<&[u8], FormatBufferWriteError<&[u8]>> {
-        use fmt::Write;
-        write!(self, "{value}")
+        core::fmt::write(self, fmt)
             .map(|()| self.data.as_slice())
             .map_err(|fmt::Error| match self.error_state {
                 FormatBufferWriteError::FormatError => FormatBufferWriteError::FormatError,
@@ -81,7 +80,7 @@ pub trait WriteExt: Write {
         let mut ignore_count = 0;
 
         loop {
-            match FormatBuffer::new(ignore_count).write(args) {
+            match FormatBuffer::new(ignore_count).write_args(args) {
                 Ok(data) => return self.write_all(data).await,
                 Err(FormatBufferWriteError::FormatError) => {
                     log_warn!("Skipping writing due to Format Error");
