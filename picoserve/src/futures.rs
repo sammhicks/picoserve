@@ -1,4 +1,10 @@
-use core::future::Future;
+use core::{
+    future::Future,
+    pin::Pin,
+    task::{Context, Poll},
+};
+
+use pin_project::pin_project;
 
 pub enum Either<A, B> {
     First(A),
@@ -32,34 +38,67 @@ impl<A, B> Either<A, B> {
     }
 }
 
-pub(crate) async fn select_either<A: Future, B: Future>(
+/// [`Future`] returned by [`select_either`], polling `a` before `b`.
+///
+/// Storing the futures in a struct keeps exactly one copy of each. An `async fn`
+/// taking them by value and `pin!`-ing them internally would instead keep both the
+/// argument slot and the post-move local live, doubling the size of every future
+/// passed in (see the composition in [`Select`]).
+#[pin_project]
+pub(crate) struct SelectEither<A, B> {
+    #[pin]
     a: A,
+    #[pin]
     b: B,
-) -> Either<A::Output, B::Output> {
-    let mut a = core::pin::pin!(a);
-    let mut b = core::pin::pin!(b);
+}
 
-    core::future::poll_fn(|cx| {
-        use core::task::Poll;
+impl<A: Future, B: Future> Future for SelectEither<A, B> {
+    type Output = Either<A::Output, B::Output>;
 
-        match a.as_mut().poll(cx) {
-            Poll::Ready(output) => return Poll::Ready(Either::First(output)),
-            Poll::Pending => (),
+    fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+        let this = self.project();
+
+        if let Poll::Ready(output) = this.a.poll(cx) {
+            return Poll::Ready(Either::First(output));
         }
 
-        match b.as_mut().poll(cx) {
-            Poll::Ready(output) => return Poll::Ready(Either::Second(output)),
-            Poll::Pending => (),
+        if let Poll::Ready(output) = this.b.poll(cx) {
+            return Poll::Ready(Either::Second(output));
         }
 
         Poll::Pending
-    })
-    .await
+    }
 }
 
-pub(crate) async fn select<A: Future, B: Future<Output = A::Output>>(a: A, b: B) -> A::Output {
-    match select_either(a, b).await {
-        Either::First(output) | Either::Second(output) => output,
+pub(crate) fn select_either<A: Future, B: Future>(a: A, b: B) -> SelectEither<A, B> {
+    SelectEither { a, b }
+}
+
+/// [`Future`] returned by [`select`].
+///
+/// Wrapping [`SelectEither`] in a struct (rather than an `async fn` that awaits it)
+/// avoids re-storing both futures: the nested `select` -> `select_either` then holds
+/// each future once instead of three times.
+#[pin_project]
+pub(crate) struct Select<A, B> {
+    #[pin]
+    inner: SelectEither<A, B>,
+}
+
+impl<A: Future, B: Future<Output = A::Output>> Future for Select<A, B> {
+    type Output = A::Output;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+        match self.project().inner.poll(cx) {
+            Poll::Ready(Either::First(output) | Either::Second(output)) => Poll::Ready(output),
+            Poll::Pending => Poll::Pending,
+        }
+    }
+}
+
+pub(crate) fn select<A: Future, B: Future<Output = A::Output>>(a: A, b: B) -> Select<A, B> {
+    Select {
+        inner: select_either(a, b),
     }
 }
 
