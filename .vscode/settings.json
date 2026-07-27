@@ -1,0 +1,15 @@
+{
+  "rust-analyzer.rustfmt.extraArgs": [
+    "+nightly"
+  ],
+  // Uncomment the target of your chip.
+  "rust-analyzer.cargo.target": "thumbv6m-none-eabi",
+  //"rust-analyzer.cargo.target": "thumbv7m-none-eabi",
+  // "rust-analyzer.cargo.target": "thumbv7em-none-eabi",
+  //"rust-analyzer.cargo.target": "thumbv7em-none-eabihf",
+  // "rust-analyzer.cargo.target": "thumbv8m.main-none-eabihf",
+  "rust-analyzer.linkedProjects": [
+    "examples/embassy/Cargo.toml",
+    "examples/embassy/hello_world_defmt/Cargo.toml",
+  ],
+}

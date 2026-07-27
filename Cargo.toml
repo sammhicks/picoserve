@@ -29,6 +29,7 @@ members = [
 ]
 exclude = [
     "examples/embassy",
+    "examples/embassy/hello_world_defmt",
 ]
 
 [workspace.dependencies]
