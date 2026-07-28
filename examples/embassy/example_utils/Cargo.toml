@@ -7,3 +7,10 @@ edition = "2024"
 embassy-rp = { workspace = true }
 embassy-sync = { workspace = true }
 embassy-usb-logger = { workspace = true }
+
+# Below configs are here to mute the rust-analyzer error.
+# "Can't find crate for 'test'" as this is a no_std project
+[lib]
+name = "example_utils"
+test = false
+bench = false

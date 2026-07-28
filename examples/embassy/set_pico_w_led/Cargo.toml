@@ -26,3 +26,10 @@ rand = { workspace = true }
 static_cell = { workspace = true }
 example_secrets = { path = "../example_secrets" }
 example_utils = { path = "../example_utils" }
+
+# Below configs are here to mute the rust-analyzer error.
+# "Can't find crate for 'test'" as this is a no_std project
+[[bin]]
+name = "set_led"
+test = false
+bench = false
