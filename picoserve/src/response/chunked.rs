@@ -11,8 +11,6 @@ pub struct ChunkWriter<W: crate::io::Write> {
 impl<W: crate::io::Write> ChunkWriter<W> {
     /// Write a chunk to the client.
     pub async fn write_chunk(&mut self, chunk: &[u8]) -> Result<(), W::Error> {
-        use crate::io::WriteExt;
-
         if chunk.is_empty() {
             return Ok(());
         }
@@ -35,7 +33,6 @@ impl<W: crate::io::Write> ChunkWriter<W> {
 
     /// Write formatted text as a single chunk. This is typically called using the `write!` macro.
     pub async fn write_fmt(&mut self, args: core::fmt::Arguments<'_>) -> Result<(), W::Error> {
-        use crate::io::WriteExt;
         use core::fmt::Write;
 
         let mut chunk_size = 0;

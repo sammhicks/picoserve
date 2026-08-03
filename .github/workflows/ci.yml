@@ -20,7 +20,7 @@ jobs:
       - name: Build
         run: cargo build --verbose --all
       - name: Run tests
-        run: cargo test --verbose
+        run: cargo test --all-features --verbose
 
   build_embassy_examples:
     name: Build Embassy Examples

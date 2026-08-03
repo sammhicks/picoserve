@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+### Breaking
+
+- The `Write` trait used throughout `picoserve` has been replaced from [`embedded-io-async::Write`](https://docs.rs/embedded-io-async/0.7.0/embedded_io_async/) to a new `picoserve::io::Write` trait.
+- Server-Sent Events and WebSockets no longer automatically flush the connection after writing a message.
+- [`sse::EventData`](https://docs.rs/picoserve/latest/picoserve/response/sse/trait.EventData.html) now writes to a [`sse::EventDataWriter`](https://docs.rs/picoserve/latest/picoserve/response/sse/struct.EventDataWriter.html), 
+
+### Changed
+
+- Several write operations now write directly to the socket's transmit buffer, no longer requiring a local buffer, and thus improving both time and space efficiency.
+
+### Fixed
+
+- Future combinators no longer store two copies of the future, greatly reducing memory usage.
+
+
 ## [0.19.0] - 2026-07-15
 
 ### Breaking

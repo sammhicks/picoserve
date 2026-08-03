@@ -2,7 +2,9 @@
 
 use core::fmt;
 
-pub use embedded_io_async::{self, Error, ErrorKind, ErrorType, Read, ReadExactError, Write};
+pub use embedded_io_async::{
+    self, Error, ErrorKind, ErrorType, Read, ReadExactError, Write as BaseWrite,
+};
 
 use crate::time::Timer;
 
@@ -19,83 +21,154 @@ pub trait ReadExt: Read {
 
 impl<R: Read> ReadExt for R {}
 
-pub(crate) enum FormatBufferWriteError<T> {
+pub(crate) enum FormatBufferWriteError {
     FormatError,
-    OutOfSpace(T),
+    OutOfSpace,
 }
 
-pub(crate) struct FormatBuffer {
-    pub data: heapless::Vec<u8, 128>,
-    pub ignore_count: usize,
-    pub error_state: FormatBufferWriteError<()>,
+struct FormatBuffer<'a> {
+    // The underlying buffer to write to.
+    buffer: &'a mut [u8],
+    // Where in the buffer to write the next data to.
+    write_position: usize,
+    // How many bytes to skip before starting to write into the buffer.
+    skip_count: usize,
+    /// The type of error that has occured if the formatter returns [`Err(core::fmt::Error`)](core::fmt::Error).
+    error_state: FormatBufferWriteError,
 }
 
-impl fmt::Write for FormatBuffer {
+impl fmt::Write for FormatBuffer<'_> {
     fn write_str(&mut self, s: &str) -> fmt::Result {
-        for &b in s.as_bytes() {
-            match self.ignore_count.checked_sub(1) {
-                Some(ignore_count) => self.ignore_count = ignore_count,
-                None => {
-                    self.data.push(b).map_err(|_| {
-                        self.error_state = FormatBufferWriteError::OutOfSpace(());
-                        fmt::Error
-                    })?;
-                }
-            }
-        }
+        if let Some(data_to_write) = s.as_bytes().get(self.skip_count..) {
+            self.skip_count = 0;
 
-        Ok(())
+            self.buffer
+                .get_mut(self.write_position..)
+                .and_then(|buffer| {
+                    if let Some(buffer) = buffer.get_mut(..data_to_write.len()) {
+                        buffer.copy_from_slice(data_to_write);
+
+                        self.write_position += data_to_write.len();
+
+                        Some(())
+                    } else {
+                        buffer.copy_from_slice(&data_to_write[..buffer.len()]);
+
+                        self.write_position += buffer.len();
+
+                        None
+                    }
+                })
+                .ok_or_else(|| {
+                    self.error_state = FormatBufferWriteError::OutOfSpace;
+                    fmt::Error
+                })
+        } else {
+            self.skip_count -= s.len();
+
+            Ok(())
+        }
     }
 }
 
-impl FormatBuffer {
-    pub fn new(ignore_count: usize) -> Self {
+impl<'a> FormatBuffer<'a> {
+    fn new(buffer: &'a mut [u8], skip_count: usize) -> Self {
         Self {
-            data: heapless::Vec::new(),
-            ignore_count,
+            buffer,
+            write_position: 0,
+            skip_count,
             error_state: FormatBufferWriteError::FormatError,
         }
     }
 
-    pub fn write_args(
-        &mut self,
-        fmt: core::fmt::Arguments<'_>,
-    ) -> Result<&[u8], FormatBufferWriteError<&[u8]>> {
-        core::fmt::write(self, fmt)
-            .map(|()| self.data.as_slice())
-            .map_err(|fmt::Error| match self.error_state {
-                FormatBufferWriteError::FormatError => FormatBufferWriteError::FormatError,
-                FormatBufferWriteError::OutOfSpace(()) => {
-                    FormatBufferWriteError::OutOfSpace(self.data.as_slice())
-                }
-            })
+    fn write_fmt(
+        mut self,
+        args: core::fmt::Arguments<'_>,
+    ) -> Result<usize, FormatBufferWriteError> {
+        core::fmt::write(&mut self, args)
+            .map(|()| self.write_position)
+            .map_err(|fmt::Error| self.error_state)
     }
 }
 
-/// An extension trait for [`Write`] which allows writing of [`core::fmt::Arguments`].
-pub trait WriteExt: Write {
-    /// Write a formatted string into the writer. If the string cannot be written in one go, the string might be formatted multiple times.
+/// Async writer which can lend its write buffer.
+pub trait Write: BaseWrite {
+    /// Call f with the largest contiguous slice of octets in the transmit buffer, and enqueue the amount of elements returned by f.
+    ///
+    /// If the writer is not ready to accept data, it waits until it is.
+    async fn write_with<F: FnOnce(&mut [u8]) -> (usize, R), R>(
+        &mut self,
+        f: F,
+    ) -> Result<R, Self::Error>;
+
+    /// Write a formatted string into the writer. If the string cannot be written in one go, the string will be formatted multiple times.
     /// It's crucial that the same output is produced each time the string is formatted.
     async fn write_fmt(&mut self, args: fmt::Arguments<'_>) -> Result<(), Self::Error> {
-        let mut ignore_count = 0;
+        let mut skip_count = 0;
 
         loop {
-            match FormatBuffer::new(ignore_count).write_args(args) {
-                Ok(data) => return self.write_all(data).await,
+            return match self
+                .write_with(
+                    |buffer| match FormatBuffer::new(buffer, skip_count).write_fmt(args) {
+                        Ok(write_size) => (write_size, Ok(())),
+                        Err(FormatBufferWriteError::FormatError) => {
+                            (0, Err(FormatBufferWriteError::FormatError))
+                        }
+                        Err(FormatBufferWriteError::OutOfSpace) => {
+                            skip_count += buffer.len();
+
+                            (buffer.len(), Err(FormatBufferWriteError::OutOfSpace))
+                        }
+                    },
+                )
+                .await?
+            {
+                Ok(()) => Ok(()),
                 Err(FormatBufferWriteError::FormatError) => {
                     log_warn!("Skipping writing due to Format Error");
-                    return Ok(());
+                    Ok(())
                 }
-                Err(FormatBufferWriteError::OutOfSpace(data)) => {
-                    self.write_all(data).await?;
-                    ignore_count += data.len();
+                Err(FormatBufferWriteError::OutOfSpace) => {
+                    self.flush().await?;
+
+                    continue;
                 }
-            }
+            };
         }
     }
 }
 
-impl<W: Write> WriteExt for W {}
+impl<W: Write> Write for &mut W {
+    fn write_with<F: FnOnce(&mut [u8]) -> (usize, R), R>(
+        &mut self,
+        f: F,
+    ) -> impl core::future::Future<Output = Result<R, Self::Error>> {
+        W::write_with(self, f)
+    }
+
+    fn write_fmt(
+        &mut self,
+        args: fmt::Arguments<'_>,
+    ) -> impl core::future::Future<Output = Result<(), Self::Error>> {
+        W::write_fmt(self, args)
+    }
+}
+
+#[cfg(test)]
+impl Write for alloc::vec::Vec<u8> {
+    async fn write_with<F: FnOnce(&mut [u8]) -> (usize, R), R>(
+        &mut self,
+        f: F,
+    ) -> Result<R, Self::Error> {
+        let mut buffer = [0; 1024];
+
+        let (write_size, output) = f(&mut buffer);
+
+        self.extend_from_slice(&buffer[..write_size]);
+
+        Ok(output)
+    }
+}
 
 /// A connection socket, which can be split into its read and write half, and shut down when finished.
 pub trait Socket<Runtime>: Sized {
@@ -132,7 +205,7 @@ pub trait Socket<Runtime>: Sized {
 
 #[cfg(any(feature = "tokio", test))]
 pub(crate) mod tokio_support {
-    use embedded_io_async::{Error, ErrorKind, ErrorType, Read, Write};
+    use super::{BaseWrite, Error, ErrorKind, ErrorType, Read, Write};
 
     #[derive(Debug, thiserror::Error)]
     #[error(transparent)]
@@ -157,7 +230,7 @@ pub(crate) mod tokio_support {
         }
     }
 
-    impl<T: tokio::io::AsyncWrite + Unpin> Write for TokioIo<T> {
+    impl BaseWrite for TokioIo<tokio::net::tcp::WriteHalf<'_>> {
         async fn write(&mut self, buf: &[u8]) -> Result<usize, Self::Error> {
             use tokio::io::AsyncWriteExt;
             self.0.write(buf).await.map_err(TokioIoError)
@@ -166,6 +239,25 @@ pub(crate) mod tokio_support {
         async fn flush(&mut self) -> Result<(), Self::Error> {
             use tokio::io::AsyncWriteExt;
             self.0.flush().await.map_err(TokioIoError)
+        }
+    }
+
+    impl Write for TokioIo<tokio::net::tcp::WriteHalf<'_>> {
+        async fn write_with<F: FnOnce(&mut [u8]) -> (usize, R), R>(
+            &mut self,
+            f: F,
+        ) -> Result<R, Self::Error> {
+            use tokio::io::AsyncWriteExt;
+
+            let mut buffer = [0; 1024];
+
+            let (write_size, output) = f(&mut buffer);
+
+            self.0
+                .write_all(&buffer[..write_size])
+                .await
+                .map(|()| output)
+                .map_err(TokioIoError)
         }
     }
 
@@ -219,6 +311,16 @@ pub(crate) mod tokio_support {
 
             Ok(())
         }
+    }
+}
+
+#[cfg(feature = "embassy")]
+impl<'a> Write for embassy_net::tcp::TcpWriter<'a> {
+    fn write_with<F: FnOnce(&mut [u8]) -> (usize, R), R>(
+        &mut self,
+        f: F,
+    ) -> impl core::future::Future<Output = Result<R, Self::Error>> {
+        embassy_net::tcp::TcpWriter::write_with(self, f)
     }
 }
 

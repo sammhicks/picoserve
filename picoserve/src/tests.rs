@@ -19,7 +19,9 @@ use self::routing::PathRouter;
 
 use super::*;
 
-use super::io::{Read, Write};
+use super::io::{BaseWrite, Read, Write};
+
+pub mod fuzz;
 
 const TEST_CONFIG: crate::Config = crate::Config::new(crate::Timeouts {
     start_read_request: crate::time::Duration::from_secs(10),
@@ -129,7 +131,7 @@ impl io::ErrorType for PipeTx {
     type Error = Infallible;
 }
 
-impl Write for PipeTx {
+impl BaseWrite for PipeTx {
     async fn write(&mut self, buf: &[u8]) -> Result<usize, Self::Error> {
         let _ = self.0.send(buf.into());
 
@@ -138,6 +140,23 @@ impl Write for PipeTx {
 
     async fn flush(&mut self) -> Result<(), Self::Error> {
         Ok(())
+    }
+}
+
+impl Write for PipeTx {
+    async fn write_with<F: FnOnce(&mut [u8]) -> (usize, R), R>(
+        &mut self,
+        f: F,
+    ) -> Result<R, Self::Error> {
+        let mut buffer = std::vec![0; 1024];
+
+        let (write_size, output) = f(&mut buffer);
+
+        buffer.resize(write_size, 0);
+
+        _ = self.0.send(buffer);
+
+        Ok(output)
     }
 }
 
@@ -300,6 +319,25 @@ async fn run_single_request_test(
     let (parts, body) = response.unwrap().into_parts();
 
     (parts, body.collect().await.unwrap().to_bytes())
+}
+
+#[tokio::test]
+/// Test that [`Write::write_fmt`](crate::io::Write::write_fmt) works
+async fn io_write_fmt_works() {
+    fuzz::run_async("io_write_fmt_works", async |test_data| {
+        let data = std::fmt::from_fn(|f| (1..=200).try_for_each(|n| writeln!(f, "Line {n}")));
+
+        let mut buffer = Vec::<u8>::new();
+
+        Ok(()) = Write::write_fmt(
+            &mut test_data.generate_fragmented_writer(&mut buffer),
+            format_args!("{data}"),
+        )
+        .await;
+
+        assert_eq!(buffer, data.to_string().as_bytes());
+    })
+    .await
 }
 
 #[tokio::test]
@@ -763,8 +801,6 @@ async fn upgrade_with_request_body() {
                         .handled_requests_count,
                     1
                 );
-
-                std::println!("{}", core::str::from_utf8(&response_bytes).unwrap());
 
                 let mut headers = [httparse::EMPTY_HEADER; 4];
 

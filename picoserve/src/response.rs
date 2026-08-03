@@ -210,7 +210,7 @@ impl<E: crate::io::Error> crate::io::ErrorType for EmptyReader<E> {
     type Error = E;
 }
 
-impl<E: crate::io::Error> crate::io::Read for EmptyReader<E> {
+impl<E: crate::io::Error> Read for EmptyReader<E> {
     async fn read(&mut self, _buf: &mut [u8]) -> Result<usize, Self::Error> {
         Ok(0)
     }
@@ -467,7 +467,6 @@ impl Content for fmt::Arguments<'_> {
     }
 
     async fn write_content<W: Write>(self, mut writer: W) -> Result<(), W::Error> {
-        use crate::io::WriteExt;
         write!(writer, "{}", self).await
     }
 }

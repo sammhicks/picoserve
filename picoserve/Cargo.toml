@@ -54,4 +54,10 @@ http-body-util = "0.1.0"
 httparse = "1.10.1"
 hyper = { version = "1.1.0", features = ["client", "http1"] }
 ntest = "0.9.3"
+rand = "0.10.2"
+rand_pcg = "0.10.2"
+serde_json = { version = "1.0.151", features = ["preserve_order"] }
+sha2 = "0.11.0"
+strum = { version = "0.28.0", features = ["derive"] }
 tokio = { version = "1.0.0", features = ["rt", "io-util", "net", "time", "macros", "sync", "test-util"] }
+tungstenite = "0.30.0"

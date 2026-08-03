@@ -4,31 +4,21 @@ use core::fmt;
 
 use serde::Serialize;
 
-use crate::io::{FormatBuffer, FormatBufferWriteError, Write};
+use crate::io::Write;
 
 pub use crate::json::Json;
 
-#[derive(Debug)]
-struct SerializeError;
-
-impl fmt::Display for SerializeError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{self:?}")
-    }
+#[derive(Debug, thiserror::Error)]
+enum SerializeError {
+    #[error("{0}")]
+    Format(#[from] fmt::Error),
+    #[error("Failed to serialize value")]
+    SerdeError,
 }
 
 impl serde::ser::Error for SerializeError {
     fn custom<T: fmt::Display>(_msg: T) -> Self {
-        Self
-    }
-}
-
-#[cfg(any(test, feature = "std"))]
-impl std::error::Error for SerializeError {}
-
-impl From<fmt::Error> for SerializeError {
-    fn from(fmt::Error: fmt::Error) -> Self {
-        Self
+        Self::SerdeError
     }
 }
 
@@ -84,11 +74,11 @@ impl<'a, W: fmt::Write> Serializer<'a, W> {
     }
 
     fn write_str(&mut self, s: &str) -> Result<(), SerializeError> {
-        self.0.write_str(s).map_err(|fmt::Error| SerializeError)
+        Ok(self.0.write_str(s)?)
     }
 
     fn write_fmt(&mut self, args: fmt::Arguments<'_>) -> Result<(), SerializeError> {
-        self.0.write_fmt(args).map_err(|fmt::Error| SerializeError)
+        Ok(self.0.write_fmt(args)?)
     }
 
     fn serialize_compound(self, _len: impl Into<Option<usize>>) -> SerializeCompound<'a, W> {
@@ -419,60 +409,25 @@ impl<W: fmt::Write> serde::ser::SerializeStructVariant for SerializeCompound<'_,
     }
 }
 
-enum JsonStream<T> {
-    Short { buffer: FormatBuffer },
-    Long { buffer: FormatBuffer, value: T },
-}
+impl<T: serde::Serialize> Json<T> {
+    pub(crate) fn display(self) -> impl core::fmt::Display {
+        core::fmt::from_fn(move |f| {
+            self.0
+                .serialize(Serializer(f))
+                .or_else(|error| match error {
+                    SerializeError::Format(error) => Err(error),
+                    // Ignore serde errors as it's too late to report this sensibly.
+                    SerializeError::SerdeError => Ok(()),
+                })
+        })
+    }
 
-impl<T: serde::Serialize> JsonStream<T> {
-    fn new(value: T) -> Self {
-        let mut buffer = FormatBuffer::new(0);
-        match value.serialize(Serializer(&mut buffer)) {
-            Ok(()) => JsonStream::Short { buffer },
-            Err(SerializeError) => match buffer.error_state {
-                FormatBufferWriteError::FormatError => JsonStream::Long {
-                    buffer: FormatBuffer::new(0),
-                    value,
-                },
-                FormatBufferWriteError::OutOfSpace(()) => JsonStream::Long { buffer, value },
-            },
-        }
+    pub(crate) async fn write_to<W: Write>(self, mut writer: W) -> Result<(), W::Error> {
+        write!(writer, "{}", Json(self.0).display()).await
     }
 }
 
-impl<T: serde::Serialize> JsonStream<T> {
-    async fn write_json_value<W: Write>(self, mut writer: W) -> Result<(), W::Error> {
-        match self {
-            JsonStream::Short { buffer } => writer.write_all(&buffer.data).await,
-            JsonStream::Long { mut buffer, value } => {
-                writer.write_all(&buffer.data).await?;
-
-                let mut ignore_count = buffer.data.len();
-
-                loop {
-                    buffer.data.clear();
-                    buffer.ignore_count = ignore_count;
-                    buffer.error_state = FormatBufferWriteError::FormatError;
-
-                    match value.serialize(Serializer(&mut buffer)) {
-                        Ok(()) => return writer.write_all(&buffer.data).await,
-                        Err(SerializeError) => match buffer.error_state {
-                            FormatBufferWriteError::FormatError => {
-                                return writer.write_all(b"\r\n\r\nFailed to serialize JSON").await
-                            }
-                            FormatBufferWriteError::OutOfSpace(()) => {
-                                writer.write_all(&buffer.data).await?;
-                                ignore_count += buffer.data.len();
-                            }
-                        },
-                    }
-                }
-            }
-        }
-    }
-}
-
-struct JsonBody<T>(JsonStream<T>);
+struct JsonBody<T>(T);
 
 impl<T: serde::Serialize> super::Content for JsonBody<T> {
     fn content_type(&self) -> &'static str {
@@ -480,32 +435,26 @@ impl<T: serde::Serialize> super::Content for JsonBody<T> {
     }
 
     fn content_length(&self) -> usize {
-        match &self.0 {
-            JsonStream::Short { buffer } => buffer.data.len(),
-            JsonStream::Long { buffer: _, value } => {
-                let mut content_length = 0;
-                value
-                    .serialize(Serializer(&mut super::MeasureFormatSize(
-                        &mut content_length,
-                    )))
-                    .map_or(0, |()| content_length)
-            }
-        }
+        let mut content_length = 0;
+        self.0
+            .serialize(Serializer(&mut super::MeasureFormatSize(
+                &mut content_length,
+            )))
+            .map_or(0, |()| content_length)
     }
 
-    async fn write_content<W: Write>(self, writer: W) -> Result<(), W::Error> {
-        self.0.write_json_value(writer).await
+    fn write_content<W: Write>(
+        self,
+        writer: W,
+    ) -> impl core::future::Future<Output = Result<(), W::Error>> {
+        Json(self.0).write_to(writer)
     }
 }
 
 impl<T: serde::Serialize> Json<T> {
-    pub(crate) async fn do_write_to<W: Write>(&self, writer: &mut W) -> Result<(), W::Error> {
-        JsonStream::new(&self.0).write_json_value(writer).await
-    }
-
     /// Convert JSON payload into a [`Response`](super::Response) with a status code of "OK"
     pub fn into_response(self) -> super::Response<impl super::HeadersIter, impl super::Body> {
-        super::Response::ok(JsonBody(JsonStream::new(self.0)))
+        super::Response::ok(JsonBody(self.0))
     }
 }
 
@@ -518,5 +467,135 @@ impl<T: serde::Serialize> super::IntoResponse for Json<T> {
         response_writer
             .write_response(connection, self.into_response())
             .await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{string::String, string::ToString, vec::Vec};
+
+    #[derive(Debug, strum::EnumDiscriminants)]
+    #[strum_discriminants(derive(strum::VariantArray))]
+    enum JsonValue {
+        Null,
+        Bool(bool),
+        Number(u64),
+        String(String),
+        Array(Vec<JsonValue>),
+        Object(Vec<(&'static str, JsonValue)>),
+    }
+
+    impl crate::tests::fuzz::TestValue<usize> for JsonValue {
+        fn generate(test_data: &mut crate::tests::fuzz::TestData, fuel: usize) -> Self {
+            let Some(fuel) = fuel.checked_sub(1) else {
+                return Self::Null;
+            };
+
+            fn generate_array(
+                test_data: &mut crate::tests::fuzz::TestData,
+                fuel: usize,
+            ) -> Vec<JsonValue> {
+                let length = test_data.generate_value_with_parameter::<usize, _>(0..=(fuel / 2));
+
+                std::iter::from_fn(|| Some(test_data.generate_value_with_parameter(fuel / length)))
+                    .take(length)
+                    .collect()
+            }
+
+            match test_data.choose_value(strum::VariantArray::VARIANTS) {
+                JsonValueDiscriminants::Null => JsonValue::Null,
+                JsonValueDiscriminants::Bool => JsonValue::Bool(test_data.generate_value()),
+                JsonValueDiscriminants::Number => JsonValue::Number(test_data.generate_value()),
+                JsonValueDiscriminants::String => {
+                    JsonValue::String(test_data.generate_string(0..100))
+                }
+                JsonValueDiscriminants::Array => JsonValue::Array(generate_array(test_data, fuel)),
+                JsonValueDiscriminants::Object => JsonValue::Object(
+                    generate_array(test_data, fuel)
+                        .into_iter()
+                        .map(|value| {
+                            (
+                                *test_data.choose_value(&["a", "b", "c", "d", "e", "f", "g", "h"]),
+                                value,
+                            )
+                        })
+                        .collect(),
+                ),
+            }
+        }
+    }
+
+    impl From<&JsonValue> for serde_json::Value {
+        fn from(value: &JsonValue) -> Self {
+            match value {
+                JsonValue::Null => serde_json::Value::Null,
+                &JsonValue::Bool(b) => serde_json::Value::Bool(b),
+                &JsonValue::Number(n) => serde_json::Value::Number(n.into()),
+                JsonValue::String(s) => serde_json::Value::String(s.clone()),
+                JsonValue::Array(json_values) => {
+                    serde_json::Value::Array(json_values.iter().map(From::from).collect())
+                }
+                JsonValue::Object(items) => serde_json::Value::Object(
+                    items
+                        .iter()
+                        .map(|&(k, ref v)| (k.into(), serde_json::Value::from(v)))
+                        .collect(),
+                ),
+            }
+        }
+    }
+
+    impl serde::Serialize for JsonValue {
+        fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+            match self {
+                JsonValue::Null => serializer.serialize_none(),
+                JsonValue::Bool(b) => b.serialize(serializer),
+                JsonValue::Number(n) => n.serialize(serializer),
+                JsonValue::String(s) => s.serialize(serializer),
+                JsonValue::Array(a) => serializer.collect_seq(a),
+                JsonValue::Object(o) => {
+                    use serde::ser::SerializeStruct;
+
+                    let mut serializer = serializer.serialize_struct("", o.len())?;
+
+                    o.iter()
+                        .try_for_each(|(k, v)| serializer.serialize_field(k, v))?;
+
+                    serializer.end()
+                }
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn json_is_serialized_correctly() {
+        crate::tests::fuzz::run_async("json_is_serialized_correctly", async |test_data| {
+            let value = test_data.generate_value_with_parameter::<JsonValue, _>(100);
+
+            let serde_json_value = serde_json::Value::from(&value);
+
+            let parsed_value = serde_json::from_str::<serde_json::Value>(
+                &super::Json(&value).display().to_string(),
+            )
+            .unwrap();
+
+            assert_eq!(parsed_value, serde_json_value)
+        })
+        .await
+    }
+
+    #[tokio::test]
+    async fn json_is_serialized_without_newlines() {
+        crate::tests::fuzz::run_async("json_is_serialized_without_newlines", async |test_data| {
+            let json_value =
+                super::Json(test_data.generate_value_with_parameter::<JsonValue, _>(100))
+                    .display()
+                    .to_string();
+
+            if json_value.contains('\n') {
+                panic!("JSON values must not contain '\n'");
+            }
+        })
+        .await
     }
 }

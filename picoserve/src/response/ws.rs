@@ -8,7 +8,7 @@ use crate::{
     self as picoserve,
     extract::FromRequestParts,
     futures::Either,
-    io::{Read, Write, WriteExt},
+    io::{Read, Write},
 };
 
 use super::StatusCode;
@@ -319,6 +319,7 @@ enum MessageOpcode {
 /// Message Types.
 #[derive(Debug)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
+#[cfg_attr(test, derive(PartialEq, Eq))]
 pub enum Message<'a> {
     /// A UTF-8 encoded string.
     Text(&'a str),
@@ -520,53 +521,182 @@ impl<R: Read> SocketRx<R> {
     }
 }
 
+const MAX_FRAME_HEADER_LENGTH: usize = 10;
+
+fn encode_first_byte(opcode: u8, is_final: bool) -> u8 {
+    (if is_final { 0b10000000 } else { 0 }) | opcode
+}
+
+enum PayloadLength {
+    OneByte([u8; 1]),
+    ThreeBytes([u8; 3]),
+    NineBytes([u8; 9]),
+}
+
+impl PayloadLength {
+    fn new(length: usize) -> Self {
+        if let Some(length_byte) = u8::try_from(length).ok().filter(|length| *length <= 125) {
+            Self::OneByte([length_byte])
+        } else if let Ok(length) = u16::try_from(length) {
+            let [b0, b1] = length.to_be_bytes();
+            Self::ThreeBytes([126, b0, b1])
+        } else {
+            let [b0, b1, b2, b3, b4, b5, b6, b7] = (length as u64).to_be_bytes();
+            Self::NineBytes([127, b0, b1, b2, b3, b4, b5, b6, b7])
+        }
+    }
+
+    fn as_bytes(&self) -> &[u8] {
+        match self {
+            PayloadLength::OneByte(bytes) => bytes,
+            PayloadLength::ThreeBytes(bytes) => bytes,
+            PayloadLength::NineBytes(bytes) => bytes,
+        }
+    }
+}
+
 /// A sink of Web Socket Frames.
 pub struct SocketTx<W: Write> {
     writer: W,
 }
 
 impl<W: Write> SocketTx<W> {
-    async fn flush(&mut self) -> Result<(), W::Error> {
+    /// Flush the underlying connection
+    pub async fn flush(&mut self) -> Result<(), W::Error> {
         self.writer.flush().await
     }
 
     async fn write_length(&mut self, length: usize) -> Result<(), W::Error> {
-        if let Some(length_byte) = u8::try_from(length).ok().filter(|length| *length <= 125) {
-            self.writer.write_all(&[length_byte]).await
-        } else if let Ok(length) = u16::try_from(length) {
-            self.writer.write_all(&[126]).await?;
-            self.writer.write_all(&length.to_be_bytes()).await
-        } else {
-            self.writer.write_all(&[127]).await?;
-            self.writer.write_all(&(length as u64).to_be_bytes()).await
-        }
+        self.writer
+            .write_all(PayloadLength::new(length).as_bytes())
+            .await
     }
 
     async fn write_frame(
         &mut self,
         is_final: bool,
         opcode: u8,
-        data: &[u8],
+        payload: &[u8],
     ) -> Result<(), W::Error> {
         self.writer
-            .write_all(&[if is_final { 0b10000000 } else { 0 } | opcode])
+            .write_all(&[encode_first_byte(opcode, is_final)])
             .await?;
 
-        self.write_length(data.len()).await?;
+        self.write_length(payload.len()).await?;
 
-        self.writer.write_all(data).await
+        self.writer.write_all(payload).await
+    }
+
+    async fn write_frame_with<R, F: FnOnce(&mut [u8]) -> (usize, R)>(
+        &mut self,
+        is_final: bool,
+        opcode: u8,
+        write_payload: F,
+    ) -> Result<R, W::Error> {
+        fn write_frame_and_rotate_payload_buffer(
+            opcode: u8,
+            is_final: bool,
+            payload_length: usize,
+            buffer: &mut [u8],
+        ) -> usize {
+            fn write_payload_length_bytes_and_rotate_payload_buffer<const N: usize>(
+                length: [u8; N],
+                buffer: &mut [u8],
+            ) -> usize {
+                #[allow(
+                    clippy::unwrap_used,
+                    reason = "buffer is guaranteed to be at least 10 items long, and N is at most 9"
+                )]
+                let (length_buffer, data_buffer) = buffer.split_first_chunk_mut().unwrap();
+
+                *length_buffer = length;
+
+                data_buffer.rotate_left(9 - N);
+
+                1 + N
+            }
+
+            #[allow(
+                clippy::unwrap_used,
+                reason = "buffer is guaranteed to be at least 10 items long"
+            )]
+            let (opcode_buffer, buffer) = buffer.split_first_mut().unwrap();
+
+            *opcode_buffer = encode_first_byte(opcode, is_final);
+
+            match PayloadLength::new(payload_length) {
+                PayloadLength::OneByte(length) => {
+                    write_payload_length_bytes_and_rotate_payload_buffer(length, buffer)
+                }
+                PayloadLength::ThreeBytes(length) => {
+                    write_payload_length_bytes_and_rotate_payload_buffer(length, buffer)
+                }
+                PayloadLength::NineBytes(length) => {
+                    write_payload_length_bytes_and_rotate_payload_buffer(length, buffer)
+                }
+            }
+        }
+
+        // Always cap the declared payload length to the length of the buffer.
+        // In case there's a bug in the `write_payload` function argument,
+        // it's better to send the wrong amount of data than panic due to buffer overflow.
+        let write_payload = |buffer: &mut [u8]| {
+            let buffer_length = buffer.len();
+
+            let (payload_length, output) = write_payload(buffer);
+
+            (payload_length.min(buffer_length), output)
+        };
+
+        // In case there's not space to write the frame header in the current buffer, have a small buffer to store a payload.
+        let mut overflow_buffer = [0; MAX_FRAME_HEADER_LENGTH];
+
+        let (overflow_payload, output) = self
+            .writer
+            .write_with(|buffer| {
+                // If there's space in the buffer to write the header
+                if let Some(payload_buffer) = buffer
+                    .get_mut(MAX_FRAME_HEADER_LENGTH..)
+                    .filter(|payload_buffer| !payload_buffer.is_empty())
+                {
+                    let (payload_length, output) = write_payload(payload_buffer);
+
+                    let header_length = write_frame_and_rotate_payload_buffer(
+                        opcode,
+                        is_final,
+                        payload_length,
+                        &mut buffer[..(MAX_FRAME_HEADER_LENGTH + payload_length)],
+                    );
+
+                    // The frame was written to the buffer, so the overflow_buffer isn't used
+                    (header_length + payload_length, (None, output))
+                } else {
+                    // Write the frame into the overflow buffer and return the used portion
+
+                    let (payload_length, output) = write_payload(&mut overflow_buffer);
+
+                    // No data was written to the buffer, so the length is 0
+                    (0, (Some(&overflow_buffer[..payload_length]), output))
+                }
+            })
+            .await?;
+
+        if let Some(payload) = overflow_payload {
+            self.write_frame(is_final, opcode, payload).await?;
+            self.flush().await?;
+        }
+
+        Ok(output)
     }
 
     /// Send a text message.
     pub async fn send_text(&mut self, data: &str) -> Result<(), W::Error> {
-        self.write_frame(true, 1, data.as_bytes()).await?;
-        self.flush().await
+        self.write_frame(true, 1, data.as_bytes()).await
     }
 
     /// Send a binary message.
     pub async fn send_binary(&mut self, data: &[u8]) -> Result<(), W::Error> {
-        self.write_frame(true, 2, data).await?;
-        self.flush().await
+        self.write_frame(true, 2, data).await
     }
 
     /// Send the given value as UTF-8 text using its [`Display`](core::fmt::Display) implementation.
@@ -575,8 +705,7 @@ impl<W: Write> SocketTx<W> {
     pub async fn send_display(&mut self, data: impl core::fmt::Display) -> Result<(), W::Error> {
         let opcode = &mut 1;
         write!(FrameWriter { opcode, tx: self }, "{data}").await?;
-        self.write_frame(true, *opcode, &[]).await?;
-        self.flush().await
+        self.write_frame(true, *opcode, &[]).await
     }
 
     /// Send the given value as a JSON encoded text message.
@@ -585,16 +714,15 @@ impl<W: Write> SocketTx<W> {
     #[cfg(feature = "json")]
     pub async fn send_json(&mut self, value: impl serde::Serialize) -> Result<(), W::Error> {
         let opcode = &mut 1;
-        super::json::Json(value)
-            .do_write_to(&mut FrameWriter { opcode, tx: self })
+        super::Json(value)
+            .write_to(FrameWriter { opcode, tx: self })
             .await?;
-        self.write_frame(true, *opcode, &[]).await?;
-        self.flush().await
+        self.write_frame(true, *opcode, &[]).await
     }
 
     /// Close the connection with the given reason.
     pub async fn close(mut self, reason: impl Into<Option<(u16, &str)>>) -> Result<(), W::Error> {
-        self.writer.write_all(&[0b10000000 | 8]).await?; // Final Close frame
+        self.writer.write_all(&[encode_first_byte(8, true)]).await?; // Final Close frame
 
         match reason.into() {
             Some((code, message)) => {
@@ -631,16 +759,27 @@ impl<W: Write> crate::io::ErrorType for FrameWriter<'_, W> {
     type Error = W::Error;
 }
 
-impl<W: Write> Write for FrameWriter<'_, W> {
-    async fn write(&mut self, data: &[u8]) -> Result<usize, W::Error> {
+impl<W: Write> embedded_io_async::Write for FrameWriter<'_, W> {
+    async fn write(&mut self, payload: &[u8]) -> Result<usize, Self::Error> {
         self.tx
-            .write_frame(false, core::mem::replace(self.opcode, 0), data)
+            .write_frame(false, core::mem::replace(self.opcode, 0), payload)
             .await
-            .map(|()| data.len())
+            .map(|()| payload.len())
     }
 
     async fn flush(&mut self) -> Result<(), Self::Error> {
         self.tx.flush().await
+    }
+}
+
+impl<W: Write> Write for FrameWriter<'_, W> {
+    async fn write_with<F: FnOnce(&mut [u8]) -> (usize, R), R>(
+        &mut self,
+        write_payload: F,
+    ) -> Result<R, Self::Error> {
+        self.tx
+            .write_frame_with(false, core::mem::replace(self.opcode, 0), write_payload)
+            .await
     }
 }
 
@@ -867,8 +1006,10 @@ impl<P: WebSocketProtocol, C: WebSocketCallbackWithShutdownSignal> super::IntoRe
             >(
                 self,
                 connection: super::Connection<'_, R>,
-                writer: W,
+                mut writer: W,
             ) -> Result<(), W::Error> {
+                writer.flush().await?;
+
                 let shutdown_signal = connection.shutdown_signal.clone();
 
                 self.callback
@@ -931,8 +1072,10 @@ impl<State, P: WebSocketProtocol, C: WebSocketCallbackWithStateAndShutdownSignal
             >(
                 self,
                 connection: super::Connection<'_, R>,
-                writer: W,
+                mut writer: W,
             ) -> Result<(), W::Error> {
+                writer.flush().await?;
+
                 let shutdown_signal = connection.shutdown_signal.clone();
 
                 self.callback
@@ -970,5 +1113,133 @@ impl<State, P: WebSocketProtocol, C: WebSocketCallbackWithStateAndShutdownSignal
                 ),
             )
             .await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+
+    #[tokio::test]
+    async fn messages_are_correctly_encoded() {
+        crate::tests::fuzz::run_async("messages_are_correctly_encoded", async |test_data| {
+            let mut socket_data = alloc::vec::Vec::new();
+
+            let mut socket_tx = super::SocketTx {
+                writer: test_data.generate_fragmented_writer(&mut socket_data),
+            };
+
+            let text_message = test_data.generate_string(10..1000);
+            let binary_message = test_data.generate_blob(10..1000);
+            let display_message =
+                core::fmt::from_fn(|f| (0..1000).try_for_each(|n| writeln!(f, "Line {n}",)));
+            let close_code = 1000;
+            let close_reason = test_data.generate_string(10..100);
+
+            Ok(()) = socket_tx.send_text(&text_message).await;
+            Ok(()) = socket_tx.send_binary(&binary_message).await;
+            Ok(()) = socket_tx.send_display(&display_message).await;
+            Ok(()) = socket_tx.close((close_code, close_reason.as_str())).await;
+
+            let mut socket_rx = tungstenite::WebSocket::from_raw_socket(
+                std::io::Cursor::new(socket_data),
+                tungstenite::protocol::Role::Client,
+                None,
+            );
+
+            assert_eq!(
+                socket_rx.read().unwrap(),
+                tungstenite::Message::Text(text_message.into())
+            );
+            assert_eq!(
+                socket_rx.read().unwrap(),
+                tungstenite::Message::Binary(binary_message.into())
+            );
+            assert_eq!(
+                socket_rx.read().unwrap(),
+                tungstenite::Message::Text(
+                    alloc::string::ToString::to_string(&display_message).into()
+                )
+            );
+            assert_eq!(
+                socket_rx.read().unwrap(),
+                tungstenite::Message::Close(Some(tungstenite::protocol::CloseFrame {
+                    code: close_code.into(),
+                    reason: close_reason.into()
+                }))
+            );
+            assert_eq!(
+                std::io::Read::read_to_end(socket_rx.get_mut(), &mut alloc::vec::Vec::new())
+                    .unwrap(),
+                0
+            );
+        })
+        .await
+    }
+
+    #[tokio::test]
+    async fn messages_are_correctly_decoded() {
+        crate::tests::fuzz::run_async("messages_are_correctly_decoded", async |test_data| {
+            let mut socket_data = std::vec::Vec::<u8>::new();
+
+            let mut socket_tx = tungstenite::WebSocket::from_raw_socket(
+                std::io::Cursor::new(&mut socket_data),
+                tungstenite::protocol::Role::Client,
+                None,
+            );
+
+            let text_message = test_data.generate_string(10..100_000);
+            let binary_message = test_data.generate_blob(10..100_000);
+            let close_code = 1000;
+            let close_reason = test_data.generate_string(10..100);
+
+            socket_tx
+                .write(tungstenite::Message::Text(text_message.clone().into()))
+                .unwrap();
+            socket_tx
+                .write(tungstenite::Message::Binary(binary_message.clone().into()))
+                .unwrap();
+            socket_tx
+                .close(Some(tungstenite::protocol::CloseFrame {
+                    code: close_code.into(),
+                    reason: close_reason.as_str().into(),
+                }))
+                .unwrap();
+
+            let mut socket_rx = super::SocketRx {
+                reader: socket_data.as_slice(),
+            };
+
+            let mut read_buffer = std::vec![0; 200_000];
+
+            assert_eq!(
+                socket_rx
+                    .next_message(&mut read_buffer, core::future::pending())
+                    .await
+                    .unwrap()
+                    .ignore_never_b()
+                    .unwrap(),
+                super::Message::Text(&text_message)
+            );
+            assert_eq!(
+                socket_rx
+                    .next_message(&mut read_buffer, core::future::pending())
+                    .await
+                    .unwrap()
+                    .ignore_never_b()
+                    .unwrap(),
+                super::Message::Binary(&binary_message)
+            );
+            assert_eq!(
+                socket_rx
+                    .next_message(&mut read_buffer, core::future::pending())
+                    .await
+                    .unwrap()
+                    .ignore_never_b()
+                    .unwrap(),
+                super::Message::Close(Some((close_code, &close_reason)))
+            );
+            assert_eq!(socket_rx.reader, &[] as &[u8]);
+        })
+        .await
     }
 }

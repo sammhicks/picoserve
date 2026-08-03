@@ -187,7 +187,6 @@ impl<W: Write> super::ResponseWriter for ResponseStream<W> {
             }
         }
 
-        use crate::io::WriteExt;
         write!(self.writer, "HTTP/1.1 {status_code} \r\n").await?;
 
         headers

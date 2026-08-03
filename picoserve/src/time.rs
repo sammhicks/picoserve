@@ -137,7 +137,7 @@ where
     type Error = super::Error<W::Error>;
 }
 
-impl<Runtime, W: crate::io::Write, T: Timer<Runtime>> crate::io::Write
+impl<Runtime, W: crate::io::Write, T: Timer<Runtime>> crate::io::BaseWrite
     for WriteWithTimeout<'_, Runtime, W, T>
 where
     W::Error: 'static,
@@ -153,6 +153,31 @@ where
     async fn flush(&mut self) -> Result<(), Self::Error> {
         self.timer
             .run_with_timeout(self.timeout_duration, self.inner.flush())
+            .await
+            .map_err(super::Error::WriteTimeout)?
+            .map_err(super::Error::Write)
+    }
+}
+
+impl<Runtime, W: crate::io::Write, T: Timer<Runtime>> crate::io::Write
+    for WriteWithTimeout<'_, Runtime, W, T>
+where
+    W::Error: 'static,
+{
+    async fn write_fmt(&mut self, args: core::fmt::Arguments<'_>) -> Result<(), Self::Error> {
+        self.timer
+            .run_with_timeout(self.timeout_duration, self.inner.write_fmt(args))
+            .await
+            .map_err(super::Error::WriteTimeout)?
+            .map_err(super::Error::Write)
+    }
+
+    async fn write_with<F: FnOnce(&mut [u8]) -> (usize, R), R>(
+        &mut self,
+        f: F,
+    ) -> Result<R, Self::Error> {
+        self.timer
+            .run_with_timeout(self.timeout_duration, self.inner.write_with(f))
             .await
             .map_err(super::Error::WriteTimeout)?
             .map_err(super::Error::Write)
