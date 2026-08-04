@@ -2,6 +2,8 @@
 
 use core::{fmt, future::Future, ops::Range};
 
+use futures_util::FutureExt;
+
 use crate::{self as picoserve, io::Read, sync::oneshot_broadcast, url_encoded::UrlEncodedString};
 
 struct Subslice<'a> {
@@ -445,7 +447,7 @@ impl<'r, R: Read> RequestBodyReader<'r, ReaderWithReadRequestTimeout<'r, R>> {
     ///
     /// The provided future must resolve after a short amount of time.
     /// A future which resolves after a long time or never resolves leaves the server vulnerable to slow rate attacks such as [RUDY](https://en.wikipedia.org/wiki/R-U-Dead-Yet).
-    pub fn with_different_timeout_signal<F: Future + Unpin + 'static>(
+    pub fn with_different_timeout_signal<F: Future<Output = ()> + Unpin + 'static>(
         self,
         read_request_timeout_signal: F,
     ) -> RequestBodyReader<'r, ReaderWithTimeoutFuture<'r, R, F>> {
@@ -669,10 +671,7 @@ impl<'r, R: Read> RequestBodyConnection<'r, R> {
             // Case 2: The request handler has not read all of the request body, so close the connection after writing the response.
 
             match crate::futures::select_either(
-                async {
-                    read_request_timeout_signal.await;
-                    crate::time::TimeoutError
-                },
+                read_request_timeout_signal.map(|()| crate::time::TimeoutError),
                 async {
                     while body_bytes_remaining > 0 {
                         let read_buffer_size = body_bytes_remaining.min(buffer.len());
@@ -757,11 +756,9 @@ impl<R: Read> crate::io::ErrorType for ReaderWithReadRequestTimeout<'_, R> {
 impl<R: Read> Read for ReaderWithReadRequestTimeout<'_, R> {
     async fn read(&mut self, buf: &mut [u8]) -> Result<usize, Self::Error> {
         crate::futures::select(
-            async {
-                self.read_request_timeout_signal.clone().await;
-
-                Err((self.make_read_timeout_error)())
-            },
+            self.read_request_timeout_signal
+                .clone()
+                .map(|()| Err((self.make_read_timeout_error)())),
             self.reader.read(buf),
         )
         .await
@@ -769,24 +766,22 @@ impl<R: Read> Read for ReaderWithReadRequestTimeout<'_, R> {
 }
 
 /// A [`Read`]er which times out after its [`Future`] resolves.
-pub struct ReaderWithTimeoutFuture<'r, R: Read, F: Future + Unpin> {
+pub struct ReaderWithTimeoutFuture<'r, R: Read, F: Future<Output = ()> + Unpin> {
     reader: &'r mut R,
     read_request_timeout_signal: F,
     make_read_timeout_error: fn() -> R::Error,
 }
 
-impl<R: Read, F: Future + Unpin> crate::io::ErrorType for ReaderWithTimeoutFuture<'_, R, F> {
+impl<R: Read, F: Future<Output = ()> + Unpin> crate::io::ErrorType
+    for ReaderWithTimeoutFuture<'_, R, F>
+{
     type Error = R::Error;
 }
 
-impl<R: Read, F: Future + Unpin> Read for ReaderWithTimeoutFuture<'_, R, F> {
+impl<R: Read, F: Future<Output = ()> + Unpin> Read for ReaderWithTimeoutFuture<'_, R, F> {
     async fn read(&mut self, buf: &mut [u8]) -> Result<usize, Self::Error> {
         crate::futures::select(
-            async {
-                (&mut self.read_request_timeout_signal).await;
-
-                Err((self.make_read_timeout_error)())
-            },
+            (&mut self.read_request_timeout_signal).map(|()| Err((self.make_read_timeout_error)())),
             self.reader.read(buf),
         )
         .await

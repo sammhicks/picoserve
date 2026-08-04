@@ -20,6 +20,10 @@ extern crate alloc;
 #[cfg(any(feature = "std", test))]
 extern crate std;
 
+use core::marker::PhantomData;
+
+use futures_util::FutureExt;
+
 #[cfg(feature = "json")]
 mod json;
 
@@ -42,15 +46,15 @@ mod tests;
 #[doc(hidden)]
 pub mod doctests_utils;
 
-use core::marker::PhantomData;
-
 pub use logging::LogDisplay;
 pub use routing::Router;
 pub use time::Timer;
 
-use time::{Duration, TimerExt};
-
-use crate::sync::oneshot_broadcast;
+use {
+    futures::ThenPendForever,
+    sync::oneshot_broadcast,
+    time::{Duration, TimerExt},
+};
 
 pub use response::response_stream::ResponseSent;
 
@@ -380,13 +384,12 @@ async fn serve_and_shutdown<
                 make_read_timeout_error: || Error::ReadTimeout(crate::time::TimeoutError),
             };
 
-            let mut read_request_timeout = core::pin::pin!(async {
-                let timeout = timer.timeout(config.timeouts.read_request).await;
+            let mut read_request_timeout =
+                core::pin::pin!(timer.timeout(config.timeouts.read_request).map(|timeout| {
+                    read_request_timeout_signal.notify(());
 
-                read_request_timeout_signal.notify(());
-
-                Error::ReadTimeout(timeout)
-            });
+                    Error::ReadTimeout(timeout)
+                }));
 
             let request = futures::select_either(
                 read_request_timeout.as_mut(),
@@ -405,17 +408,14 @@ async fn serve_and_shutdown<
                         ),
                     };
 
-                    let mut handle_request = core::pin::pin!(crate::futures::select(
-                        async {
-                            read_request_timeout.await;
-
-                            core::future::pending().await
-                        },
+                    let mut handle_request = core::pin::pin!(crate::futures::select_either(
+                        read_request_timeout.then_pend_forever(),
                         app.handle_request(
                             request,
                             response::ResponseStream::new(&mut writer, connection_header),
-                        )
-                    ));
+                        ),
+                    )
+                    .map(futures::Either::ignore_never_a));
 
                     return Ok(
                         match crate::futures::select_either(

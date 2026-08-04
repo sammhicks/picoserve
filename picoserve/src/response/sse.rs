@@ -1,8 +1,13 @@
 //! Server-Sent Events. See [server_sent_events](https://github.com/sammhicks/picoserve/blob/main/examples/server_sent_events/src/main.rs) for usage example.
 
+use futures_util::FutureExt;
+
 use core::future::Future;
 
-use crate::io::{BaseWrite, Read, Write};
+use crate::{
+    futures::ThenPendForever,
+    io::{BaseWrite, Read, Write},
+};
 
 use super::StatusCode;
 
@@ -224,12 +229,9 @@ async fn write_events_until_shutdown<E, F: Future<Output = Result<(), E>>>(
     shutdown_signal: impl Future<Output = ()> + Unpin,
     mut write_events: core::pin::Pin<&mut F>,
 ) -> Result<(), E> {
-    let shutdown_task = async {
-        shutdown_signal.await;
-        event_writer_state.is_running.set(false);
-
-        core::future::pending().await
-    };
+    let shutdown_task = shutdown_signal
+        .map(|()| event_writer_state.is_running.set(false))
+        .then_pend_forever();
 
     let write_events_task = core::future::poll_fn(|cx| {
         use core::task::Poll;
@@ -553,15 +555,10 @@ mod tests {
 
         let mut throttle_writer = ThrottledWriter { write_size: 0 };
 
-        let write_events = async {
-            source
-                .with_write_count(3)
-                .write_events(EventWriter {
-                    writer: &mut throttle_writer,
-                    event_writer_state,
-                })
-                .await
-        };
+        let write_events = source.with_write_count(3).write_events(EventWriter {
+            writer: &mut throttle_writer,
+            event_writer_state,
+        });
 
         {
             let task_shutdown_signal = core::pin::pin!(async {

@@ -362,23 +362,24 @@ impl<'s> Socket<super::EmbassyRuntime> for embassy_net::tcp::TcpSocket<'s> {
         timeouts: &crate::Timeouts,
         timer: &mut Timer,
     ) -> Result<(), crate::Error<Self::Error>> {
+        use futures_util::{FutureExt, TryFutureExt};
+
+        use crate::futures::ThenPendForever;
+
         self.close();
 
         let (mut rx, mut tx) = self.split();
 
         // Flush the write half until the read half has been closed by the client
         crate::futures::select(
-            async {
-                timer
-                    .run_with_timeout(timeouts.read_request.clone(), rx.discard_all_data())
-                    .await
-                    .map_err(crate::Error::ReadTimeout)?
-                    .map_err(crate::Error::Read)
-            },
-            async {
-                tx.flush().await.map_err(crate::Error::Write)?;
-                core::future::pending().await
-            },
+            timer
+                .run_with_timeout(timeouts.read_request.clone(), rx.discard_all_data())
+                .map(|result| {
+                    result
+                        .map_err(crate::Error::ReadTimeout)?
+                        .map_err(crate::Error::Read)
+                }),
+            tx.flush().map_err(crate::Error::Write).then_pend_forever(),
         )
         .await?;
 

@@ -1238,6 +1238,7 @@ dependencies = [
  "embassy-net",
  "embassy-time",
  "embedded-io-async 0.7.0",
+ "futures-util",
  "heapless 0.8.0",
  "lhash",
  "log",

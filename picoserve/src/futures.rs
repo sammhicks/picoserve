@@ -1,9 +1,11 @@
 use core::{
     future::Future,
+    marker::PhantomData,
     pin::Pin,
     task::{Context, Poll},
 };
 
+use futures_util::TryFuture;
 use pin_project::pin_project;
 
 pub enum Either<A, B> {
@@ -101,6 +103,82 @@ pub(crate) fn select<A: Future, B: Future<Output = A::Output>>(a: A, b: B) -> Se
         inner: select_either(a, b),
     }
 }
+
+#[pin_project::pin_project]
+pub(crate) struct ThenPendForeverFuture<F: Future, T> {
+    #[pin]
+    maybe_future: Option<F>,
+    _output: PhantomData<fn() -> T>,
+}
+
+impl<F: Future, T> Future for ThenPendForeverFuture<F, T> {
+    type Output = T;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let mut maybe_future = self.project().maybe_future;
+
+        if let Some(mut future) = maybe_future.as_mut().as_pin_mut() {
+            if future.as_mut().poll(cx).is_ready() {
+                maybe_future.set(None);
+            }
+        }
+
+        Poll::Pending
+    }
+}
+
+#[pin_project::pin_project]
+pub(crate) struct TryThenPendForeverFuture<F: TryFuture, T> {
+    #[pin]
+    maybe_future: Option<F>,
+    _output: PhantomData<fn() -> T>,
+}
+
+impl<F: TryFuture, T> Future for TryThenPendForeverFuture<F, T> {
+    type Output = Result<T, F::Error>;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let mut maybe_future = self.project().maybe_future;
+
+        if let Some(mut future) = maybe_future.as_mut().as_pin_mut() {
+            match future.as_mut().try_poll(cx) {
+                Poll::Ready(Ok(_)) => {
+                    maybe_future.set(None);
+                    Poll::Pending
+                }
+                Poll::Ready(Err(error)) => {
+                    maybe_future.set(None);
+                    Poll::Ready(Err(error))
+                }
+                Poll::Pending => Poll::Pending,
+            }
+        } else {
+            Poll::Pending
+        }
+    }
+}
+
+pub(crate) trait ThenPendForever: Future + Sized {
+    fn then_pend_forever<T>(self) -> ThenPendForeverFuture<Self, T> {
+        ThenPendForeverFuture {
+            maybe_future: Some(self),
+            _output: PhantomData,
+        }
+    }
+
+    #[cfg(feature = "embassy")]
+    fn try_then_pend_forever<T>(self) -> TryThenPendForeverFuture<Self, T>
+    where
+        Self: TryFuture,
+    {
+        TryThenPendForeverFuture {
+            maybe_future: Some(self),
+            _output: PhantomData,
+        }
+    }
+}
+
+impl<F: Future> ThenPendForever for F {}
 
 #[cfg(test)]
 mod tests {
