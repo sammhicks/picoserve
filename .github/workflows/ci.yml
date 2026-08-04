@@ -16,7 +16,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Build
         run: cargo build --verbose --all
       - name: Run tests
@@ -27,7 +27,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Build
         run: cargo build --all-features --verbose --all
       - name: Run tests
@@ -48,7 +48,7 @@ jobs:
     needs: all_building_and_testing
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Build embassy examples
         working-directory: ./examples/embassy
         run: cargo build --verbose
@@ -59,7 +59,7 @@ jobs:
     needs: all_building_and_testing
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Build embassy defmt example
         working-directory: ./examples/embassy/hello_world_defmt
         run: cargo build --verbose
