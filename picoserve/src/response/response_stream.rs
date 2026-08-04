@@ -213,6 +213,8 @@ impl<W: Write> super::ResponseWriter for ResponseStream<W> {
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::allow_attributes_without_reason)]
+
     use crate::response::response_stream::display_contains;
 
     struct SplitDisplay<const N: usize> {

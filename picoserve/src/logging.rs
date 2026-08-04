@@ -1,4 +1,7 @@
-#![allow(unused_macros)]
+#![allow(
+    unused_macros,
+    reason = "Some macros might only be used if features are enabled"
+)]
 
 macro_rules! log_error {
     ($f:literal $(,$arg:expr)* $(,)?) => {
@@ -10,6 +13,7 @@ macro_rules! log_error {
             defmt::error!($f $(,$arg)*);
 
             $(
+                #[allow(clippy::let_underscore_untyped, reason = "Logging isn't enabled, discard the log info")]
                 let _ = &$arg;
             )*
         }
@@ -26,6 +30,7 @@ macro_rules! log_warn {
             defmt::warn!($f $(,$arg)*);
 
             $(
+                #[allow(clippy::let_underscore_untyped, reason = "Logging isn't enabled, discard the log info")]
                 let _ = &$arg;
             )*
         }
@@ -42,6 +47,7 @@ macro_rules! log_info {
             defmt::info!($f $(,$arg)*);
 
             $(
+                #[allow(clippy::let_underscore_untyped, reason = "Logging isn't enabled, discard the log info")]
                 let _ = &$arg;
             )*
         }
@@ -52,7 +58,7 @@ macro_rules! log_info {
 pub use defmt::Debug2Format;
 
 #[cfg(not(feature = "defmt"))]
-#[allow(dead_code)]
+#[allow(dead_code, reason = "It's")]
 pub struct Debug2Format<'a, T: core::fmt::Debug + ?Sized>(pub &'a T);
 
 #[cfg(not(feature = "defmt"))]

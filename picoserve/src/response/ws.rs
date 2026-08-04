@@ -972,7 +972,7 @@ fn websocket_response<'a, B: super::Body + 'a>(
                 "Sec-WebSocket-Accept",
                 // Safety:
                 // sec_websocket_accept was created by data_encoding::BASE64.encode_mut, which creates a UTF-8 string
-                #[allow(unsafe_code)]
+                #[allow(unsafe_code, reason = r#"See "Safety comment""#)]
                 unsafe {
                     core::str::from_utf8_unchecked(sec_websocket_accept)
                 },

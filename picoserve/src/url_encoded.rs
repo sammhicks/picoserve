@@ -5,31 +5,16 @@ use core::fmt;
 use serde::de::Error;
 
 /// The error returned when attempting to decode a character in a [`UrlEncodedString`].
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum UrlEncodedCharacterDecodeError {
     /// Percent symbol is not followed by two hex digits.
+    #[error("Percent symbol is not followed by two hex digits")]
     BadlyFormattedPercentEncoding,
     /// Percent-encoded sequence does not decode into UTF-8 byte sequence.
+    #[error("Percent-encoded sequence does not decode into UTF-8 byte sequence")]
     Utf8Error,
 }
-
-impl fmt::Display for UrlEncodedCharacterDecodeError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::BadlyFormattedPercentEncoding => {
-                write!(f, "Percent symbol is not followed by two hex digits")
-            }
-            Self::Utf8Error => write!(
-                f,
-                "Percent-encoded sequence does not decode into UTF-8 byte sequence"
-            ),
-        }
-    }
-}
-
-#[cfg(any(test, feature = "std"))]
-impl std::error::Error for UrlEncodedCharacterDecodeError {}
 
 /// A decoded character.
 pub enum UrlDecodedCharacter {
@@ -178,28 +163,16 @@ struct UrlEncodedRepresentation<'a> {
 }
 
 /// The error returned when attempting to decode a [`UrlEncodedString`] into a string.
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum DecodeError {
     /// Error during decoding a character.
+    #[error(transparent)]
     BadUrlEncodedCharacter(UrlEncodedCharacterDecodeError),
     /// The provided buffer does not have enough space to store the string.
+    #[error("No space to decode url-encoded string")]
     NoSpace,
 }
-
-impl fmt::Display for DecodeError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::BadUrlEncodedCharacter(bad_url_encoded_character) => {
-                bad_url_encoded_character.fmt(f)
-            }
-            Self::NoSpace => write!(f, "No space to decode url-encoded string"),
-        }
-    }
-}
-
-#[cfg(any(test, feature = "std"))]
-impl std::error::Error for DecodeError {}
 
 struct NamedDecodeError<'a> {
     key: &'a str,
@@ -291,14 +264,9 @@ impl<'a> UrlEncodedString<'a> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
+#[error("Deserialization Error")]
 pub(crate) struct DeserializationError;
-
-impl fmt::Display for DeserializationError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Deserialization Error")
-    }
-}
 
 impl serde::de::Error for DeserializationError {
     fn custom<T: fmt::Display>(msg: T) -> Self {
@@ -310,9 +278,6 @@ impl serde::de::Error for DeserializationError {
         Self
     }
 }
-
-#[cfg(any(test, feature = "std"))]
-impl std::error::Error for DeserializationError {}
 
 impl From<NamedDecodeError<'_>> for DeserializationError {
     fn from(NamedDecodeError { key, error }: NamedDecodeError) -> Self {
@@ -409,24 +374,16 @@ impl<'de> serde::Deserializer<'de> for DeserializeUrlEncoded<'de> {
 }
 
 /// Failed to deserialize a URL-Encoded form
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
+#[error("Failed to deserialize Url Encoded Form")]
 pub struct FormDeserializationError;
-
-impl fmt::Display for FormDeserializationError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Failed to deserialize Url Encoded Form")
-    }
-}
 
 impl serde::de::Error for FormDeserializationError {
     fn custom<T: fmt::Display>(_msg: T) -> Self {
         Self
     }
 }
-
-#[cfg(any(test, feature = "std"))]
-impl std::error::Error for FormDeserializationError {}
 
 impl From<super::url_encoded::DeserializationError> for FormDeserializationError {
     fn from(

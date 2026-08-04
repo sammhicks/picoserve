@@ -51,6 +51,7 @@ impl VecRead {
 }
 
 struct PipeRx {
+    read_buffer: Vec<u8>,
     current: VecRead,
     channel: mpsc::UnboundedReceiver<std::vec::Vec<u8>>,
 }
@@ -83,31 +84,27 @@ impl hyper::rt::Read for PipeRx {
         cx: &mut Context<'_>,
         mut buf: hyper::rt::ReadBufCursor<'_>,
     ) -> Poll<Result<(), std::io::Error>> {
-        let this = self.get_mut();
+        let Self {
+            read_buffer,
+            current,
+            channel,
+        }: &mut PipeRx = self.get_mut();
 
-        if this.current.is_empty() {
-            this.current = match this.channel.poll_recv(cx) {
+        if current.is_empty() {
+            *current = match channel.poll_recv(cx) {
                 Poll::Ready(Some(item)) => VecRead(item),
                 Poll::Ready(None) => return Poll::Ready(Ok(())),
                 Poll::Pending => return Poll::Pending,
             };
         }
 
-        let read_size = this.current.read(
-            // Safety:
-            // Copied from MaybeUninit::slice_assume_init_mut.
-            #[allow(unsafe_code, clippy::multiple_unsafe_ops_per_block)]
-            unsafe {
-                buf.as_mut().assume_init_mut()
-            },
-        );
+        read_buffer.resize(buf.remaining(), 0);
 
-        // Safety:
-        // read_size comes from reading from the buffer and thus is at most the size of the buffer.
-        #[allow(unsafe_code)]
-        unsafe {
-            buf.advance(read_size);
-        }
+        let read_size = current.read(read_buffer);
+
+        read_buffer.resize(read_size, 0);
+
+        buf.put_slice(read_buffer);
 
         Poll::Ready(Ok(()))
     }
@@ -133,7 +130,8 @@ impl io::ErrorType for PipeTx {
 
 impl BaseWrite for PipeTx {
     async fn write(&mut self, buf: &[u8]) -> Result<usize, Self::Error> {
-        let _ = self.0.send(buf.into());
+        // Ignore if the channel is closed
+        _ = self.0.send(buf.into());
 
         Ok(buf.len())
     }
@@ -154,6 +152,7 @@ impl Write for PipeTx {
 
         buffer.resize(write_size, 0);
 
+        // Ignore if the channel is closed
         _ = self.0.send(buffer);
 
         Ok(output)
@@ -166,7 +165,8 @@ impl hyper::rt::Write for PipeTx {
         _cx: &mut Context<'_>,
         buf: &[u8],
     ) -> Poll<Result<usize, std::io::Error>> {
-        let _ = self.0.send(buf.into());
+        // Ignore if the channel is closed
+        _ = self.0.send(buf.into());
 
         Poll::Ready(Ok(buf.len()))
     }
@@ -189,6 +189,7 @@ fn pipe() -> (PipeTx, PipeRx) {
     (
         PipeTx(tx),
         PipeRx {
+            read_buffer: std::vec::Vec::new(),
             current: VecRead(std::vec::Vec::new()),
             channel: rx,
         },

@@ -1,7 +1,13 @@
 #![no_std]
-#![allow(async_fn_in_trait)]
+#![allow(
+    async_fn_in_trait,
+    reason = "`picoserve` is single-threaded, so it's OK that trait async functions return non-Send futures "
+)]
 #![deny(
     unsafe_code,
+    clippy::allow_attributes_without_reason,
+    clippy::let_underscore_must_use,
+    clippy::let_underscore_untyped,
     clippy::missing_safety_doc,
     clippy::multiple_unsafe_ops_per_block,
     clippy::undocumented_unsafe_blocks
@@ -409,6 +415,7 @@ async fn serve_and_shutdown<
                     };
 
                     let mut handle_request = core::pin::pin!(crate::futures::select_either(
+                        // The timeout is handled by the socket returning an error when reads are attempted after the
                         read_request_timeout.then_pend_forever(),
                         app.handle_request(
                             request,
@@ -493,7 +500,7 @@ async fn serve_and_shutdown<
         }
         Err(error) => {
             // Ignore any subsequent errors
-            let _ = socket.abort(&config.timeouts, timer).await;
+            _ = socket.abort(&config.timeouts, timer).await;
 
             Err(error)
         }
@@ -551,7 +558,6 @@ impl<'a, Runtime, T: Timer<Runtime>, P: routing::PathRouter>
     /// Prepares a server to handle graceful shutdown when the provided future completes.
     ///
     /// If `shutdown_timeout` is not None and the request handler does not complete within that time, it is killed abruptly.
-    #[allow(clippy::type_complexity)]
     pub fn with_graceful_shutdown<ShutdownSignal: core::future::Future>(
         self,
         shutdown_signal: ShutdownSignal,

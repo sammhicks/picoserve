@@ -660,7 +660,7 @@ macro_rules! declare_tuple_into_response {
     ($($($name:ident)*;)*) => {
         $(
             impl<$($name: HeadersIter,)* C: Content> IntoResponse for (StatusCode, $($name,)* C,) {
-                #[allow(non_snake_case)]
+                #[allow(non_snake_case, reason = "macro-generated code, not seen by a human")]
                 async fn write_to<R: Read, W: ResponseWriter<Error = R::Error>>(self, connection: Connection<'_, R>, response_writer: W) -> Result<ResponseSent, W::Error> {
                     let (status_code, $($name,)* body) = self;
 
@@ -673,7 +673,7 @@ macro_rules! declare_tuple_into_response {
             }
 
             impl<$($name: HeadersIter,)* C: Content> IntoResponse for ($($name,)* C,) {
-                #[allow(non_snake_case)]
+                #[allow(non_snake_case, reason = "macro-generated code, not seen by a human")]
                 async fn write_to<R: Read, W: ResponseWriter<Error = R::Error>>(self, connection: Connection<'_, R>, response_writer: W) -> Result<ResponseSent, W::Error> {
                     let ($($name,)* body,) = self;
 
@@ -686,7 +686,7 @@ macro_rules! declare_tuple_into_response {
             }
 
             impl<$($name: HeadersIter,)*> IntoResponse for (StatusCode, $($name,)* NoContent,) {
-                #[allow(non_snake_case)]
+                #[allow(non_snake_case, reason = "macro-generated code, not seen by a human")]
                 async fn write_to<R: Read, W: ResponseWriter<Error = R::Error>>(self, connection: Connection<'_, R>, response_writer: W) -> Result<ResponseSent, W::Error> {
                     let (status_code, $($name,)* NoContent,) = self;
 

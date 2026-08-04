@@ -143,12 +143,11 @@ impl TestData {
         self.generate_value_with_parameter(())
     }
 
-    #[allow(dead_code)]
     pub fn generate_string(&mut self, length_range: core::ops::Range<usize>) -> String {
         self.generate_value_with_parameter(length_range)
     }
 
-    #[allow(dead_code)]
+    #[cfg(feature = "ws")]
     pub fn generate_blob(&mut self, length_range: core::ops::Range<usize>) -> std::vec::Vec<u8> {
         self.generate_value_with_parameter(length_range)
     }

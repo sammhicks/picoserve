@@ -986,7 +986,7 @@ impl<'a, R: Read> Reader<'a, R> {
         let Ok(request_line) = self
             .read_request_line()
             .await?
-            .try_map::<Range<usize>, core::convert::Infallible>(|field| Ok(field.range.clone()));
+            .try_map(|field| Ok::<_, core::convert::Infallible>(field.range.clone()));
 
         let headers = self.read_headers().await?;
 

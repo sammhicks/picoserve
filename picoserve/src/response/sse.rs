@@ -539,13 +539,14 @@ mod tests {
         let write_size = {
             let mut count_write_size = CountWriteSize(0);
 
-            let _ = source
+            source
                 .clone()
                 .write_events(EventWriter {
                     writer: &mut count_write_size,
                     event_writer_state,
                 })
-                .await;
+                .await
+                .unwrap();
 
             count_write_size.0
         };
@@ -562,7 +563,8 @@ mod tests {
 
         {
             let task_shutdown_signal = core::pin::pin!(async {
-                let _ = shutdown_signal_rx.await;
+                // Ignore if the channel is closed
+                _ = shutdown_signal_rx.await;
             });
 
             let task_write_events = core::pin::pin!(write_events);
@@ -577,9 +579,10 @@ mod tests {
                 assert_eq!(task.as_mut().now_or_never(), None);
             }
 
-            let _ = shutdown_signal_tx.send(());
+            // Ignore if the channel is closed
+            _ = shutdown_signal_tx.send(());
 
-            let _ = task.await;
+            Ok(()) = task.await;
         }
 
         assert_eq!(throttle_writer.write_size, write_size);

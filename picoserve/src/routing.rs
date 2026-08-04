@@ -217,7 +217,6 @@ macro_rules! declare_handler_func {
             impl<State, PathParameter, FunctionReturn: IntoResponseWithState<State>, $($name: for<'a> FromRequestParts<'a, State>,)* M, E: for<'a> FromRequest<'a, State, M>, H: AsyncFn(PathParameter, $($name,)* E,) -> FunctionReturn>
                 RequestHandlerFunction<State, (PathParameter,), (OnePathParameter<PathParameter>, ParametersFromRequestParts<($($name,)*)>, ParameterFromRequest<M, E>,  FunctionReturn,)> for H
             {
-                #[allow(unused_variables)]
                 async fn call_request_handler_function<R: Read, W: ResponseWriter<Error = R::Error>>(
                     &self,
                     state: &State,
@@ -249,7 +248,6 @@ macro_rules! declare_handler_func {
             impl<State, PathParameters, FunctionReturn: IntoResponseWithState<State>, $($name: for<'a> FromRequestParts<'a, State>,)* M, E: for<'a> FromRequest<'a, State, M>, H: AsyncFn(PathParameters, $($name,)* E,) -> FunctionReturn>
                 RequestHandlerFunction<State, PathParameters, (ManyPathParameters<PathParameters>, ParametersFromRequestParts<($($name,)*)>, ParameterFromRequest<M, E>,  FunctionReturn)> for H
             {
-                #[allow(unused_variables)]
                 async fn call_request_handler_function<R: Read, W: ResponseWriter<Error = R::Error>>(
                     &self,
                     state: &State,
@@ -617,14 +615,14 @@ macro_rules! impl_tuple_push_path_segment_parameter {
             impl<$($path_parameter,)* P> PushPathSegmentParameter<P> for ($($path_parameter,)*) {
                 type NewPathParameters = ($($path_parameter,)* P,);
 
-                #[allow(non_snake_case)]
+                #[allow(non_snake_case, reason = "macro-generated code, not seen by a human")]
                 fn push_path_segment_parameter(self, segment_parameter: P) -> Self::NewPathParameters {
                     let ($($path_parameter,)*) = self;
 
                     ($($path_parameter,)* segment_parameter,)
                 }
 
-                #[allow(non_snake_case, clippy::unused_unit)]
+                #[allow(non_snake_case, clippy::unused_unit, reason = "macro-generated code, not seen by a human")]
                 fn pop_path_segment_parameter_from_output(($($path_parameter,)* _segment_parameter,): Self::NewPathParameters) -> Self {
                     ($($path_parameter,)*)
                 }
@@ -732,7 +730,7 @@ macro_rules! impl_tuple_path_description {
             {
                 type NewPathParameters = <($($name,)*) as PathDescription<P::NewPathParameters>>::NewPathParameters;
 
-                #[allow(non_snake_case)]
+                #[allow(non_snake_case, reason = "macro-generated code, not seen by a human")]
                 fn parse_and_validate<
                     'r,
                     T,
