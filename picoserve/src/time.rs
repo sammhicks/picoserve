@@ -52,17 +52,58 @@ impl crate::io::Error for TimeoutError {
     }
 }
 
+/// A wrapper future for `F` which returns a Result of either `Ok(F::Output)`
+/// if the future `F` resolves within the timeout, otherwise it returns
+/// `Err(TimeoutError)`.
+/// This pattern of wrapping the given future in a custom generic polling
+/// implementation was chosen instead of a simple `async fn` which wraps the
+/// runtime timeout method, because the `future` argument would end up being
+/// captured twice, both as the argument to the `async fn` and in the future
+/// returned by the runtime.
+#[pin_project::pin_project]
+struct TimeoutFuture<F, TF> {
+    #[pin]
+    future: F,
+
+    #[pin]
+    timeout_future: TF,
+}
+
+impl<F: core::future::Future, TF: core::future::Future<Output = ()>> core::future::Future
+    for TimeoutFuture<F, TF>
+{
+    type Output = Result<F::Output, TimeoutError>;
+
+    fn poll(
+        self: core::pin::Pin<&mut Self>,
+        cx: &mut core::task::Context<'_>,
+    ) -> core::task::Poll<Self::Output> {
+        let this = self.project();
+
+        if let core::task::Poll::Ready(output) = this.future.poll(cx) {
+            return core::task::Poll::Ready(Ok(output));
+        }
+
+        if let core::task::Poll::Ready(()) = this.timeout_future.poll(cx) {
+            return core::task::Poll::Ready(Err(TimeoutError));
+        }
+
+        core::task::Poll::Pending
+    }
+}
+
 /// A timer which can be used to abort futures if they take to long to resolve.
 pub trait Timer<Runtime> {
     /// Create a future which resolves after `duration` has passed.
     async fn delay(&self, duration: Duration);
 
-    /// Drive the future, failing if it takes too long to resolve.
-    async fn run_with_timeout<F: core::future::Future>(
+    /// Return a future which will run the given future, failing with a
+    /// `TimeoutError` if it takes too long to resolve.
+    fn run_with_timeout<F: core::future::Future>(
         &self,
         duration: Duration,
         future: F,
-    ) -> Result<F::Output, TimeoutError>;
+    ) -> impl core::future::Future<Output = Result<F::Output, TimeoutError>>;
 }
 
 pub(crate) trait TimerExt<Runtime>: Timer<Runtime> {
@@ -86,17 +127,17 @@ impl Timer<super::TokioRuntime> for TokioTimer {
         tokio::time::sleep(std::time::Duration::from_millis(duration.as_millis())).await;
     }
 
-    async fn run_with_timeout<F: core::future::Future>(
+    fn run_with_timeout<F: core::future::Future>(
         &self,
         duration: Duration,
         future: F,
-    ) -> Result<F::Output, TimeoutError> {
-        tokio::time::timeout(
-            std::time::Duration::from_millis(duration.as_millis()),
+    ) -> impl core::future::Future<Output = Result<F::Output, TimeoutError>> {
+        TimeoutFuture {
             future,
-        )
-        .await
-        .map_err(|_: tokio::time::error::Elapsed| TimeoutError)
+            timeout_future: tokio::time::sleep(std::time::Duration::from_millis(
+                duration.as_millis(),
+            )),
+        }
     }
 }
 
@@ -111,14 +152,15 @@ impl Timer<super::EmbassyRuntime> for EmbassyTimer {
         embassy_time::Timer::after(duration).await
     }
 
-    async fn run_with_timeout<F: core::future::Future>(
+    fn run_with_timeout<F: core::future::Future>(
         &self,
         duration: Duration,
         future: F,
-    ) -> Result<F::Output, TimeoutError> {
-        embassy_time::with_timeout(duration, future)
-            .await
-            .map_err(|_: embassy_time::TimeoutError| TimeoutError)
+    ) -> impl core::future::Future<Output = Result<F::Output, TimeoutError>> {
+        TimeoutFuture {
+            future,
+            timeout_future: embassy_time::Timer::after(duration),
+        }
     }
 }
 
