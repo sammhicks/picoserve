@@ -398,6 +398,9 @@ pub enum FormRejection {
     /// Error deserializing Form
     #[error("Bad Form")]
     BadForm,
+    /// IO Error,
+    #[error(transparent)]
+    IoError(#[from] ReadAllBodyError),
 }
 
 impl<'r, State, T: serde::de::DeserializeOwned> FromRequest<'r, State> for Form<T> {
@@ -409,13 +412,8 @@ impl<'r, State, T: serde::de::DeserializeOwned> FromRequest<'r, State> for Form<
         request_body: RequestBody<'r, R>,
     ) -> Result<Self, Self::Rejection> {
         super::url_encoded::deserialize_form(crate::url_encoded::UrlEncodedString(
-            core::str::from_utf8(
-                request_body
-                    .read_all()
-                    .await
-                    .map_err(|_| FormRejection::BadForm)?,
-            )
-            .map_err(|core::str::Utf8Error { .. }| FormRejection::BodyIsNotUtf8)?,
+            core::str::from_utf8(request_body.read_all().await?)
+                .map_err(|core::str::Utf8Error { .. }| FormRejection::BodyIsNotUtf8)?,
         ))
         .map(Self)
         .map_err(|super::url_encoded::FormDeserializationError| FormRejection::BadForm)
@@ -427,9 +425,9 @@ impl<'r, State, T: serde::de::DeserializeOwned> FromRequest<'r, State> for Form<
 #[derive(Debug, thiserror::Error, ErrorWithStatusCode)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum JsonRejection {
-    #[error("IO Error")]
+    #[error(transparent)]
     #[status_code(INTERNAL_SERVER_ERROR)]
-    IoError,
+    IoError(#[from] ReadAllBodyError),
     #[error("Failed to parse JSON body: {0}")]
     #[status_code(BAD_REQUEST)]
     #[cfg(feature = "json")]
@@ -448,10 +446,7 @@ impl<'r, State, T: serde::Deserialize<'r>, const UNESCAPE_BUFFER_SIZE: usize>
         request_body: RequestBody<'r, R>,
     ) -> Result<Self, Self::Rejection> {
         serde_json_core::from_slice_escaped(
-            request_body
-                .read_all()
-                .await
-                .map_err(|_| JsonRejection::IoError)?,
+            request_body.read_all().await?,
             &mut [0; UNESCAPE_BUFFER_SIZE],
         )
         .map(|(value, _)| Self(value))
