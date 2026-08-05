@@ -351,7 +351,7 @@ impl<'s> Socket<super::EmbassyRuntime> for embassy_net::tcp::TcpSocket<'s> {
 
         // Send the abort
         timer
-            .run_with_timeout(timeouts.write.clone(), self.flush())
+            .run_with_timeout(timeouts.write, self.flush())
             .await
             .map_err(crate::Error::WriteTimeout)?
             .map_err(crate::Error::Write)
@@ -373,7 +373,7 @@ impl<'s> Socket<super::EmbassyRuntime> for embassy_net::tcp::TcpSocket<'s> {
         // Flush the write half until the read half has been closed by the client
         crate::futures::select(
             timer
-                .run_with_timeout(timeouts.read_request.clone(), rx.discard_all_data())
+                .run_with_timeout(timeouts.read_request, rx.discard_all_data())
                 .map(|result| {
                     result
                         .map_err(crate::Error::ReadTimeout)?
@@ -385,7 +385,7 @@ impl<'s> Socket<super::EmbassyRuntime> for embassy_net::tcp::TcpSocket<'s> {
 
         // Flush the write half until the socket is closed.
         timer
-            .run_with_timeout(timeouts.write.clone(), self.flush())
+            .run_with_timeout(timeouts.write, self.flush())
             .await
             .map_err(crate::Error::WriteTimeout)?
             .map_err(crate::Error::Write)
