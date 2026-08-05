@@ -429,7 +429,9 @@ async fn serve_and_shutdown<
 
                     let mut handle_request = core::pin::pin!(crate::futures::select_either(
                         // The timeout is handled by the socket returning an error when reads are attempted after the
-                        read_request_timeout.then_pend_forever(),
+                        read_request_timeout
+                            .map(futures::IgnoredOutput::new)
+                            .then_pend_forever(),
                         app.handle_request(
                             request,
                             response::ResponseStream::new(&mut writer, connection_header),

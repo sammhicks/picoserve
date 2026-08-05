@@ -231,6 +231,7 @@ async fn write_events_until_shutdown<E, F: Future<Output = Result<(), E>>>(
 ) -> Result<(), E> {
     let shutdown_task = shutdown_signal
         .map(|()| event_writer_state.is_running.set(false))
+        .map(crate::futures::IgnoredOutput::new)
         .then_pend_forever();
 
     let write_events_task = core::future::poll_fn(|cx| {

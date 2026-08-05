@@ -117,14 +117,22 @@ pub(crate) fn select<A: Future, B: Future<Output = A::Output>>(a: A, b: B) -> Se
     }
 }
 
+pub(crate) struct IgnoredOutput;
+
+impl IgnoredOutput {
+    pub fn new<T>(_ignored_output: T) -> Self {
+        Self
+    }
+}
+
 #[pin_project::pin_project]
-pub(crate) struct ThenPendForeverFuture<F: Future, T> {
+pub(crate) struct ThenPendForeverFuture<F: Future<Output = IgnoredOutput>, T> {
     #[pin]
     maybe_future: Option<F>,
     _output: PhantomData<fn() -> T>,
 }
 
-impl<F: Future, T> Future for ThenPendForeverFuture<F, T> {
+impl<F: Future<Output = IgnoredOutput>, T> Future for ThenPendForeverFuture<F, T> {
     type Output = T;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
@@ -140,14 +148,25 @@ impl<F: Future, T> Future for ThenPendForeverFuture<F, T> {
     }
 }
 
+pub(crate) trait ThenPendForever: Future<Output = IgnoredOutput> + Sized {
+    fn then_pend_forever<T>(self) -> ThenPendForeverFuture<Self, T> {
+        ThenPendForeverFuture {
+            maybe_future: Some(self),
+            _output: PhantomData,
+        }
+    }
+}
+
+impl<F: Future<Output = IgnoredOutput>> ThenPendForever for F {}
+
 #[pin_project::pin_project]
-pub(crate) struct TryThenPendForeverFuture<F: TryFuture, T> {
+pub(crate) struct TryThenPendForeverFuture<F: TryFuture<Ok = IgnoredOutput>, T> {
     #[pin]
     maybe_future: Option<F>,
     _output: PhantomData<fn() -> T>,
 }
 
-impl<F: TryFuture, T> Future for TryThenPendForeverFuture<F, T> {
+impl<F: TryFuture<Ok = IgnoredOutput>, T> Future for TryThenPendForeverFuture<F, T> {
     type Output = Result<T, F::Error>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
@@ -171,15 +190,8 @@ impl<F: TryFuture, T> Future for TryThenPendForeverFuture<F, T> {
     }
 }
 
-pub(crate) trait ThenPendForever: Future + Sized {
-    fn then_pend_forever<T>(self) -> ThenPendForeverFuture<Self, T> {
-        ThenPendForeverFuture {
-            maybe_future: Some(self),
-            _output: PhantomData,
-        }
-    }
-
-    #[cfg(feature = "embassy")]
+#[cfg(feature = "embassy")]
+pub(crate) trait TryThenPendForever: TryFuture<Ok = IgnoredOutput> + Sized {
     fn try_then_pend_forever<T>(self) -> TryThenPendForeverFuture<Self, T>
     where
         Self: TryFuture,
@@ -191,7 +203,8 @@ pub(crate) trait ThenPendForever: Future + Sized {
     }
 }
 
-impl<F: Future> ThenPendForever for F {}
+#[cfg(feature = "embassy")]
+impl<F: TryFuture<Ok = IgnoredOutput>> TryThenPendForever for F {}
 
 #[cfg(test)]
 mod tests {
