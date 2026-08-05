@@ -7,6 +7,11 @@ categories = ["Embassy on Raspberry Pi Pico"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[[bin]]
+name = "graceful_shutdown_using_tasks"
+test = false
+bench = false
+
 [dependencies]
 cortex-m-rt = { workspace = true }
 cyw43 = { workspace = true }

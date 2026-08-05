@@ -7,6 +7,11 @@ categories = ["Embassy on Raspberry Pi Pico", ":pinned"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[[bin]]
+name = "hello_world_defmt"
+test = false
+bench = false
+
 [dependencies]
 # TODO - Update version once fixed upstream
 cyw43 = { version = "=0.5.0", features = ["firmware-logs"] }

@@ -3,6 +3,11 @@ name = "example_utils"
 version = "0.1.0"
 edition = "2024"
 
+[lib]
+name = "example_utils"
+test = false
+bench = false
+
 [dependencies]
 embassy-rp = { workspace = true }
 embassy-sync = { workspace = true }
