@@ -351,6 +351,12 @@ async fn serve_and_shutdown<
             }
         };
 
+        // What to do after handling one request: keep looping, or stop serving and return.
+        enum LoopResult<ShutdownReason, E: io::Error> {
+            Continue,
+            Stop(Result<DisconnectionInfo<ShutdownReason>, Error<E>>),
+        }
+
         loop {
             let request_count = request_count_iter();
 
@@ -404,8 +410,16 @@ async fn serve_and_shutdown<
             .await
             .first_is_error()?;
 
-            match request {
-                Ok(request) => {
+            // Both async match arms on `request` contain large variables or futures,
+            // and the compiler does not recognize these are mutually exclusive blocks
+            // of code, so memory is allocated in the `serve and shutdown` future for
+            // both arms of the match.
+            // Force the compiler to alias this memory by encapsulating each arm in a
+            // async future held in a `futures::either`. Then we await the generic Either
+            // future. Because the two futures are forced into one enum, the compiler
+            // will always alias the memory.
+            let result_future = match request {
+                Ok(request) => futures::Either::First(async {
                     let connection_header = match config.connection {
                         KeepAlive::Close => KeepAlive::Close,
                         KeepAlive::KeepAlive => KeepAlive::from_request(
@@ -424,41 +438,45 @@ async fn serve_and_shutdown<
                     )
                     .map(futures::Either::ignore_never_a));
 
-                    return Ok(
-                        match crate::futures::select_either(
-                            shutdown_signal.as_mut(),
-                            handle_request.as_mut(),
-                        )
-                        .await
-                        {
-                            futures::Either::First((shutdown_reason, shutdown_timeout)) => {
-                                shutdown_broadcast.notify(());
+                    match crate::futures::select_either(
+                        shutdown_signal.as_mut(),
+                        handle_request.as_mut(),
+                    )
+                    .await
+                    {
+                        futures::Either::First((shutdown_reason, shutdown_timeout)) => {
+                            shutdown_broadcast.notify(());
 
-                                DisconnectionInfo::with_shutdown_reason(
-                                    match timer
-                                        .run_with_timeout(shutdown_timeout, handle_request)
-                                        .await
-                                        .swap_errors()?
-                                    {
-                                        Ok(ResponseSent(_)) => request_count + 1,
-                                        Err(time::TimeoutError) => request_count,
-                                    },
-                                    shutdown_reason,
-                                )
+                            LoopResult::Stop(Ok(DisconnectionInfo::with_shutdown_reason(
+                                match timer
+                                    .run_with_timeout(shutdown_timeout, handle_request)
+                                    .await
+                                    .swap_errors()
+                                {
+                                    Ok(Ok(ResponseSent(_))) => request_count + 1,
+                                    Ok(Err(time::TimeoutError)) => request_count,
+                                    Err(err) => return LoopResult::Stop(Err(err)),
+                                },
+                                shutdown_reason,
+                            )))
+                        }
+                        futures::Either::Second(response_sent) => {
+                            let ResponseSent(_) = match response_sent {
+                                Ok(sent) => sent,
+                                Err(err) => return LoopResult::Stop(Err(err)),
+                            };
+
+                            if let KeepAlive::KeepAlive = connection_header {
+                                LoopResult::Continue
+                            } else {
+                                LoopResult::Stop(Ok(DisconnectionInfo::no_shutdown_reason(
+                                    request_count + 1,
+                                )))
                             }
-                            futures::Either::Second(response_sent) => {
-                                let ResponseSent(_) = response_sent?;
-
-                                if let KeepAlive::KeepAlive = connection_header {
-                                    continue;
-                                }
-
-                                DisconnectionInfo::no_shutdown_reason(request_count + 1)
-                            }
-                        },
-                    );
-                }
-                Err(err) => {
+                        }
+                    }
+                }),
+                Err(err) => futures::Either::Second(async {
                     use response::IntoResponse;
 
                     let message = match err {
@@ -467,22 +485,31 @@ async fn serve_and_shutdown<
                             "Invalid Header line: No ':' character"
                         }
                         request::ReadError::UnexpectedEof => "Unexpected EOF while reading request",
-                        request::ReadError::IO(err) => return Err(err),
+                        request::ReadError::IO(err) => return LoopResult::Stop(Err(err)),
                     };
 
-                    let ResponseSent { .. } = timer
-                        .run_with_timeout(
-                            config.timeouts.write,
-                            (response::StatusCode::BAD_REQUEST, message).write_to(
-                                response::Connection::empty(&mut Default::default()),
-                                response::ResponseStream::new(writer, KeepAlive::Close),
-                            ),
-                        )
-                        .await
-                        .map_err(Error::WriteTimeout)??;
+                    LoopResult::Stop(
+                        match timer
+                            .run_with_timeout(
+                                config.timeouts.write,
+                                (response::StatusCode::BAD_REQUEST, message).write_to(
+                                    response::Connection::empty(&mut Default::default()),
+                                    response::ResponseStream::new(&mut writer, KeepAlive::Close),
+                                ),
+                            )
+                            .await
+                        {
+                            Ok(Ok(ResponseSent { .. })) => Err(Error::BadRequest),
+                            Ok(Err(err)) => Err(err),
+                            Err(err) => Err(Error::WriteTimeout(err)),
+                        },
+                    )
+                }),
+            };
 
-                    return Err(Error::BadRequest);
-                }
+            match result_future.await {
+                LoopResult::Continue => continue,
+                LoopResult::Stop(result) => return result,
             }
         }
     }

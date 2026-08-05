@@ -24,7 +24,7 @@ impl<'a, T: Copy> Signal<'a, T> {
         }
     }
 
-    pub fn notify(self, value: T) {
+    pub fn notify(&self, value: T) {
         self.channel.value.set(Some(value));
 
         if let Some(waker) = self.channel.waker.take() {

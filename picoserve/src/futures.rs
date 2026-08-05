@@ -8,9 +8,22 @@ use core::{
 use futures_util::TryFuture;
 use pin_project::pin_project;
 
+#[pin_project::pin_project(project = EitherProj)]
 pub enum Either<A, B> {
-    First(A),
-    Second(B),
+    First(#[pin] A),
+    Second(#[pin] B),
+}
+
+/// Polls whichever variant is present in Either instnace.
+impl<A: Future, B: Future<Output = A::Output>> Future for Either<A, B> {
+    type Output = A::Output;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        match self.project() {
+            EitherProj::First(f) => f.poll(cx),
+            EitherProj::Second(f) => f.poll(cx),
+        }
+    }
 }
 
 impl<A> Either<A, core::convert::Infallible> {
