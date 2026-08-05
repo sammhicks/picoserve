@@ -331,11 +331,13 @@ async fn serve_and_shutdown<
 
         let mut request_reader = request::Reader::new(reader, http_buffer, &mut connection_flags);
 
-        let mut shutdown_signal = core::pin::pin!(shutdown_signal);
-
         // If `shutdown_signal` triggers, notify components which want to gracefully shutdown.
         let mut shutdown_broadcast = oneshot_broadcast::Signal::core();
-        let shutdown_broadcast = shutdown_broadcast.make_signal();
+        let (shutdown_broadcast, shutdown_listener) = shutdown_broadcast.make_signal();
+
+        // Broadcast the shutdown signal when the given signal resolves.
+        let mut shutdown_signal =
+            core::pin::pin!(shutdown_signal.inspect(|_| shutdown_broadcast.notify(())));
 
         let mut request_count_iter = {
             let mut n = 0_u64;
@@ -383,11 +385,12 @@ async fn serve_and_shutdown<
             };
 
             let mut read_request_timeout_signal = oneshot_broadcast::Signal::core();
-            let read_request_timeout_signal = read_request_timeout_signal.make_signal();
+            let (read_request_timeout_signal, read_request_timeout_listener) =
+                read_request_timeout_signal.make_signal();
 
             let request_signals = request::RequestSignals {
-                shutdown_signal: shutdown_broadcast.listen(),
-                read_request_timeout_signal: read_request_timeout_signal.listen(),
+                shutdown_signal: shutdown_listener.clone(),
+                read_request_timeout_signal: read_request_timeout_listener.clone(),
                 make_read_timeout_error: || Error::ReadTimeout(crate::time::TimeoutError),
             };
 
@@ -440,8 +443,6 @@ async fn serve_and_shutdown<
                     .await
                     {
                         futures::Either::First((shutdown_reason, shutdown_timeout)) => {
-                            shutdown_broadcast.notify(());
-
                             LoopResult::Stop(Ok(DisconnectionInfo::with_shutdown_reason(
                                 match timer
                                     .run_with_timeout(shutdown_timeout, handle_request)

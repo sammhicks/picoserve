@@ -243,7 +243,7 @@ impl<'r, E: crate::io::Error> Connection<'r, EmptyReader<E>> {
                 reader: EmptyReader(core::marker::PhantomData),
             },
             connection_flags,
-            shutdown_signal: shutdown_signal.make_signal().listen(),
+            shutdown_signal: shutdown_signal.make_signal().1,
         }
     }
 }

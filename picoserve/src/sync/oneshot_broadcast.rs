@@ -7,8 +7,8 @@ pub struct SignalCore<T: Copy> {
 
 impl<T: Copy> SignalCore<T> {
     // Take &mut self to avoid multiple calls to make_signal for a SignalCore.
-    pub fn make_signal(&mut self) -> Signal<'_, T> {
-        Signal { channel: self }
+    pub fn make_signal(&mut self) -> (Signal<'_, T>, Listener<'_, T>) {
+        (Signal { channel: self }, Listener { channel: self })
     }
 }
 
@@ -24,17 +24,11 @@ impl<'a, T: Copy> Signal<'a, T> {
         }
     }
 
-    pub fn notify(&self, value: T) {
+    pub fn notify(self, value: T) {
         self.channel.value.set(Some(value));
 
         if let Some(waker) = self.channel.waker.take() {
             waker.wake();
-        }
-    }
-
-    pub fn listen(&self) -> Listener<'a, T> {
-        Listener {
-            channel: self.channel,
         }
     }
 }
