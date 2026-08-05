@@ -1,5 +1,9 @@
 //! [`Timer`] for creating timeouts during request parsing and request handling.
 
+use core::future::Future;
+
+use futures_util::FutureExt;
+
 /// This becomes an alias of `embassy_time::Duration` if the `embassy` features is enabled.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 #[cfg(not(feature = "embassy"))]
@@ -69,9 +73,7 @@ struct TimeoutFuture<F, TF> {
     timeout_future: TF,
 }
 
-impl<F: core::future::Future, TF: core::future::Future<Output = ()>> core::future::Future
-    for TimeoutFuture<F, TF>
-{
+impl<F: Future, TF: Future<Output = TimeoutError>> Future for TimeoutFuture<F, TF> {
     type Output = Result<F::Output, TimeoutError>;
 
     fn poll(
@@ -84,8 +86,8 @@ impl<F: core::future::Future, TF: core::future::Future<Output = ()>> core::futur
             return core::task::Poll::Ready(Ok(output));
         }
 
-        if let core::task::Poll::Ready(()) = this.timeout_future.poll(cx) {
-            return core::task::Poll::Ready(Err(TimeoutError));
+        if let core::task::Poll::Ready(timeout_error) = this.timeout_future.poll(cx) {
+            return core::task::Poll::Ready(Err(timeout_error));
         }
 
         core::task::Poll::Pending
@@ -95,26 +97,26 @@ impl<F: core::future::Future, TF: core::future::Future<Output = ()>> core::futur
 /// A timer which can be used to abort futures if they take to long to resolve.
 pub trait Timer<Runtime> {
     /// Create a future which resolves after `duration` has passed.
-    async fn delay(&self, duration: Duration);
+    fn delay(&self, duration: Duration) -> impl Future<Output = ()>;
+
+    /// Create a future which returns a [`TimeoutError`] after `duration` has passed.
+    fn timeout(&self, duration: Duration) -> impl Future<Output = TimeoutError> {
+        self.delay(duration).map(|()| TimeoutError)
+    }
 
     /// Return a future which will run the given future, failing with a
     /// `TimeoutError` if it takes too long to resolve.
-    fn run_with_timeout<F: core::future::Future>(
+    fn run_with_timeout<F: Future>(
         &self,
         duration: Duration,
         future: F,
-    ) -> impl core::future::Future<Output = Result<F::Output, TimeoutError>>;
-}
-
-pub(crate) trait TimerExt<Runtime>: Timer<Runtime> {
-    async fn timeout(&self, duration: Duration) -> TimeoutError {
-        self.delay(duration).await;
-
-        TimeoutError
+    ) -> impl Future<Output = Result<F::Output, TimeoutError>> {
+        TimeoutFuture {
+            future,
+            timeout_future: self.timeout(duration),
+        }
     }
 }
-
-impl<Runtime, T: Timer<Runtime>> TimerExt<Runtime> for T {}
 
 #[derive(Default)]
 #[cfg(any(feature = "tokio", test))]
@@ -123,21 +125,8 @@ pub struct TokioTimer;
 
 #[cfg(any(feature = "tokio", test))]
 impl Timer<super::TokioRuntime> for TokioTimer {
-    async fn delay(&self, duration: Duration) {
-        tokio::time::sleep(std::time::Duration::from_millis(duration.as_millis())).await;
-    }
-
-    fn run_with_timeout<F: core::future::Future>(
-        &self,
-        duration: Duration,
-        future: F,
-    ) -> impl core::future::Future<Output = Result<F::Output, TimeoutError>> {
-        TimeoutFuture {
-            future,
-            timeout_future: tokio::time::sleep(std::time::Duration::from_millis(
-                duration.as_millis(),
-            )),
-        }
+    fn delay(&self, duration: Duration) -> impl Future<Output = ()> {
+        tokio::time::sleep(std::time::Duration::from_millis(duration.as_millis()))
     }
 }
 
@@ -148,19 +137,8 @@ pub struct EmbassyTimer;
 
 #[cfg(feature = "embassy")]
 impl Timer<super::EmbassyRuntime> for EmbassyTimer {
-    async fn delay(&self, duration: Duration) {
-        embassy_time::Timer::after(duration).await
-    }
-
-    fn run_with_timeout<F: core::future::Future>(
-        &self,
-        duration: Duration,
-        future: F,
-    ) -> impl core::future::Future<Output = Result<F::Output, TimeoutError>> {
-        TimeoutFuture {
-            future,
-            timeout_future: embassy_time::Timer::after(duration),
-        }
+    fn delay(&self, duration: Duration) -> impl Future<Output = ()> {
+        embassy_time::Timer::after(duration)
     }
 }
 

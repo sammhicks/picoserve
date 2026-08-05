@@ -53,16 +53,11 @@ mod tests;
 pub mod doctests_utils;
 
 pub use logging::LogDisplay;
+pub use response::response_stream::ResponseSent;
 pub use routing::Router;
 pub use time::Timer;
 
-use {
-    futures::ThenPendForever,
-    sync::oneshot_broadcast,
-    time::{Duration, TimerExt},
-};
-
-pub use response::response_stream::ResponseSent;
+use {futures::ThenPendForever, sync::oneshot_broadcast, time::Duration};
 
 /// Errors arising while handling a request.
 #[derive(Debug, thiserror::Error)]
@@ -314,7 +309,7 @@ async fn serve_and_shutdown<
     ShutdownSignal: core::future::Future<Output = (ShutdownReason, Duration)>,
 >(
     app: &Router<P>,
-    timer: &mut T,
+    timer: &T,
     config: &Config,
     http_buffer: &mut [u8],
     mut socket: S,
@@ -637,22 +632,14 @@ impl<
     ) -> Result<DisconnectionInfo<ShutdownReason>, Error<S::Error>> {
         let Self {
             app,
-            mut timer,
+            timer,
             config,
             http_buffer,
             shutdown_signal,
             _runtime,
         } = self;
 
-        serve_and_shutdown(
-            app,
-            &mut timer,
-            config,
-            http_buffer,
-            socket,
-            shutdown_signal,
-        )
-        .await
+        serve_and_shutdown(app, &timer, config, http_buffer, socket, shutdown_signal).await
     }
 }
 
@@ -731,7 +718,7 @@ impl<
     ) -> ShutdownReason {
         let Self {
             app,
-            mut timer,
+            timer,
             config,
             http_buffer,
             shutdown_signal,
@@ -772,7 +759,7 @@ impl<
 
             return match serve_and_shutdown(
                 app,
-                &mut timer,
+                &timer,
                 config,
                 http_buffer,
                 socket,

@@ -224,7 +224,7 @@ impl<TX: Write<Error = Infallible>, RX: Read<Error = Infallible>> io::Socket<Tok
     async fn abort<Timer: crate::Timer<TokioRuntime>>(
         self,
         _timeouts: &crate::Timeouts,
-        _timer: &mut Timer,
+        _timer: &Timer,
     ) -> Result<(), crate::Error<Self::Error>> {
         Ok(())
     }
@@ -232,7 +232,7 @@ impl<TX: Write<Error = Infallible>, RX: Read<Error = Infallible>> io::Socket<Tok
     async fn shutdown<Timer: time::Timer<TokioRuntime>>(
         mut self,
         _timeouts: &Timeouts,
-        _timer: &mut Timer,
+        _timer: &Timer,
     ) -> Result<(), Error<Self::Error>> {
         drop(self.tx);
 
@@ -1020,12 +1020,12 @@ async fn rudy_protection() {
             fail();
         }),
     );
-    let mut timer = crate::time::TokioTimer;
+    let timer = crate::time::TokioTimer;
     let mut http_buffer = [0; 1024];
 
     let mut server_task = std::pin::pin!(crate::serve_and_shutdown(
         &app,
-        &mut timer,
+        &timer,
         &TEST_CONFIG,
         &mut http_buffer,
         server_socket,
@@ -1109,12 +1109,12 @@ async fn ignoring_rudy_protection() {
     let (mut client_socket, server_socket) = TestSocket::pipe_pair();
 
     let app = Router::new().route("/", crate::routing::post_service(IgnoringRudyProtection));
-    let mut timer = crate::time::TokioTimer;
+    let timer = crate::time::TokioTimer;
     let mut http_buffer = [0; 1024];
 
     let mut server_task = std::pin::pin!(crate::serve_and_shutdown(
         &app,
-        &mut timer,
+        &timer,
         &TEST_CONFIG,
         &mut http_buffer,
         server_socket,

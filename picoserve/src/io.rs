@@ -192,14 +192,14 @@ pub trait Socket<Runtime>: Sized {
     async fn abort<T: Timer<Runtime>>(
         self,
         timeouts: &crate::Timeouts,
-        timer: &mut T,
+        timer: &T,
     ) -> Result<(), super::Error<Self::Error>>;
 
     /// Perform a graceful shutdown
     async fn shutdown<T: Timer<Runtime>>(
         self,
         timeouts: &crate::Timeouts,
-        timer: &mut T,
+        timer: &T,
     ) -> Result<(), super::Error<Self::Error>>;
 }
 
@@ -275,7 +275,7 @@ pub(crate) mod tokio_support {
         async fn abort<T: crate::Timer<crate::TokioRuntime>>(
             self,
             _timeouts: &crate::Timeouts,
-            _timer: &mut T,
+            _timer: &T,
         ) -> Result<(), crate::Error<Self::Error>> {
             // Dropping a TcpStream closes it.
 
@@ -285,7 +285,7 @@ pub(crate) mod tokio_support {
         async fn shutdown<T: crate::Timer<crate::TokioRuntime>>(
             mut self,
             timeouts: &crate::Timeouts,
-            timer: &mut T,
+            timer: &T,
         ) -> Result<(), crate::Error<Self::Error>> {
             timer
                 .run_with_timeout(
@@ -343,7 +343,7 @@ impl<'s> Socket<super::EmbassyRuntime> for embassy_net::tcp::TcpSocket<'s> {
     async fn abort<Timer: crate::Timer<super::EmbassyRuntime>>(
         mut self,
         timeouts: &crate::Timeouts,
-        timer: &mut Timer,
+        timer: &Timer,
     ) -> Result<(), crate::Error<Self::Error>> {
         log_info!("Abort");
 
@@ -360,7 +360,7 @@ impl<'s> Socket<super::EmbassyRuntime> for embassy_net::tcp::TcpSocket<'s> {
     async fn shutdown<Timer: crate::Timer<super::EmbassyRuntime>>(
         mut self,
         timeouts: &crate::Timeouts,
-        timer: &mut Timer,
+        timer: &Timer,
     ) -> Result<(), crate::Error<Self::Error>> {
         use futures_util::{FutureExt, TryFutureExt};
 
