@@ -7,11 +7,26 @@ pub struct SignalCore<T: Copy> {
 
 impl<T: Copy> SignalCore<T> {
     // Take &mut self to avoid multiple calls to make_signal for a SignalCore.
-    pub fn make_signal(&mut self) -> (Signal<'_, T>, Listener<'_, T>) {
-        (Signal { channel: self }, Listener { channel: self })
+    pub fn make_signal(&mut self) -> (Sender<'_, T>, Signal<'_, T>) {
+        (Sender { channel: self }, Signal { channel: self })
     }
 }
 
+pub struct Sender<'a, T: Copy> {
+    channel: &'a SignalCore<T>,
+}
+
+impl<'a, T: Copy> Sender<'a, T> {
+    pub fn send(self, value: T) {
+        self.channel.value.set(Some(value));
+
+        if let Some(waker) = self.channel.waker.take() {
+            waker.wake();
+        }
+    }
+}
+
+#[derive(Clone)]
 pub struct Signal<'a, T: Copy> {
     channel: &'a SignalCore<T>,
 }
@@ -23,22 +38,9 @@ impl<'a, T: Copy> Signal<'a, T> {
             waker: None.into(),
         }
     }
-
-    pub fn notify(self, value: T) {
-        self.channel.value.set(Some(value));
-
-        if let Some(waker) = self.channel.waker.take() {
-            waker.wake();
-        }
-    }
 }
 
-#[derive(Clone)]
-pub struct Listener<'a, T: Copy> {
-    channel: &'a SignalCore<T>,
-}
-
-impl<T: Copy> core::future::Future for Listener<'_, T> {
+impl<T: Copy> core::future::Future for Signal<'_, T> {
     type Output = T;
 
     fn poll(

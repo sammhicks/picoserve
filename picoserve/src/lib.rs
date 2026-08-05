@@ -333,11 +333,12 @@ async fn serve_and_shutdown<
 
         // If `shutdown_signal` triggers, notify components which want to gracefully shutdown.
         let mut shutdown_broadcast = oneshot_broadcast::Signal::core();
-        let (shutdown_broadcast, shutdown_listener) = shutdown_broadcast.make_signal();
+        let (shutdown_broadcast_sender, shutdown_broadcast_signal) =
+            shutdown_broadcast.make_signal();
 
         // Broadcast the shutdown signal when the given signal resolves.
         let mut shutdown_signal =
-            core::pin::pin!(shutdown_signal.inspect(|_| shutdown_broadcast.notify(())));
+            core::pin::pin!(shutdown_signal.inspect(|_| shutdown_broadcast_sender.send(())));
 
         let mut request_count_iter = {
             let mut n = 0_u64;
@@ -389,14 +390,14 @@ async fn serve_and_shutdown<
                 read_request_timeout_signal.make_signal();
 
             let request_signals = request::RequestSignals {
-                shutdown_signal: shutdown_listener.clone(),
+                shutdown_signal: shutdown_broadcast_signal.clone(),
                 read_request_timeout_signal: read_request_timeout_listener.clone(),
                 make_read_timeout_error: || Error::ReadTimeout(crate::time::TimeoutError),
             };
 
             let mut read_request_timeout =
                 core::pin::pin!(timer.timeout(config.timeouts.read_request).map(|timeout| {
-                    read_request_timeout_signal.notify(());
+                    read_request_timeout_signal.send(());
 
                     Error::ReadTimeout(timeout)
                 }));

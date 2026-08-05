@@ -172,7 +172,7 @@ impl<R: Read> Read for UpgradedConnection<'_, R> {
 pub struct Connection<'r, R: Read> {
     pub(crate) reader: AfterBodyReader<'r, R>,
     pub(crate) connection_flags: &'r mut crate::request::ConnectionFlags,
-    pub(crate) shutdown_signal: oneshot_broadcast::Listener<'r, ()>,
+    pub(crate) shutdown_signal: oneshot_broadcast::Signal<'r, ()>,
 }
 
 impl<'r, R: Read> Connection<'r, R> {

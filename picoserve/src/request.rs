@@ -619,7 +619,7 @@ pub struct RequestBodyConnection<'r, R: Read> {
     buffer: &'r mut [u8],
     buffer_usage: usize,
     connection_flags: &'r mut ConnectionFlags,
-    shutdown_signal: oneshot_broadcast::Listener<'r, ()>,
+    shutdown_signal: oneshot_broadcast::Signal<'r, ()>,
 }
 
 impl<'r, R: Read> RequestBodyConnection<'r, R> {
@@ -735,7 +735,7 @@ pub struct Request<'r, R: Read> {
 /// A [`Read`]er which times out on the `read_request` timeout.
 pub struct ReaderWithReadRequestTimeout<'r, R: Read> {
     reader: &'r mut R,
-    read_request_timeout_signal: oneshot_broadcast::Listener<'r, ()>,
+    read_request_timeout_signal: oneshot_broadcast::Signal<'r, ()>,
     make_read_timeout_error: fn() -> R::Error,
 }
 
@@ -789,8 +789,8 @@ impl<R: Read, F: Future<Output = ()> + Unpin> Read for ReaderWithTimeoutFuture<'
 }
 
 pub(crate) struct RequestSignals<'r, R: Read> {
-    pub shutdown_signal: oneshot_broadcast::Listener<'r, ()>,
-    pub read_request_timeout_signal: oneshot_broadcast::Listener<'r, ()>,
+    pub shutdown_signal: oneshot_broadcast::Signal<'r, ()>,
+    pub read_request_timeout_signal: oneshot_broadcast::Signal<'r, ()>,
     pub make_read_timeout_error: fn() -> R::Error,
 }
 
