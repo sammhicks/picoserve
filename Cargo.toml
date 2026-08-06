@@ -14,6 +14,7 @@ members = [
     "examples/hello_world",
     "examples/hello_world_single_thread",
     "examples/huge_requests",
+    "examples/json_maps",
     "examples/layers",
     "examples/nested_router",
     "examples/path_parameters",

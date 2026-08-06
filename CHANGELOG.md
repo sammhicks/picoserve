@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The `Write` trait used throughout `picoserve` has been replaced from [`embedded-io-async::Write`](https://docs.rs/embedded-io-async/0.7.0/embedded_io_async/) to a new `picoserve::io::Write` trait.
 - Server-Sent Events and WebSockets no longer automatically flush the connection after writing a message.
 - [`sse::EventData`](https://docs.rs/picoserve/latest/picoserve/response/sse/trait.EventData.html) now writes to a [`sse::EventDataWriter`](https://docs.rs/picoserve/latest/picoserve/response/sse/struct.EventDataWriter.html), 
+- Map types are now by default serialized as JSON objects. The representation can be configured, see the [`json`](https://docs.rs/picoserve/latest/picoserve/response/json/index.html) module.
 
 ### Changed
 

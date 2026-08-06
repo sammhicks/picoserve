@@ -1,4 +1,41 @@
-//! Support for serializing JSON structures
+//! Support for serializing JSON structures.
+//!
+//! # Map representations
+//!
+//! Certain types, such as [`BTreeMap`](https://doc.rust-lang.org/stable/std/collections/struct.BTreeMap.html)
+//! and [`heapless::linear_map::LinearMap`](https://docs.rs/heapless/latest/heapless/linear_map/type.LinearMap.html)
+//! serialize themselves as `serde` "map" types.
+//!
+//! In JSON, these are two possible ways map types can be represented:
+//!
+//! - As JSON objects, e.g. `{ "a": 1, "b": 2 }`
+//!   - This is what `serde_json` does.
+//!   - When deserializing using JavaScript's `JSON.parse`, you get a JavaScript Object, which has easy key-lookup syntax.
+//!   - Keys must be strings. Certain types, such as numeric types and booleans can easily be stringified, but maps with compound types for keys are rejected.
+//! - As JSON array of pairs, e.g. `[ [ "a", 1 ], [ "b", 2 ] ]`
+//!   - Keys can be any type.
+//!   - When deserializing using JavaScript's `JSON.parse`, you get an Array of Array's, which is harder to work with. You can convert it to a Map using `new Map(pairs)`, but if it's in a structure this is trickier.
+//!
+//! ## Choosing between representations
+//!
+//! By default, map types are serialized as JSON objects (this is different from older versions of `picoserve`).
+//! The serializer can be configured with which form maps should take. Note that configuration is passed down structures,
+//! so a map of maps will have the same representation (unless locally overridden).
+//!
+//! If you would like to choose a map representation, this can be done in the following:
+//!
+//! ### [`SerializeMapAsObject`] and [`SerializeMapAsArrayOfPairs`]
+//!
+//! These structs have a single field, and when serialized, configure the serializer.
+//! These are designed to be used as wrappers around values at the point of passing or returning a [`Json`] value.
+//!
+//! ### [`Json::serialize_map_as_object`] and [`Json::serialize_map_as_array_of_pairs`]
+//!
+//! These functions are convenience methods to wrap the value with [`SerializeMapAsObject`] or [`SerializeMapAsArrayOfPairs`].
+//!
+//! ### [`serialize_map_as_object`] and [`serialize_map_as_array_of_pairs`]
+//!
+//! These functions are designed to be used with the `#[serde(serialize_with = "..."]` field annotations when deriving `serde::Serialize` on a custom type.
 
 use core::fmt;
 
@@ -20,6 +57,12 @@ impl serde::ser::Error for SerializeError {
     fn custom<T: fmt::Display>(_msg: T) -> Self {
         Self::SerdeError
     }
+}
+
+fn object_key_must_be_a_string() -> SerializeError {
+    log_warn!("JSON object keys must be a string");
+
+    SerializeError::SerdeError
 }
 
 struct Escaped<T>(T);
@@ -66,19 +109,90 @@ impl<T: fmt::Display> fmt::Display for EscapedString<T> {
     }
 }
 
-struct Serializer<'a, W: fmt::Write>(&'a mut W);
+const SERIALIZE_MAP_AS_OBJECT: &str = "___SERIALIZE_MAP_AS_OBJECT___";
+const SERIALIZE_MAP_AS_ARRAY_OF_PAIRS: &str = "___SERIALIZE_MAP_AS_ARRAY_OF_PAIRS___";
+
+/// Serialize `T`, configuring the serializer to serialize map types as JSON objects.
+/// Designed to be used as `#[serde(serialize_with = "serialize_map_as_object")]`
+pub fn serialize_map_as_object<T: serde::Serialize, S: serde::Serializer>(
+    value: &T,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    serializer.serialize_newtype_struct(SERIALIZE_MAP_AS_OBJECT, value)
+}
+
+/// Configure the serializer to serialize map types as JSON objects.
+pub struct SerializeMapAsObject<T: serde::Serialize>(pub T);
+
+impl<T: serde::Serialize> serde::Serialize for SerializeMapAsObject<T> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serialize_map_as_object(&self.0, serializer)
+    }
+}
+
+/// Serialize `T`, configuring the serializer to serialize map types as JSON Arrays.
+/// Designed to be used as `#[serde(serialize_with = "serialize_map_as_array_of_pairs")]`
+pub fn serialize_map_as_array_of_pairs<T: serde::Serialize, S: serde::Serializer>(
+    value: &T,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    serializer.serialize_newtype_struct(SERIALIZE_MAP_AS_ARRAY_OF_PAIRS, value)
+}
+
+/// Configure the serializer to serialize map types as JSON Arrays.
+pub struct SerializeMapAsArrayOfPairs<T>(pub T);
+
+impl<T: serde::Serialize> serde::Serialize for SerializeMapAsArrayOfPairs<T> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serialize_map_as_array_of_pairs(&self.0, serializer)
+    }
+}
+
+impl<T: serde::Serialize> Json<T> {
+    pub fn serialize_map_as_object(self) -> Json<SerializeMapAsObject<T>> {
+        Json(SerializeMapAsObject(self.0))
+    }
+
+    pub fn serialize_map_as_array_of_pairs(self) -> Json<SerializeMapAsArrayOfPairs<T>> {
+        Json(SerializeMapAsArrayOfPairs(self.0))
+    }
+}
+
+#[derive(Clone, Default)]
+enum SerializeMapAs {
+    #[default]
+    Object,
+    ArrayOfPairs,
+}
+
+struct Serializer<'a, W: fmt::Write> {
+    serialize_map_as: SerializeMapAs,
+    writer: &'a mut W,
+}
+
+impl<'a, W: fmt::Write> Serializer<'a, W> {
+    fn new(writer: &'a mut W) -> Self {
+        Self {
+            serialize_map_as: SerializeMapAs::default(),
+            writer,
+        }
+    }
+}
 
 impl<'a, W: fmt::Write> Serializer<'a, W> {
     fn reborrow(&mut self) -> Serializer<'_, W> {
-        Serializer(self.0)
+        Serializer {
+            serialize_map_as: self.serialize_map_as.clone(),
+            writer: self.writer,
+        }
     }
 
     fn write_str(&mut self, s: &str) -> Result<(), SerializeError> {
-        Ok(self.0.write_str(s)?)
+        Ok(self.writer.write_str(s)?)
     }
 
     fn write_fmt(&mut self, args: fmt::Arguments<'_>) -> Result<(), SerializeError> {
-        Ok(self.0.write_fmt(args)?)
+        Ok(self.writer.write_fmt(args)?)
     }
 
     fn serialize_compound(self, _len: impl Into<Option<usize>>) -> SerializeCompound<'a, W> {
@@ -172,10 +286,16 @@ impl<'a, W: fmt::Write> serde::Serializer for Serializer<'a, W> {
     }
 
     fn serialize_newtype_struct<T: serde::Serialize + ?Sized>(
-        self,
-        _name: &'static str,
+        mut self,
+        name: &'static str,
         value: &T,
     ) -> Result<Self::Ok, Self::Error> {
+        self.serialize_map_as = match name {
+            SERIALIZE_MAP_AS_OBJECT => SerializeMapAs::Object,
+            SERIALIZE_MAP_AS_ARRAY_OF_PAIRS => SerializeMapAs::ArrayOfPairs,
+            _ => self.serialize_map_as,
+        };
+
         value.serialize(self)
     }
 
@@ -247,6 +367,150 @@ impl<'a, W: fmt::Write> serde::Serializer for Serializer<'a, W> {
     }
 
     serialize_display!(
+        serialize_i8 i8 serialize_i16 i16 serialize_i32 i32 serialize_i64 i64
+        serialize_u8 u8 serialize_u16 u16 serialize_u32 u32 serialize_u64 u64
+    );
+}
+
+macro_rules! serialize_forward_to_serializer {
+    ($($f:ident $t:ty)*) => {
+        $(
+            fn $f(self, v: $t) -> Result<Self::Ok, Self::Error> {
+                v.serialize(self.serializer)
+            }
+        )*
+    };
+}
+
+macro_rules! serialize_collect_str {
+    ($($f:ident $t:ty)*) => {
+        $(
+            fn $f(self, v: $t) -> Result<Self::Ok, Self::Error> {
+                self.collect_str(&format_args!("{}", v))
+            }
+        )*
+    };
+}
+
+struct SerializeObjectKey<'a, W: fmt::Write> {
+    serializer: Serializer<'a, W>,
+}
+
+impl<'a, W: fmt::Write> serde::Serializer for SerializeObjectKey<'a, W> {
+    type Ok = ();
+    type Error = SerializeError;
+
+    type SerializeSeq = serde::ser::Impossible<(), SerializeError>;
+    type SerializeTuple = serde::ser::Impossible<(), SerializeError>;
+    type SerializeTupleStruct = serde::ser::Impossible<(), SerializeError>;
+    type SerializeTupleVariant = serde::ser::Impossible<(), SerializeError>;
+    type SerializeMap = serde::ser::Impossible<(), SerializeError>;
+    type SerializeStruct = serde::ser::Impossible<(), SerializeError>;
+    type SerializeStructVariant = serde::ser::Impossible<(), SerializeError>;
+
+    fn serialize_bytes(self, _: &[u8]) -> Result<Self::Ok, Self::Error> {
+        Err(object_key_must_be_a_string())
+    }
+
+    fn serialize_none(self) -> Result<Self::Ok, Self::Error> {
+        Err(object_key_must_be_a_string())
+    }
+
+    fn serialize_some<T: ?Sized + Serialize>(self, value: &T) -> Result<Self::Ok, Self::Error> {
+        value.serialize(self)
+    }
+
+    fn serialize_unit(self) -> Result<Self::Ok, Self::Error> {
+        Err(object_key_must_be_a_string())
+    }
+
+    fn serialize_unit_struct(self, _name: &'static str) -> Result<Self::Ok, Self::Error> {
+        Err(object_key_must_be_a_string())
+    }
+
+    fn serialize_unit_variant(
+        self,
+        _name: &'static str,
+        _variant_index: u32,
+        variant: &'static str,
+    ) -> Result<Self::Ok, Self::Error> {
+        self.serializer.serialize_str(variant)
+    }
+
+    fn serialize_newtype_struct<T: ?Sized + Serialize>(
+        self,
+        _name: &'static str,
+        value: &T,
+    ) -> Result<Self::Ok, Self::Error> {
+        value.serialize(self)
+    }
+
+    fn serialize_newtype_variant<T: ?Sized + Serialize>(
+        self,
+        _name: &'static str,
+        _variant_index: u32,
+        _variant: &'static str,
+        _value: &T,
+    ) -> Result<Self::Ok, Self::Error> {
+        Err(object_key_must_be_a_string())
+    }
+
+    fn serialize_seq(self, _len: Option<usize>) -> Result<Self::SerializeSeq, Self::Error> {
+        Err(object_key_must_be_a_string())
+    }
+
+    fn serialize_tuple(self, _len: usize) -> Result<Self::SerializeTuple, Self::Error> {
+        Err(object_key_must_be_a_string())
+    }
+
+    fn serialize_tuple_struct(
+        self,
+        _name: &'static str,
+        _len: usize,
+    ) -> Result<Self::SerializeTupleStruct, Self::Error> {
+        Err(object_key_must_be_a_string())
+    }
+
+    fn serialize_tuple_variant(
+        self,
+        _name: &'static str,
+        _variant_index: u32,
+        _variant: &'static str,
+        _len: usize,
+    ) -> Result<Self::SerializeTupleVariant, Self::Error> {
+        Err(object_key_must_be_a_string())
+    }
+
+    fn serialize_map(self, _len: Option<usize>) -> Result<Self::SerializeMap, Self::Error> {
+        Err(object_key_must_be_a_string())
+    }
+
+    fn serialize_struct(
+        self,
+        _name: &'static str,
+        _len: usize,
+    ) -> Result<Self::SerializeStruct, Self::Error> {
+        Err(object_key_must_be_a_string())
+    }
+
+    fn serialize_struct_variant(
+        self,
+        _name: &'static str,
+        _variant_index: u32,
+        _variant: &'static str,
+        _len: usize,
+    ) -> Result<Self::SerializeStructVariant, Self::Error> {
+        Err(object_key_must_be_a_string())
+    }
+
+    serialize_forward_to_serializer! {
+        serialize_bool bool
+        serialize_f32 f32 serialize_f64 f64
+        serialize_char char
+        serialize_str &str
+    }
+
+    serialize_collect_str!(
         serialize_i8 i8 serialize_i16 i16 serialize_i32 i32 serialize_i64 i64
         serialize_u8 u8 serialize_u16 u16 serialize_u32 u32 serialize_u64 u64
     );
@@ -335,32 +599,64 @@ impl<W: fmt::Write> serde::ser::SerializeMap for SerializeCompound<'_, W> {
     type Error = SerializeError;
 
     fn serialize_key<T: serde::Serialize + ?Sized>(&mut self, key: &T) -> Result<(), Self::Error> {
-        self.serializer
-            .write_str(if self.is_first { "[" } else { "," })?;
+        self.serializer.write_str(if self.is_first {
+            match self.serializer.serialize_map_as {
+                SerializeMapAs::Object => "{",
+                SerializeMapAs::ArrayOfPairs => "[",
+            }
+        } else {
+            ","
+        })?;
 
         self.is_first = false;
 
-        self.serializer.write_str("[")?;
+        match self.serializer.serialize_map_as {
+            SerializeMapAs::Object => key.serialize(SerializeObjectKey {
+                serializer: self.serializer.reborrow(),
+            }),
+            SerializeMapAs::ArrayOfPairs => {
+                self.serializer.write_str("[")?;
 
-        key.serialize(self.serializer.reborrow())?;
-
-        Ok(())
+                key.serialize(self.serializer.reborrow())
+            }
+        }
     }
 
     fn serialize_value<T: serde::Serialize + ?Sized>(
         &mut self,
         value: &T,
     ) -> Result<(), Self::Error> {
-        self.serializer.write_str(",")?;
-        value.serialize(self.serializer.reborrow())?;
-        self.serializer.write_str("]")?;
-
-        Ok(())
+        match self.serializer.serialize_map_as {
+            SerializeMapAs::Object => {
+                self.serializer.write_str(":")?;
+                value.serialize(self.serializer.reborrow())
+            }
+            SerializeMapAs::ArrayOfPairs => {
+                self.serializer.write_str(",")?;
+                value.serialize(self.serializer.reborrow())?;
+                self.serializer.write_str("]")
+            }
+        }
     }
 
     fn end(mut self) -> Result<Self::Ok, Self::Error> {
         self.serializer
-            .write_str(if self.is_first { "[]" } else { "]" })
+            .write_str(match self.serializer.serialize_map_as {
+                SerializeMapAs::Object => {
+                    if self.is_first {
+                        "{}"
+                    } else {
+                        "}"
+                    }
+                }
+                SerializeMapAs::ArrayOfPairs => {
+                    if self.is_first {
+                        "[]"
+                    } else {
+                        "]"
+                    }
+                }
+            })
     }
 }
 
@@ -413,7 +709,7 @@ impl<T: serde::Serialize> Json<T> {
     pub(crate) fn display(self) -> impl core::fmt::Display {
         core::fmt::from_fn(move |f| {
             self.0
-                .serialize(Serializer(f))
+                .serialize(Serializer::new(f))
                 .or_else(|error| match error {
                     SerializeError::Format(error) => Err(error),
                     // Ignore serde errors as it's too late to report this sensibly.
@@ -437,7 +733,7 @@ impl<T: serde::Serialize> super::Content for JsonBody<T> {
     fn content_length(&self) -> usize {
         let mut content_length = 0;
         self.0
-            .serialize(Serializer(&mut super::MeasureFormatSize(
+            .serialize(Serializer::new(&mut super::MeasureFormatSize(
                 &mut content_length,
             )))
             .map_or(0, |()| content_length)
@@ -472,20 +768,21 @@ impl<T: serde::Serialize> super::IntoResponse for Json<T> {
 
 #[cfg(test)]
 mod tests {
-    use std::{string::String, string::ToString, vec::Vec};
+    use std::{string::ToString, vec::Vec};
 
-    #[derive(Debug, strum::EnumDiscriminants)]
-    #[strum_discriminants(derive(strum::VariantArray))]
-    enum JsonValue {
+    use serde_json::Value;
+
+    #[derive(strum::VariantArray)]
+    enum JsonValueType {
         Null,
-        Bool(bool),
-        Number(u64),
-        String(String),
-        Array(Vec<JsonValue>),
-        Object(Vec<(&'static str, JsonValue)>),
+        Bool,
+        Number,
+        String,
+        Array,
+        Object,
     }
 
-    impl crate::tests::fuzz::TestValue<usize> for JsonValue {
+    impl crate::tests::fuzz::TestValue<usize> for Value {
         fn generate(test_data: &mut crate::tests::fuzz::TestData, fuel: usize) -> Self {
             let Some(fuel) = fuel.checked_sub(1) else {
                 return Self::Null;
@@ -494,7 +791,7 @@ mod tests {
             fn generate_array(
                 test_data: &mut crate::tests::fuzz::TestData,
                 fuel: usize,
-            ) -> Vec<JsonValue> {
+            ) -> Vec<Value> {
                 let length = test_data.generate_value_with_parameter::<usize, _>(0..=(fuel / 2));
 
                 std::iter::from_fn(|| Some(test_data.generate_value_with_parameter(fuel / length)))
@@ -503,94 +800,106 @@ mod tests {
             }
 
             match test_data.choose_value(strum::VariantArray::VARIANTS) {
-                JsonValueDiscriminants::Null => JsonValue::Null,
-                JsonValueDiscriminants::Bool => JsonValue::Bool(test_data.generate_value()),
-                JsonValueDiscriminants::Number => JsonValue::Number(test_data.generate_value()),
-                JsonValueDiscriminants::String => {
-                    JsonValue::String(test_data.generate_string(0..100))
-                }
-                JsonValueDiscriminants::Array => JsonValue::Array(generate_array(test_data, fuel)),
-                JsonValueDiscriminants::Object => JsonValue::Object(
+                JsonValueType::Null => Value::Null,
+                JsonValueType::Bool => Value::Bool(test_data.generate_value()),
+                JsonValueType::Number => Value::Number(serde_json::value::Number::from(
+                    test_data.generate_value::<u32>(),
+                )),
+                JsonValueType::String => Value::String(test_data.generate_string(0..100)),
+                JsonValueType::Array => Value::Array(generate_array(test_data, fuel)),
+                JsonValueType::Object => Value::Object(
                     generate_array(test_data, fuel)
                         .into_iter()
-                        .map(|value| {
-                            (
-                                *test_data.choose_value(&["a", "b", "c", "d", "e", "f", "g", "h"]),
-                                value,
-                            )
-                        })
+                        .map(|value| (test_data.generate_string(0..100), value))
                         .collect(),
                 ),
             }
         }
     }
 
-    impl From<&JsonValue> for serde_json::Value {
-        fn from(value: &JsonValue) -> Self {
-            match value {
-                JsonValue::Null => serde_json::Value::Null,
-                &JsonValue::Bool(b) => serde_json::Value::Bool(b),
-                &JsonValue::Number(n) => serde_json::Value::Number(n.into()),
-                JsonValue::String(s) => serde_json::Value::String(s.clone()),
-                JsonValue::Array(json_values) => {
-                    serde_json::Value::Array(json_values.iter().map(From::from).collect())
-                }
-                JsonValue::Object(items) => serde_json::Value::Object(
-                    items
-                        .iter()
-                        .map(|&(k, ref v)| (k.into(), serde_json::Value::from(v)))
-                        .collect(),
-                ),
-            }
-        }
-    }
+    fn verify_json(input: &impl serde::Serialize, expected: &Value) {
+        let mut buffer = std::string::String::new();
 
-    impl serde::Serialize for JsonValue {
-        fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-            match self {
-                JsonValue::Null => serializer.serialize_none(),
-                JsonValue::Bool(b) => b.serialize(serializer),
-                JsonValue::Number(n) => n.serialize(serializer),
-                JsonValue::String(s) => s.serialize(serializer),
-                JsonValue::Array(a) => serializer.collect_seq(a),
-                JsonValue::Object(o) => {
-                    use serde::ser::SerializeStruct;
+        input
+            .serialize(super::Serializer::new(&mut buffer))
+            .unwrap();
 
-                    let mut serializer = serializer.serialize_struct("", o.len())?;
+        let actual = serde_json::from_str::<Value>(&buffer).unwrap();
 
-                    o.iter()
-                        .try_for_each(|(k, v)| serializer.serialize_field(k, v))?;
-
-                    serializer.end()
-                }
-            }
-        }
+        assert_eq!(&actual, expected)
     }
 
     #[tokio::test]
-    async fn json_is_serialized_correctly() {
+    async fn common_json_is_serialized_correctly() {
         crate::tests::fuzz::run_async("json_is_serialized_correctly", async |test_data| {
-            let value = test_data.generate_value_with_parameter::<JsonValue, _>(100);
+            let value = test_data.generate_value_with_parameter::<Value, _>(100);
 
-            let serde_json_value = serde_json::Value::from(&value);
-
-            let parsed_value = serde_json::from_str::<serde_json::Value>(
-                &super::Json(&value).display().to_string(),
-            )
-            .unwrap();
-
-            assert_eq!(parsed_value, serde_json_value)
+            verify_json(&value, &value);
         })
         .await
+    }
+
+    #[test]
+    fn struct_is_serialized_correctly() {
+        #[derive(serde::Serialize)]
+        struct TestStruct {
+            a: i32,
+            b: bool,
+        }
+
+        let a = 42;
+        let b = true;
+
+        verify_json(&TestStruct { a, b }, &serde_json::json!({ "a": a, "b": b }));
+    }
+
+    #[test]
+    fn serialize_map_as_array_of_pairs() {
+        verify_json(
+            &super::SerializeMapAsArrayOfPairs(std::collections::BTreeMap::from([
+                ((1, 2), (3, 4)),
+                ((5, 6), (7, 8)),
+            ])),
+            &serde_json::json!([[[1, 2], [3, 4]], [[5, 6], [7, 8]]]),
+        );
+
+        #[derive(serde::Serialize)]
+        struct TestStruct {
+            #[serde(serialize_with = "super::serialize_map_as_array_of_pairs")]
+            map: std::collections::BTreeMap<(i32, i32), i32>,
+        }
+
+        verify_json(
+            &TestStruct {
+                map: [((1, 2), 3), ((4, 5), 6)].into(),
+            },
+            &serde_json::json!({ "map" : [[[1, 2], 3], [[4, 5], 6]] }),
+        );
+    }
+
+    #[test]
+    fn serialize_map_as_both() {
+        #[derive(serde::Serialize)]
+        struct TestStruct(
+            #[serde(serialize_with = "super::serialize_map_as_object")]
+            std::collections::BTreeMap<i32, i32>,
+        );
+
+        verify_json(
+            &super::SerializeMapAsArrayOfPairs(std::collections::BTreeMap::from([
+                (1, TestStruct([(2, 3), (4, 5)].into())),
+                (6, TestStruct([(7, 8)].into())),
+            ])),
+            &serde_json::json!([[ 1, { "2": 3, "4": 5 } ], [ 6, { "7": 8 } ]]),
+        );
     }
 
     #[tokio::test]
     async fn json_is_serialized_without_newlines() {
         crate::tests::fuzz::run_async("json_is_serialized_without_newlines", async |test_data| {
-            let json_value =
-                super::Json(test_data.generate_value_with_parameter::<JsonValue, _>(100))
-                    .display()
-                    .to_string();
+            let json_value = super::Json(test_data.generate_value_with_parameter::<Value, _>(100))
+                .display()
+                .to_string();
 
             if json_value.contains('\n') {
                 panic!("JSON values must not contain '\n'");
