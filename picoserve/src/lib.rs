@@ -71,13 +71,13 @@ pub enum Error<E: io::Error> {
     Read(#[source] E),
     /// Timeout while reading from the socket.
     #[error("Read timeout")]
-    ReadTimeout(crate::time::TimeoutError),
+    ReadTimeout(time::TimeoutError),
     /// Error while writing to the socket.
     #[error("Write error: {0}")]
     Write(#[source] E),
     /// Timeout while writing to the socket.
     #[error("Write timeout")]
-    WriteTimeout(crate::time::TimeoutError),
+    WriteTimeout(time::TimeoutError),
 }
 
 impl<E: io::Error + 'static> io::Error for Error<E> {
@@ -392,7 +392,7 @@ async fn serve_and_shutdown<
             let request_signals = request::RequestSignals {
                 shutdown_signal: shutdown_broadcast_signal.clone(),
                 read_request_timeout_signal: read_request_timeout_listener.clone(),
-                make_read_timeout_error: || Error::ReadTimeout(crate::time::TimeoutError),
+                make_read_timeout_error: || Error::ReadTimeout(time::TimeoutError),
             };
 
             let mut read_request_timeout =
@@ -427,11 +427,11 @@ async fn serve_and_shutdown<
                         ),
                     };
 
-                    let mut handle_request = core::pin::pin!(crate::futures::select_either(
+                    let mut handle_request = core::pin::pin!(futures::select_either(
                         // The timeout is handled by the socket returning an error when reads are attempted after the
                         read_request_timeout
                             .map(futures::ignore_output)
-                            .then(crate::futures::pend_forever),
+                            .then(futures::pend_forever),
                         app.handle_request(
                             request,
                             response::ResponseStream::new(&mut writer, connection_header),
@@ -439,11 +439,8 @@ async fn serve_and_shutdown<
                     )
                     .map(futures::Either::ignore_never_a));
 
-                    match crate::futures::select_either(
-                        shutdown_signal.as_mut(),
-                        handle_request.as_mut(),
-                    )
-                    .await
+                    match futures::select_either(shutdown_signal.as_mut(), handle_request.as_mut())
+                        .await
                     {
                         futures::Either::First((shutdown_reason, shutdown_timeout)) => {
                             LoopResult::Stop(Ok(DisconnectionInfo::with_shutdown_reason(
@@ -787,7 +784,7 @@ impl<
                     }
                 }
                 Err(err) => {
-                    log_error!("{:?}", crate::logging::Debug2Format(&err));
+                    log_error!("{:?}", logging::Debug2Format(&err));
                     continue;
                 }
             };
