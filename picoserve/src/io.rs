@@ -364,8 +364,6 @@ impl<'s> Socket<super::EmbassyRuntime> for embassy_net::tcp::TcpSocket<'s> {
     ) -> Result<(), crate::Error<Self::Error>> {
         use futures_util::{FutureExt, TryFutureExt};
 
-        use crate::futures::TryThenPendForever;
-
         self.close();
 
         let (mut rx, mut tx) = self.split();
@@ -380,9 +378,9 @@ impl<'s> Socket<super::EmbassyRuntime> for embassy_net::tcp::TcpSocket<'s> {
                         .map_err(crate::Error::Read)
                 }),
             tx.flush()
-                .map_ok(crate::futures::IgnoredOutput::new)
+                .map_ok(crate::futures::ignore_output)
                 .map_err(crate::Error::Write)
-                .try_then_pend_forever(),
+                .and_then(crate::futures::pend_forever),
         )
         .await?;
 

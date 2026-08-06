@@ -1,14 +1,13 @@
 use core::{
     future::Future,
-    marker::PhantomData,
     pin::Pin,
     task::{Context, Poll},
 };
 
-use futures_util::TryFuture;
+use futures_util::FutureExt;
 use pin_project::pin_project;
 
-#[pin_project::pin_project(project = EitherProj)]
+#[pin_project(project = EitherProj)]
 pub enum Either<A, B> {
     First(#[pin] A),
     Second(#[pin] B),
@@ -53,158 +52,61 @@ impl<A, B> Either<A, B> {
     }
 }
 
-/// [`Future`] returned by [`select_either`], polling `a` before `b`.
-///
-/// Storing the futures in a struct keeps exactly one copy of each. An `async fn`
-/// taking them by value and `pin!`-ing them internally would instead keep both the
-/// argument slot and the post-move local live, doubling the size of every future
-/// passed in (see the composition in [`Select`]).
-#[pin_project]
-pub(crate) struct SelectEither<A, B> {
-    #[pin]
+pub(crate) fn select_either<A: Future, B: Future>(
     a: A,
-    #[pin]
     b: B,
-}
-
-impl<A: Future, B: Future> Future for SelectEither<A, B> {
-    type Output = Either<A::Output, B::Output>;
-
-    fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
-        let this = self.project();
-
-        if let Poll::Ready(output) = this.a.poll(cx) {
-            return Poll::Ready(Either::First(output));
-        }
-
-        if let Poll::Ready(output) = this.b.poll(cx) {
-            return Poll::Ready(Either::Second(output));
-        }
-
-        Poll::Pending
+) -> impl Future<Output = Either<A::Output, B::Output>> {
+    /// Storing the futures in a struct keeps exactly one copy of each. An `async fn`
+    /// taking them by value and `pin!`-ing them internally would instead keep both the
+    /// argument slot and the post-move local live, doubling the size of every future
+    /// passed in (see the composition in [`Select`]).
+    #[pin_project]
+    struct SelectEither<A, B> {
+        #[pin]
+        a: A,
+        #[pin]
+        b: B,
     }
-}
 
-pub(crate) fn select_either<A: Future, B: Future>(a: A, b: B) -> SelectEither<A, B> {
+    impl<A: Future, B: Future> Future for SelectEither<A, B> {
+        type Output = Either<A::Output, B::Output>;
+
+        fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+            let this = self.project();
+
+            if let Poll::Ready(output) = this.a.poll(cx) {
+                return Poll::Ready(Either::First(output));
+            }
+
+            if let Poll::Ready(output) = this.b.poll(cx) {
+                return Poll::Ready(Either::Second(output));
+            }
+
+            Poll::Pending
+        }
+    }
+
     SelectEither { a, b }
 }
 
-/// [`Future`] returned by [`select`].
-///
-/// Wrapping [`SelectEither`] in a struct (rather than an `async fn` that awaits it)
-/// avoids re-storing both futures: the nested `select` -> `select_either` then holds
-/// each future once instead of three times.
-#[pin_project]
-pub(crate) struct Select<A, B> {
-    #[pin]
-    inner: SelectEither<A, B>,
-}
-
-impl<A: Future, B: Future<Output = A::Output>> Future for Select<A, B> {
-    type Output = A::Output;
-
-    fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
-        match self.project().inner.poll(cx) {
-            Poll::Ready(Either::First(output) | Either::Second(output)) => Poll::Ready(output),
-            Poll::Pending => Poll::Pending,
-        }
-    }
-}
-
-pub(crate) fn select<A: Future, B: Future<Output = A::Output>>(a: A, b: B) -> Select<A, B> {
-    Select {
-        inner: select_either(a, b),
-    }
+pub(crate) fn select<A: Future, B: Future<Output = A::Output>>(
+    a: A,
+    b: B,
+) -> impl Future<Output = A::Output> {
+    select_either(a, b).map(|output| match output {
+        Either::First(output) | Either::Second(output) => output,
+    })
 }
 
 pub(crate) struct IgnoredOutput;
 
-impl IgnoredOutput {
-    pub fn new<T>(_ignored_output: T) -> Self {
-        Self
-    }
+pub(crate) fn ignore_output<T>(_: T) -> IgnoredOutput {
+    IgnoredOutput
 }
 
-#[pin_project::pin_project]
-pub(crate) struct ThenPendForeverFuture<F: Future<Output = IgnoredOutput>, T> {
-    #[pin]
-    maybe_future: Option<F>,
-    _output: PhantomData<fn() -> T>,
+pub(crate) fn pend_forever<T>(_: IgnoredOutput) -> impl Future<Output = T> {
+    core::future::pending()
 }
-
-impl<F: Future<Output = IgnoredOutput>, T> Future for ThenPendForeverFuture<F, T> {
-    type Output = T;
-
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let mut maybe_future = self.project().maybe_future;
-
-        if let Some(mut future) = maybe_future.as_mut().as_pin_mut() {
-            if future.as_mut().poll(cx).is_ready() {
-                maybe_future.set(None);
-            }
-        }
-
-        Poll::Pending
-    }
-}
-
-pub(crate) trait ThenPendForever: Future<Output = IgnoredOutput> + Sized {
-    fn then_pend_forever<T>(self) -> ThenPendForeverFuture<Self, T> {
-        ThenPendForeverFuture {
-            maybe_future: Some(self),
-            _output: PhantomData,
-        }
-    }
-}
-
-impl<F: Future<Output = IgnoredOutput>> ThenPendForever for F {}
-
-#[pin_project::pin_project]
-pub(crate) struct TryThenPendForeverFuture<F: TryFuture<Ok = IgnoredOutput>, T> {
-    #[pin]
-    maybe_future: Option<F>,
-    _output: PhantomData<fn() -> T>,
-}
-
-impl<F: TryFuture<Ok = IgnoredOutput>, T> Future for TryThenPendForeverFuture<F, T> {
-    type Output = Result<T, F::Error>;
-
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let mut maybe_future = self.project().maybe_future;
-
-        if let Some(mut future) = maybe_future.as_mut().as_pin_mut() {
-            match future.as_mut().try_poll(cx) {
-                Poll::Ready(Ok(_)) => {
-                    maybe_future.set(None);
-                    Poll::Pending
-                }
-                Poll::Ready(Err(error)) => {
-                    maybe_future.set(None);
-                    Poll::Ready(Err(error))
-                }
-                Poll::Pending => Poll::Pending,
-            }
-        } else {
-            Poll::Pending
-        }
-    }
-}
-
-#[cfg(feature = "embassy")]
-pub(crate) trait TryThenPendForever: TryFuture<Ok = IgnoredOutput> + Sized {
-    fn try_then_pend_forever<T>(self) -> TryThenPendForeverFuture<Self, T>
-    where
-        Self: TryFuture,
-    {
-        TryThenPendForeverFuture {
-            maybe_future: Some(self),
-            _output: PhantomData,
-        }
-    }
-}
-
-#[cfg(feature = "embassy")]
-impl<F: TryFuture<Ok = IgnoredOutput>> TryThenPendForever for F {}
 
 #[cfg(test)]
 mod tests {
