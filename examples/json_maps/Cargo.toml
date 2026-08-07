@@ -3,7 +3,7 @@ name = "json_maps"
 version = "0.1.0"
 edition = "2021"
 description = "An example showing different JSON values that maps can be serialized to"
-categories = ["Tokio", ":pinned"]
+categories = ["Tokio"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

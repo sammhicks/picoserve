@@ -3,7 +3,7 @@ name = "set_led"
 version = "0.1.0"
 edition = "2021"
 description = "Controlling the LED on the Raspberry Pi Pico via a web interface."
-categories = ["Embassy on Raspberry Pi Pico", ":pinned"]
+categories = ["Embassy on Raspberry Pi Pico"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
