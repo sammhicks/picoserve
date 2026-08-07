@@ -30,7 +30,9 @@ const MTU: usize = 1514;
 // with one NCM and one ACM interface
 #[embassy_executor::task]
 async fn logger_task(class: CdcAcmClass<'static, MyDriver>) {
-    embassy_usb_logger::with_class!(1024, log::LevelFilter::Info, class).await
+    use example_utils::log::{CommandHandler, ReceiverHandler};
+
+    embassy_usb_logger::with_class!(1024, log::LevelFilter::Info, class, CommandHandler).await
 }
 
 #[embassy_executor::task]
