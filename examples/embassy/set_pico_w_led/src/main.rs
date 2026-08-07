@@ -160,7 +160,7 @@ async fn main(spawner: embassy_executor::Spawner) {
     let (stack, runner) = embassy_net::new(
         net_device,
         embassy_net::Config::ipv4_static(embassy_net::StaticConfigV4 {
-            address: embassy_net::Ipv4Cidr::new(core::net::Ipv4Addr::new(10, 0, 0, 1), 24),
+            address: embassy_net::Ipv4Cidr::new(example_utils::ADDRESS, 24),
             gateway: None,
             dns_servers: Default::default(),
         }),
@@ -180,6 +180,11 @@ async fn main(spawner: embassy_executor::Spawner) {
             8,
         )
         .await;
+
+    spawner.must_spawn(example_utils::dhcp::dhcp_task(
+        example_utils::ADDRESS,
+        stack,
+    ));
 
     let shared_control = SharedControl(
         make_static!(Mutex<CriticalSectionRawMutex, Control<'static>>, Mutex::new(control)),

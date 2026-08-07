@@ -215,7 +215,7 @@ dependencies = [
  "embassy-futures",
  "embassy-net-driver-channel",
  "embassy-sync 0.7.2",
- "embassy-time",
+ "embassy-time 0.5.1",
  "embedded-hal 1.0.0",
  "futures",
  "heapless 0.8.0",
@@ -344,6 +344,38 @@ dependencies = [
 ]
 
 [[package]]
+name = "edge-dhcp"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e2ccd3a181a33c710e07c3f04623d7a11e9969b1e44a7276ead7873b049720cb"
+dependencies = [
+ "defmt 0.3.100",
+ "edge-nal",
+ "edge-raw",
+ "embassy-futures",
+ "embassy-time 0.4.0",
+ "heapless 0.8.0",
+ "num_enum 0.7.6",
+ "rand_core 0.6.4",
+]
+
+[[package]]
+name = "edge-nal"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ac19c3edcdad839c71cb919cd09a632d9915d630760b37f0b74290188c08f248"
+dependencies = [
+ "embassy-time 0.4.0",
+ "embedded-io-async 0.6.1",
+]
+
+[[package]]
+name = "edge-raw"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6207c84e9bc8df8ef3c155196df290f2a51f010bd60c2e78366e51979988bdb5"
+
+[[package]]
 name = "either"
 version = "1.16.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -424,7 +456,7 @@ dependencies = [
  "document-features",
  "embassy-net-driver",
  "embassy-sync 0.8.0",
- "embassy-time",
+ "embassy-time 0.5.1",
  "embedded-io-async 0.7.0",
  "embedded-nal-async",
  "heapless 0.9.3",
@@ -468,7 +500,7 @@ dependencies = [
  "embassy-futures",
  "embassy-hal-internal",
  "embassy-sync 0.7.2",
- "embassy-time",
+ "embassy-time 0.5.1",
  "embassy-time-driver",
  "embassy-time-queue-utils",
  "embassy-usb-driver",
@@ -517,6 +549,23 @@ dependencies = [
  "futures-core",
  "futures-sink",
  "heapless 0.9.3",
+]
+
+[[package]]
+name = "embassy-time"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f820157f198ada183ad62e0a66f554c610cdcd1a9f27d4b316358103ced7a1f8"
+dependencies = [
+ "cfg-if",
+ "critical-section",
+ "defmt 0.3.100",
+ "document-features",
+ "embassy-time-driver",
+ "embedded-hal 0.2.7",
+ "embedded-hal 1.0.0",
+ "embedded-hal-async",
+ "futures-util",
 ]
 
 [[package]]
@@ -688,6 +737,18 @@ name = "example_secrets"
 version = "0.1.0"
 
 [[package]]
+name = "example_utils"
+version = "0.1.0"
+dependencies = [
+ "defmt 1.1.1",
+ "edge-dhcp",
+ "embassy-executor",
+ "embassy-net",
+ "embassy-rp",
+ "embassy-sync 0.7.2",
+]
+
+[[package]]
 name = "fixed"
 version = "1.31.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -849,14 +910,16 @@ dependencies = [
  "cortex-m-rt",
  "cyw43",
  "cyw43-pio",
+ "defmt 1.1.1",
  "defmt-rtt",
  "embassy-executor",
  "embassy-futures",
  "embassy-net",
  "embassy-rp",
  "embassy-sync 0.7.2",
- "embassy-time",
+ "embassy-time 0.5.1",
  "example_secrets",
+ "example_utils",
  "log",
  "panic-probe",
  "picoserve",
@@ -1112,7 +1175,7 @@ dependencies = [
  "const-sha1",
  "defmt 1.1.1",
  "embassy-net",
- "embassy-time",
+ "embassy-time 0.5.1",
  "embedded-io-async 0.7.0",
  "futures-util",
  "heapless 0.8.0",

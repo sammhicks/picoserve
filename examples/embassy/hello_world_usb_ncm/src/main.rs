@@ -2,13 +2,11 @@
 #![no_main]
 #![feature(impl_trait_in_assoc_type)]
 
-use embassy_rp::{
-    peripherals::USB,
-};
+use embassy_rp::peripherals::USB;
 use embassy_usb::{
+    class::cdc_acm::{CdcAcmClass, State as AcmState},
     class::cdc_ncm::embassy_net::{Device, Runner, State as NetState},
     class::cdc_ncm::{CdcNcmClass, State as NcmState},
-    class::cdc_acm::{CdcAcmClass, State as AcmState},
     Builder, Config, UsbDevice,
 };
 use static_cell::StaticCell;
@@ -133,25 +131,31 @@ async fn main(spawner: embassy_executor::Spawner) {
 
     // Create the NCM net_device from the NCM class
     static NET_STATE: StaticCell<NetState<MTU, 4, 4>> = StaticCell::new();
-    let (runner, net_device) = ncm_class.into_embassy_net_device::<MTU, 4, 4>(NET_STATE.init(NetState::new()), our_mac_addr);
+    let (runner, net_device) = ncm_class
+        .into_embassy_net_device::<MTU, 4, 4>(NET_STATE.init(NetState::new()), our_mac_addr);
     let _ = spawner.spawn(usb_ncm_task(runner));
 
     // Init the network stack with static IPv4 and using the NCM device
     let (stack, runner) = embassy_net::new(
         net_device,
         embassy_net::Config::ipv4_static(embassy_net::StaticConfigV4 {
-            address: embassy_net::Ipv4Cidr::new(core::net::Ipv4Addr::new(10, 0, 0, 1), 24),
+            address: embassy_net::Ipv4Cidr::new(example_utils::ADDRESS, 24),
             gateway: None,
             dns_servers: Default::default(),
         }),
         make_static!(
-            embassy_net::StackResources<WEB_TASK_POOL_SIZE>,
+            embassy_net::StackResources<{ WEB_TASK_POOL_SIZE + example_utils::dhcp::SOCKET_COUNT }>,
             embassy_net::StackResources::new()
         ),
         embassy_rp::clocks::RoscRng.random(),
     );
 
     spawner.must_spawn(net_task(runner));
+
+    spawner.must_spawn(example_utils::dhcp::dhcp_task(
+        example_utils::ADDRESS,
+        stack,
+    ));
 
     // Start the web server and span its tasks
     let app = make_static!(AppRouter<AppProps>, AppProps.build_app());

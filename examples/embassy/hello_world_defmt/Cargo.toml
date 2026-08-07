@@ -19,6 +19,7 @@ cyw43-pio = "=0.8.0"
 embassy-rp = { version = "=0.8.0", features = ["rp2040", "critical-section-impl", "time-driver"] }
 
 cortex-m-rt = "0.7.3"
+defmt = "1.0.1"
 defmt-rtt = "1.0.0"
 embassy-executor = { version = "0.9.1", features = ["arch-cortex-m", "executor-thread", "nightly"] }
 embassy-futures = "0.1.2"
@@ -32,6 +33,7 @@ portable-atomic = { version = "1.6.0", features = ["critical-section"], default-
 rand = { version = "0.9.2", default-features = false }
 static_cell = { version = "2.0.0", features = ["nightly"] }
 example_secrets = { path = "../example_secrets" }
+example_utils = { path = "../example_utils", default-features = false, features = ["defmt"] }
 
 [profile.dev]
 # Rust debug is too slow.

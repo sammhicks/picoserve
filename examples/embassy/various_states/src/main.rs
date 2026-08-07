@@ -186,12 +186,12 @@ async fn main(spawner: embassy_executor::Spawner) {
     let (stack, runner) = embassy_net::new(
         net_device,
         embassy_net::Config::ipv4_static(embassy_net::StaticConfigV4 {
-            address: embassy_net::Ipv4Cidr::new(core::net::Ipv4Addr::new(10, 0, 0, 1), 24),
+            address: embassy_net::Ipv4Cidr::new(example_utils::ADDRESS, 24),
             gateway: None,
             dns_servers: Default::default(),
         }),
         make_static!(
-            embassy_net::StackResources<WEB_TASK_POOL_SIZE>,
+            embassy_net::StackResources<{ WEB_TASK_POOL_SIZE + example_utils::dhcp::SOCKET_COUNT }>,
             embassy_net::StackResources::new()
         ),
         embassy_rp::clocks::RoscRng.random(),
@@ -206,6 +206,11 @@ async fn main(spawner: embassy_executor::Spawner) {
             8,
         )
         .await;
+
+    spawner.must_spawn(example_utils::dhcp::dhcp_task(
+        example_utils::ADDRESS,
+        stack,
+    ));
 
     // Possibly loaded from flash or some other config.
     let service_name = "Fallback Service";
