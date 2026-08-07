@@ -7,6 +7,7 @@ members = [
     "graceful_shutdown_using_future_array",
     "graceful_shutdown_using_tasks",
     "hello_world",
+    "hello_world_usb_ncm",
     "huge_requests",
     "set_pico_w_led",
     "various_states",
@@ -25,10 +26,13 @@ embassy-rp = { version = "=0.8.0", features = ["rp2040", "critical-section-impl"
 cortex-m-rt = "0.7.3"
 embassy-executor = { version = "0.9.1", features = ["arch-cortex-m", "executor-thread", "nightly"] }
 embassy-futures = "0.1.2"
-embassy-net = { version = "0.9.1", features = ["tcp", "proto-ipv4", "medium-ethernet"] }
+embassy-net = { version = "0.9.1", features = ["icmp", "auto-icmp-echo-reply", "tcp", "proto-ipv4", "medium-ethernet"] }
 embassy-sync = "0.7.2"
 embassy-time = "0.5.0"
-embassy-usb-logger = "0.5.1"
+embassy-usb = "0.6.0"
+embassy-usb-host = "0.1.0"
+embassy-usb-driver = "0.2.2"
+embassy-usb-logger = "0.6.0"
 log = { version = "0.4.22", default-features = false }
 panic-persist = { version = "0.3.0", features = ["utf8"] }
 picoserve = { path = "../../picoserve", features = ["embassy", "log"] }
