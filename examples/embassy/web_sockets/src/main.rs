@@ -169,7 +169,7 @@ async fn main(spawner: embassy_executor::Spawner) {
             dns_servers: Default::default(),
         }),
         make_static!(
-            embassy_net::StackResources::<WEB_TASK_POOL_SIZE>,
+            embassy_net::StackResources::<{ WEB_TASK_POOL_SIZE + example_utils::dhcp::SOCKET_COUNT }>,
             embassy_net::StackResources::new()
         ),
         embassy_rp::clocks::RoscRng.random(),
