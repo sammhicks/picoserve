@@ -744,7 +744,7 @@ pub struct Redirect {
 
 impl Redirect {
     /// Create a new [`Redirect`] that uses a 303 "See Other" status code.
-    pub fn to(location: &'static str) -> Self {
+    pub const fn to(location: &'static str) -> Self {
         Self {
             status_code: StatusCode::SEE_OTHER,
             location,
