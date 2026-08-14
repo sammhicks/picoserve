@@ -1,6 +1,6 @@
 use picoserve::{
     response::{self, StatusCode},
-    routing::{get, get_service, post},
+    routing::{get, post},
 };
 
 struct NewMessage(String);
@@ -49,31 +49,32 @@ async fn main() -> anyhow::Result<()> {
     let (messages_tx, messages_rx) = tokio::sync::watch::channel(String::new());
 
     let app = std::rc::Rc::new(
-        picoserve::Router::new()
-            .route(
-                "/",
-                get_service(response::File::html(include_str!("index.html"))),
-            )
-            .route(
-                "/index.css",
-                get_service(response::File::css(include_str!("index.css"))),
-            )
-            .route(
-                "/index.js",
-                get_service(response::File::javascript(include_str!("index.js"))),
-            )
-            .route(
-                "/set_message",
-                post(async move |NewMessage(message)| {
-                    messages_tx
-                        .send(message)
-                        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "Failed to send message"))
-                }),
-            )
-            .route(
-                "/events",
-                get(async move || response::EventStream(Events(messages_rx.clone()))),
-            ),
+        picoserve::Router::from_service(
+            const {
+                use picoserve::response::File;
+
+                picoserve::response::Directory {
+                    files: &[
+                        ("", File::html(include_str!("index.html"))),
+                        ("index.css", File::css(include_str!("index.css"))),
+                        ("index.js", File::javascript(include_str!("index.js"))),
+                    ],
+                    sub_directories: &[],
+                }
+            },
+        )
+        .route(
+            "/set_message",
+            post(async move |NewMessage(message)| {
+                messages_tx
+                    .send(message)
+                    .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "Failed to send message"))
+            }),
+        )
+        .route(
+            "/events",
+            get(async move || response::EventStream(Events(messages_rx.clone()))),
+        ),
     );
 
     let socket = tokio::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, port)).await?;

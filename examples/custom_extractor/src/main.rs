@@ -3,7 +3,7 @@
 use picoserve::{
     extract::FromRequest,
     response::{ErrorWithStatusCode, IntoResponse},
-    routing::{get_service, post},
+    routing::post,
 };
 
 struct Number {
@@ -52,16 +52,20 @@ async fn main() -> anyhow::Result<()> {
     let port = 8000;
 
     let app = std::rc::Rc::new(
-        picoserve::Router::new()
-            .route(
-                "/",
-                get_service(picoserve::response::File::html(include_str!("index.html"))),
-            )
-            .route(
-                "/index.js",
-                get_service(picoserve::response::File::html(include_str!("index.js"))),
-            )
-            .route("/number", post(handler_with_extractor)),
+        picoserve::Router::from_service(
+            const {
+                use picoserve::response::File;
+
+                picoserve::response::Directory {
+                    files: &[
+                        ("", File::html(include_str!("index.html"))),
+                        ("index.js", File::javascript(include_str!("index.js"))),
+                    ],
+                    sub_directories: &[],
+                }
+            },
+        )
+        .route("/number", post(handler_with_extractor)),
     );
 
     let socket = tokio::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, port)).await?;

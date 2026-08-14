@@ -14,7 +14,7 @@ use panic_persist as _;
 use picoserve::{
     make_static,
     response::DebugValue,
-    routing::{get, get_service, parse_path_segment, PathRouter},
+    routing::{get, parse_path_segment, PathRouter},
     AppBuilder, AppRouter,
 };
 use rand::Rng;
@@ -71,32 +71,31 @@ impl AppBuilder for AppProps {
     fn build_app(self) -> picoserve::Router<Self::PathRouter> {
         let Self { state } = self;
 
-        picoserve::Router::new()
-            .route(
-                "/",
-                get_service(picoserve::response::File::html(include_str!("index.html"))),
-            )
-            .route(
-                "/index.css",
-                get_service(picoserve::response::File::css(include_str!("index.css"))),
-            )
-            .route(
-                "/index.js",
-                get_service(picoserve::response::File::javascript(include_str!(
-                    "index.js"
-                ))),
-            )
-            .route(
-                ("/set_led", parse_path_segment()),
-                get(
-                    |led_is_on, State(SharedControl(control)): State<SharedControl>| async move {
-                        log::info!("Setting led to {}", if led_is_on { "ON" } else { "OFF" });
-                        control.lock().await.gpio_set(0, led_is_on).await;
-                        DebugValue(led_is_on)
-                    },
-                ),
-            )
-            .with_state(state)
+        picoserve::Router::from_service(
+            const {
+                use picoserve::response::File;
+
+                picoserve::response::Directory {
+                    files: &[
+                        ("", File::html(include_str!("index.html"))),
+                        ("index.css", File::css(include_str!("index.css"))),
+                        ("index.js", File::javascript(include_str!("index.js"))),
+                    ],
+                    sub_directories: &[],
+                }
+            },
+        )
+        .route(
+            ("/set_led", parse_path_segment()),
+            get(
+                |led_is_on, State(SharedControl(control)): State<SharedControl>| async move {
+                    log::info!("Setting led to {}", if led_is_on { "ON" } else { "OFF" });
+                    control.lock().await.gpio_set(0, led_is_on).await;
+                    DebugValue(led_is_on)
+                },
+            ),
+        )
+        .with_state(state)
     }
 }
 

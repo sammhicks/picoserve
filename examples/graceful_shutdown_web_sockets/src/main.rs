@@ -1,7 +1,7 @@
 use futures_util::FutureExt;
 use picoserve::{
     response,
-    routing::{get, get_service, post},
+    routing::{get, post},
     time::Duration,
 };
 
@@ -116,32 +116,33 @@ async fn main() -> anyhow::Result<()> {
     let (update_server_state, mut server_state) = tokio::sync::watch::channel(ServerState::Running);
 
     let app = std::rc::Rc::new(
-        picoserve::Router::new()
-            .route(
-                "/",
-                get_service(response::File::html(include_str!("index.html"))),
-            )
-            .route(
-                "/index.css",
-                get_service(response::File::css(include_str!("index.css"))),
-            )
-            .route(
-                "/index.js",
-                get_service(response::File::javascript(include_str!("index.js"))),
-            )
-            .route(
-                "/shutdown",
-                post(move || {
-                    let _ = update_server_state.send(ServerState::Shutdown);
-                    async { "Shutting Down\n" }
-                }),
-            )
-            .route(
-                "/ws",
-                get(|upgrade: response::WebSocketUpgrade| async move {
-                    upgrade.on_upgrade(WebSocketCallback)
-                }),
-            ),
+        picoserve::Router::from_service(
+            const {
+                use picoserve::response::File;
+
+                picoserve::response::Directory {
+                    files: &[
+                        ("", File::html(include_str!("index.html"))),
+                        ("index.css", File::css(include_str!("index.css"))),
+                        ("index.js", File::javascript(include_str!("index.js"))),
+                    ],
+                    sub_directories: &[],
+                }
+            },
+        )
+        .route(
+            "/shutdown",
+            post(move || {
+                let _ = update_server_state.send(ServerState::Shutdown);
+                async { "Shutting Down\n" }
+            }),
+        )
+        .route(
+            "/ws",
+            get(|upgrade: response::WebSocketUpgrade| async move {
+                upgrade.on_upgrade(WebSocketCallback)
+            }),
+        ),
     );
 
     let socket = tokio::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, port)).await?;

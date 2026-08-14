@@ -9,12 +9,7 @@ use embassy_rp::{
     pio::Pio,
 };
 use panic_persist as _;
-use picoserve::{
-    make_static,
-    response::ws,
-    routing::{get, get_service},
-    AppBuilder, AppRouter,
-};
+use picoserve::{make_static, response::ws, routing::get, AppBuilder, AppRouter};
 use rand::Rng;
 
 embassy_rp::bind_interrupts!(struct Irqs {
@@ -48,27 +43,26 @@ impl AppBuilder for AppProps {
     type PathRouter = impl picoserve::routing::PathRouter;
 
     fn build_app(self) -> picoserve::Router<Self::PathRouter> {
-        picoserve::Router::new()
-            .route(
-                "/",
-                get_service(picoserve::response::File::html(include_str!("index.html"))),
-            )
-            .route(
-                "/index.css",
-                get_service(picoserve::response::File::css(include_str!("index.css"))),
-            )
-            .route(
-                "/index.js",
-                get_service(picoserve::response::File::javascript(include_str!(
-                    "index.js"
-                ))),
-            )
-            .route(
-                "/ws",
-                get(async |upgrade: picoserve::response::WebSocketUpgrade| {
-                    upgrade.on_upgrade(WebsocketEcho).with_protocol("echo")
-                }),
-            )
+        picoserve::Router::from_service(
+            const {
+                use picoserve::response::File;
+
+                picoserve::response::Directory {
+                    files: &[
+                        ("", File::html(include_str!("index.html"))),
+                        ("index.css", File::css(include_str!("index.css"))),
+                        ("index.js", File::javascript(include_str!("index.js"))),
+                    ],
+                    sub_directories: &[],
+                }
+            },
+        )
+        .route(
+            "/ws",
+            get(async |upgrade: picoserve::response::WebSocketUpgrade| {
+                upgrade.on_upgrade(WebsocketEcho).with_protocol("echo")
+            }),
+        )
     }
 }
 
