@@ -503,6 +503,10 @@ impl<'a, W: fmt::Write> serde::Serializer for SerializeObjectKey<'a, W> {
         Err(object_key_must_be_a_string())
     }
 
+    fn collect_str<T: fmt::Display + ?Sized>(self, value: &T) -> Result<Self::Ok, Self::Error> {
+        self.serializer.collect_str(value)
+    }
+
     serialize_forward_to_serializer! {
         serialize_bool bool
         serialize_f32 f32 serialize_f64 f64
