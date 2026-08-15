@@ -1,0 +1,34 @@
+[package]
+name = "server_sent_events"
+version = "0.1.0"
+edition = "2021"
+description = "A long-lived connection generating Server-Sent Events with Keep-Alive messages."
+categories = ["Embassy on Raspberry Pi Pico"]
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[[bin]]
+name = "server_sent_events"
+test = false
+bench = false
+
+[dependencies]
+cortex-m-rt = { workspace = true }
+cyw43 = { workspace = true }
+cyw43-pio = { workspace = true }
+embassy-executor = { workspace = true }
+embassy-futures = { workspace = true }
+embassy-net = { workspace = true }
+embassy-rp = { workspace = true }
+embassy-sync = { workspace = true }
+embassy-time = { workspace = true }
+embassy-usb-logger = { workspace = true }
+heapless = { workspace = true}
+log = { workspace = true }
+panic-persist = { workspace = true }
+picoserve = { workspace = true }
+portable-atomic = { workspace = true }
+rand = { workspace = true }
+static_cell = { workspace = true }
+example_secrets = { path = "../example_secrets" }
+example_utils = { path = "../example_utils" }

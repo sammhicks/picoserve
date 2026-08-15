@@ -1713,6 +1713,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "server_sent_events"
+version = "0.1.0"
+dependencies = [
+ "cortex-m-rt",
+ "cyw43",
+ "cyw43-pio",
+ "embassy-executor",
+ "embassy-futures",
+ "embassy-net",
+ "embassy-rp",
+ "embassy-sync 0.7.2",
+ "embassy-time 0.5.1",
+ "embassy-usb-logger",
+ "example_secrets",
+ "example_utils",
+ "heapless 0.8.0",
+ "log",
+ "panic-persist",
+ "picoserve",
+ "portable-atomic",
+ "rand",
+ "static_cell",
+]
+
+[[package]]
 name = "set_led"
 version = "0.1.0"
 dependencies = [

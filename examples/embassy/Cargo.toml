@@ -9,6 +9,7 @@ members = [
     "hello_world",
     "hello_world_usb_ncm",
     "huge_requests",
+    "server_sent_events",
     "set_pico_w_led",
     "various_states",
     "web_sockets"
@@ -33,6 +34,7 @@ embassy-usb = "0.6.0"
 embassy-usb-host = "0.1.0"
 embassy-usb-driver = "0.2.2"
 embassy-usb-logger = "0.6.0"
+heapless = "0.8.0"
 log = { version = "0.4.22", default-features = false }
 panic-persist = { version = "0.3.0", features = ["utf8"] }
 picoserve = { path = "../../picoserve", features = ["embassy", "log"] }
