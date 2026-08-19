@@ -5,10 +5,11 @@
 //!     + [`File`](crate::response::fs::File)
 //!     + [`Directory`](crate::response::fs::File)
 
-use core::{fmt, marker::PhantomData, str::FromStr};
+use core::{fmt, future::Future, marker::PhantomData, str::FromStr};
 
 use crate::{
     extract::{FromRequest, FromRequestParts},
+    futures::Either,
     io::Read,
     request::{Path, Request},
     response::{with_state::IntoResponseWithState, IntoResponse, ResponseWriter, StatusCode},
@@ -781,34 +782,31 @@ impl<
         Fallback: PathRouter<State, CurrentPathParameters>,
     > PathRouter<State, CurrentPathParameters> for Route<PD, Handler, Fallback>
 {
-    async fn call_path_router<R: Read, W: ResponseWriter<Error = R::Error>>(
+    fn call_path_router<R: Read, W: ResponseWriter<Error = R::Error>>(
         &self,
         state: &State,
         current_path_parameters: CurrentPathParameters,
         path: Path<'_>,
         request: Request<'_, R>,
         response_writer: W,
-    ) -> Result<ResponseSent, W::Error> {
+    ) -> impl Future<Output = Result<ResponseSent, W::Error>> {
         match self
             .path_description
             .parse_entire_path(current_path_parameters, path)
         {
-            Ok(path_parameters) => {
-                self.handler
-                    .call_method_handler(state, path_parameters, request, response_writer)
-                    .await
-            }
-            Err(current_path_parameters) => {
-                self.fallback
-                    .call_path_router(
-                        state,
-                        current_path_parameters,
-                        path,
-                        request,
-                        response_writer,
-                    )
-                    .await
-            }
+            Ok(path_parameters) => Either::First(self.handler.call_method_handler(
+                state,
+                path_parameters,
+                request,
+                response_writer,
+            )),
+            Err(current_path_parameters) => Either::Second(self.fallback.call_path_router(
+                state,
+                current_path_parameters,
+                path,
+                request,
+                response_writer,
+            )),
         }
     }
 }
@@ -849,40 +847,32 @@ impl<
     > PathRouter<State, CurrentPathParameters>
     for MethodHandlerServicePathRouter<PD, Service, Fallback>
 {
-    async fn call_path_router<R: Read, W: ResponseWriter<Error = R::Error>>(
+    fn call_path_router<R: Read, W: ResponseWriter<Error = R::Error>>(
         &self,
         state: &State,
         current_path_parameters: CurrentPathParameters,
         path: Path<'_>,
         request: Request<'_, R>,
         response_writer: W,
-    ) -> Result<ResponseSent, W::Error> {
+    ) -> impl Future<Output = Result<ResponseSent, W::Error>> {
         match self
             .path_description
             .parse_entire_path(current_path_parameters, path)
         {
-            Ok(path_parameters) => {
-                self.service
-                    .call_method_handler_service(
-                        state,
-                        path_parameters,
-                        request.parts.method(),
-                        request,
-                        response_writer,
-                    )
-                    .await
-            }
-            Err(current_path_parameters) => {
-                self.fallback
-                    .call_path_router(
-                        state,
-                        current_path_parameters,
-                        path,
-                        request,
-                        response_writer,
-                    )
-                    .await
-            }
+            Ok(path_parameters) => Either::First(self.service.call_method_handler_service(
+                state,
+                path_parameters,
+                request.parts.method(),
+                request,
+                response_writer,
+            )),
+            Err(current_path_parameters) => Either::Second(self.fallback.call_path_router(
+                state,
+                current_path_parameters,
+                path,
+                request,
+                response_writer,
+            )),
         }
     }
 }
@@ -903,40 +893,32 @@ impl<
         Fallback: PathRouter<State, CurrentPathParameters>,
     > PathRouter<State, CurrentPathParameters> for NestedService<PD, Service, Fallback>
 {
-    async fn call_path_router<R: Read, W: ResponseWriter<Error = R::Error>>(
+    fn call_path_router<R: Read, W: ResponseWriter<Error = R::Error>>(
         &self,
         state: &State,
         current_path_parameters: CurrentPathParameters,
         path: Path<'_>,
         request: Request<'_, R>,
         response_writer: W,
-    ) -> Result<ResponseSent, W::Error> {
+    ) -> impl Future<Output = Result<ResponseSent, W::Error>> {
         match self
             .path_description
             .parse_path_prefix(current_path_parameters, path)
         {
-            Ok((current_path_parameters, path)) => {
-                self.service
-                    .call_path_router(
-                        state,
-                        current_path_parameters,
-                        path,
-                        request,
-                        response_writer,
-                    )
-                    .await
-            }
-            Err(current_path_parameters) => {
-                self.fallback
-                    .call_path_router(
-                        state,
-                        current_path_parameters,
-                        path,
-                        request,
-                        response_writer,
-                    )
-                    .await
-            }
+            Ok((current_path_parameters, path)) => Either::First(self.service.call_path_router(
+                state,
+                current_path_parameters,
+                path,
+                request,
+                response_writer,
+            )),
+            Err(current_path_parameters) => Either::Second(self.fallback.call_path_router(
+                state,
+                current_path_parameters,
+                path,
+                request,
+                response_writer,
+            )),
         }
     }
 }
@@ -974,40 +956,32 @@ impl<
     > PathRouter<State, CurrentPathParameters>
     for PathRouterServicePathRouter<PD, Service, Fallback>
 {
-    async fn call_path_router<R: Read, W: ResponseWriter<Error = R::Error>>(
+    fn call_path_router<R: Read, W: ResponseWriter<Error = R::Error>>(
         &self,
         state: &State,
         current_path_parameters: CurrentPathParameters,
         path: Path<'_>,
         request: Request<'_, R>,
         response_writer: W,
-    ) -> Result<ResponseSent, W::Error> {
+    ) -> impl Future<Output = Result<ResponseSent, W::Error>> {
         match self
             .path_description
             .parse_path_prefix(current_path_parameters, path)
         {
-            Ok((path_parameters, path)) => {
-                self.service
-                    .call_path_router_service(
-                        state,
-                        path_parameters,
-                        path,
-                        request,
-                        response_writer,
-                    )
-                    .await
-            }
-            Err(current_path_parameters) => {
-                self.fallback
-                    .call_path_router(
-                        state,
-                        current_path_parameters,
-                        path,
-                        request,
-                        response_writer,
-                    )
-                    .await
-            }
+            Ok((path_parameters, path)) => Either::First(self.service.call_path_router_service(
+                state,
+                path_parameters,
+                path,
+                request,
+                response_writer,
+            )),
+            Err(current_path_parameters) => Either::Second(self.fallback.call_path_router(
+                state,
+                current_path_parameters,
+                path,
+                request,
+                response_writer,
+            )),
         }
     }
 }
@@ -1022,23 +996,21 @@ impl<Service> sealed::PathRouterIsSealed for ServicePathRouter<Service> {}
 impl<State, CurrentPathParameters, Service: PathRouterService<State, CurrentPathParameters>>
     PathRouter<State, CurrentPathParameters> for ServicePathRouter<Service>
 {
-    async fn call_path_router<R: Read, W: ResponseWriter<Error = R::Error>>(
+    fn call_path_router<R: Read, W: ResponseWriter<Error = R::Error>>(
         &self,
         state: &State,
         current_path_parameters: CurrentPathParameters,
         path: Path<'_>,
         request: Request<'_, R>,
         response_writer: W,
-    ) -> Result<ResponseSent, W::Error> {
-        self.service
-            .call_path_router_service(
-                state,
-                current_path_parameters,
-                path,
-                request,
-                response_writer,
-            )
-            .await
+    ) -> impl Future<Output = Result<ResponseSent, W::Error>> {
+        self.service.call_path_router_service(
+            state,
+            current_path_parameters,
+            path,
+            request,
+            response_writer,
+        )
     }
 }
 
@@ -1440,23 +1412,21 @@ impl<State, CurrentPathParameters, RouterInner: PathRouter<State, CurrentPathPar
             > PathRouter<NewState, CurrentPathParameters>
             for WithState<State, StateRef, RouterInner>
         {
-            async fn call_path_router<R: Read, W: ResponseWriter<Error = R::Error>>(
+            fn call_path_router<R: Read, W: ResponseWriter<Error = R::Error>>(
                 &self,
                 _state: &NewState,
                 current_path_parameters: CurrentPathParameters,
                 path: Path<'_>,
                 request: Request<'_, R>,
                 response_writer: W,
-            ) -> Result<ResponseSent, W::Error> {
-                self.router
-                    .call_path_router(
-                        self.state_ref.borrow(),
-                        current_path_parameters,
-                        path,
-                        request,
-                        response_writer,
-                    )
-                    .await
+            ) -> impl Future<Output = Result<ResponseSent, W::Error>> {
+                self.router.call_path_router(
+                    self.state_ref.borrow(),
+                    current_path_parameters,
+                    path,
+                    request,
+                    response_writer,
+                )
             }
         }
 
@@ -1502,37 +1472,29 @@ impl<
         Right: PathRouter<State, CurrentPathParameters>,
     > PathRouter<State, CurrentPathParameters> for EitherPathRoute<Left, Right>
 {
-    async fn call_path_router<R: Read, W: ResponseWriter<Error = R::Error>>(
+    fn call_path_router<R: Read, W: ResponseWriter<Error = R::Error>>(
         &self,
         state: &State,
         current_path_parameters: CurrentPathParameters,
         path: Path<'_>,
         request: Request<'_, R>,
         response_writer: W,
-    ) -> Result<ResponseSent, W::Error> {
+    ) -> impl Future<Output = Result<ResponseSent, W::Error>> {
         match self {
-            EitherPathRoute::Left { router } => {
-                router
-                    .call_path_router(
-                        state,
-                        current_path_parameters,
-                        path,
-                        request,
-                        response_writer,
-                    )
-                    .await
-            }
-            EitherPathRoute::Right { router } => {
-                router
-                    .call_path_router(
-                        state,
-                        current_path_parameters,
-                        path,
-                        request,
-                        response_writer,
-                    )
-                    .await
-            }
+            EitherPathRoute::Left { router } => Either::First(router.call_path_router(
+                state,
+                current_path_parameters,
+                path,
+                request,
+                response_writer,
+            )),
+            EitherPathRoute::Right { router } => Either::Second(router.call_path_router(
+                state,
+                current_path_parameters,
+                path,
+                request,
+                response_writer,
+            )),
         }
     }
 }
