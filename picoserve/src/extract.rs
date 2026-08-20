@@ -202,19 +202,25 @@ impl<'r, State> FromRequest<'r, State> for alloc::vec::Vec<u8> {
 impl<'r, State> FromRequest<'r, State> for alloc::borrow::Cow<'r, [u8]> {
     type Rejection = ReadAllBodyError;
 
-    async fn from_request<R: Read>(
+    fn from_request<R: Read>(
         state: &'r State,
         request_parts: RequestParts<'r>,
         request_body: RequestBody<'r, R>,
-    ) -> Result<Self, Self::Rejection> {
+    ) -> impl core::future::Future<Output = Result<Self, Self::Rejection>> {
+        use futures_util::TryFutureExt;
+
+        use crate::futures::Either;
+
         if request_body.entire_body_fits_into_buffer() {
-            <&'r [u8]>::from_request(state, request_parts, request_body)
-                .await
-                .map(alloc::borrow::Cow::Borrowed)
+            Either::First(
+                <&'r [u8]>::from_request(state, request_parts, request_body)
+                    .map_ok(alloc::borrow::Cow::Borrowed),
+            )
         } else {
-            alloc::vec::Vec::<u8>::from_request(state, request_parts, request_body)
-                .await
-                .map(alloc::borrow::Cow::Owned)
+            Either::Second(
+                alloc::vec::Vec::<u8>::from_request(state, request_parts, request_body)
+                    .map_ok(alloc::borrow::Cow::Owned),
+            )
         }
     }
 }
@@ -301,19 +307,25 @@ impl<'r, State> FromRequest<'r, State> for alloc::string::String {
 impl<'r, State> FromRequest<'r, State> for alloc::borrow::Cow<'r, str> {
     type Rejection = FailedToExtractEntireBodyAsStringError;
 
-    async fn from_request<R: Read>(
+    fn from_request<R: Read>(
         state: &'r State,
         request_parts: RequestParts<'r>,
         request_body: RequestBody<'r, R>,
-    ) -> Result<Self, Self::Rejection> {
+    ) -> impl core::future::Future<Output = Result<Self, Self::Rejection>> {
+        use futures_util::TryFutureExt;
+
+        use crate::futures::Either;
+
         if request_body.entire_body_fits_into_buffer() {
-            <&'r str>::from_request(state, request_parts, request_body)
-                .await
-                .map(alloc::borrow::Cow::Borrowed)
+            Either::First(
+                <&'r str>::from_request(state, request_parts, request_body)
+                    .map_ok(alloc::borrow::Cow::Borrowed),
+            )
         } else {
-            alloc::string::String::from_request(state, request_parts, request_body)
-                .await
-                .map(alloc::borrow::Cow::Owned)
+            Either::Second(
+                alloc::string::String::from_request(state, request_parts, request_body)
+                    .map_ok(alloc::borrow::Cow::Owned),
+            )
         }
     }
 }

@@ -28,7 +28,7 @@ extern crate std;
 
 use core::marker::PhantomData;
 
-use futures_util::FutureExt;
+use futures_util::{FutureExt, TryFutureExt};
 
 #[cfg(feature = "json")]
 mod json;
@@ -266,8 +266,11 @@ impl<R: io::Read> io::Read for MapReadErrorReader<R>
 where
     R::Error: 'static,
 {
-    async fn read(&mut self, buf: &mut [u8]) -> Result<usize, Self::Error> {
-        self.0.read(buf).await.map_err(Error::Read)
+    fn read(
+        &mut self,
+        buf: &mut [u8],
+    ) -> impl core::future::Future<Output = Result<usize, Self::Error>> {
+        self.0.read(buf).map_err(Error::Read)
     }
 
     async fn read_exact(&mut self, buf: &mut [u8]) -> Result<(), io::ReadExactError<Self::Error>> {
@@ -515,10 +518,11 @@ async fn serve_and_shutdown<
     match result {
         Ok(disconnection_info) => {
             if connection_flags.connection_must_be_aborted() {
-                socket.abort(&config.timeouts, timer).await?;
+                futures::Either::First(socket.abort(&config.timeouts, timer))
             } else {
-                socket.shutdown(&config.timeouts, timer).await?;
+                futures::Either::Second(socket.shutdown(&config.timeouts, timer))
             }
+            .await?;
 
             Ok(disconnection_info)
         }
