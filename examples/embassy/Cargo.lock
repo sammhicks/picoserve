@@ -1782,7 +1782,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "set_led"
+name = "set_pico_w_led"
 version = "0.1.0"
 dependencies = [
  "cortex-m-rt",

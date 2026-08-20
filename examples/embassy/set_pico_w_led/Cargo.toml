@@ -1,5 +1,5 @@
 [package]
-name = "set_led"
+name = "set_pico_w_led"
 version = "0.1.0"
 edition = "2021"
 description = "Controlling the LED on the Raspberry Pi Pico via a web interface."
@@ -8,7 +8,7 @@ categories = ["Embassy on Raspberry Pi Pico"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [[bin]]
-name = "set_led"
+name = "set_pico_w_led"
 test = false
 bench = false
 
@@ -31,3 +31,6 @@ rand = { workspace = true }
 static_cell = { workspace = true }
 example_secrets = { path = "../example_secrets" }
 example_utils = { path = "../example_utils" }
+
+[package.metadata.size_regression_test]
+expected_size = 6072
