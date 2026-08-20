@@ -24,24 +24,22 @@ impl<W: crate::io::BaseWrite> crate::io::BaseWrite for FragmentedWriter<W> {
 }
 
 impl<W: crate::io::Write> crate::io::Write for FragmentedWriter<W> {
-    fn write_with<F: FnOnce(&mut crate::mem::BorrowedBuffer<'_>) -> R, R>(
+    fn write_with<F: FnOnce(crate::mem::BorrowedCursor<'_>) -> R, R>(
         &mut self,
         f: F,
     ) -> impl core::future::Future<Output = Result<R, Self::Error>> {
-        self.writer.write_with(|buffer| {
-            let buffer_capacity = buffer.capacity();
-
-            let mut cursor = buffer.unfilled();
+        self.writer.write_with(|mut cursor| {
+            let buffer_capacity = cursor.remaining_capacity();
 
             let mut fragment_buffer = crate::mem::BorrowedBuffer::new(
                 &mut cursor.as_mut_slice()[..self.rng.random_range(1..=buffer_capacity)],
             );
 
-            let output = f(&mut fragment_buffer);
+            let output = f(fragment_buffer.unfilled());
 
             let fragment_length = fragment_buffer.len();
 
-            buffer.unfilled().advance(fragment_length);
+            cursor.advance(fragment_length);
 
             output
         })

@@ -142,7 +142,7 @@ impl BaseWrite for PipeTx {
 }
 
 impl Write for PipeTx {
-    async fn write_with<F: FnOnce(&mut mem::BorrowedBuffer<'_>) -> R, R>(
+    async fn write_with<F: FnOnce(mem::BorrowedCursor<'_>) -> R, R>(
         &mut self,
         f: F,
     ) -> Result<R, Self::Error> {

@@ -74,7 +74,7 @@ pub trait Write: BaseWrite {
     /// Call f with the largest contiguous slice of octets in the transmit buffer, and enqueue the filled bytes.
     ///
     /// If the writer is not ready to accept data, it waits until it is.
-    fn write_with<F: FnOnce(&mut BorrowedBuffer<'_>) -> R, R>(
+    fn write_with<F: FnOnce(BorrowedCursor<'_>) -> R, R>(
         &mut self,
         f: F,
     ) -> impl core::future::Future<Output = Result<R, Self::Error>>;
@@ -86,12 +86,12 @@ pub trait Write: BaseWrite {
 
         loop {
             return match self
-                .write_with(|buffer| {
-                    FormatBuffer::new(buffer.unfilled(), skip_count)
+                .write_with(|mut cursor| {
+                    let remaining_capacity = cursor.remaining_capacity();
+
+                    FormatBuffer::new(cursor.reborrow(), skip_count)
                         .write_fmt(args)
-                        .inspect_err(|_| {
-                            skip_count += buffer.len();
-                        })
+                        .inspect_err(|_| skip_count += remaining_capacity)
                 })
                 .await?
             {
@@ -111,7 +111,7 @@ pub trait Write: BaseWrite {
 }
 
 impl<W: Write> Write for &mut W {
-    fn write_with<F: FnOnce(&mut BorrowedBuffer<'_>) -> R, R>(
+    fn write_with<F: FnOnce(BorrowedCursor<'_>) -> R, R>(
         &mut self,
         f: F,
     ) -> impl core::future::Future<Output = Result<R, Self::Error>> {
@@ -128,14 +128,14 @@ impl<W: Write> Write for &mut W {
 
 #[cfg(test)]
 impl Write for alloc::vec::Vec<u8> {
-    async fn write_with<F: FnOnce(&mut BorrowedBuffer<'_>) -> R, R>(
+    async fn write_with<F: FnOnce(BorrowedCursor<'_>) -> R, R>(
         &mut self,
         f: F,
     ) -> Result<R, Self::Error> {
         let mut buffer = [0; 1024];
         let mut buffer = BorrowedBuffer::new(&mut buffer);
 
-        let output = f(&mut buffer);
+        let output = f(buffer.unfilled());
 
         self.extend_from_slice(buffer.filled());
 
@@ -216,7 +216,7 @@ pub(crate) mod tokio_support {
     }
 
     impl Write for TokioIo<tokio::net::tcp::WriteHalf<'_>> {
-        async fn write_with<F: FnOnce(&mut super::BorrowedBuffer<'_>) -> R, R>(
+        async fn write_with<F: FnOnce(super::BorrowedCursor<'_>) -> R, R>(
             &mut self,
             f: F,
         ) -> Result<R, Self::Error> {
@@ -225,7 +225,7 @@ pub(crate) mod tokio_support {
             let mut buffer = [0; 1024];
             let mut buffer = super::BorrowedBuffer::new(&mut buffer);
 
-            let output = f(&mut buffer);
+            let output = f(buffer.unfilled());
 
             self.0
                 .write_all(buffer.filled())
@@ -290,14 +290,14 @@ pub(crate) mod tokio_support {
 
 #[cfg(feature = "embassy")]
 impl<'a> Write for embassy_net::tcp::TcpWriter<'a> {
-    fn write_with<F: FnOnce(&mut BorrowedBuffer<'_>) -> R, R>(
+    fn write_with<F: FnOnce(BorrowedCursor<'_>) -> R, R>(
         &mut self,
         f: F,
     ) -> impl core::future::Future<Output = Result<R, Self::Error>> {
         embassy_net::tcp::TcpWriter::write_with(self, |buffer| {
             let mut buffer = BorrowedBuffer::new(buffer);
 
-            let output = f(&mut buffer);
+            let output = f(buffer.unfilled());
 
             (buffer.len(), output)
         })

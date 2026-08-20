@@ -69,6 +69,17 @@ pub struct FailedToAppendError<'a> {
     pub unwritten_data: &'a [u8],
 }
 
+#[derive(Clone, Copy)]
+pub struct BorrowedCursorPosition(usize);
+
+impl core::ops::Sub for BorrowedCursorPosition {
+    type Output = usize;
+
+    fn sub(self, rhs: Self) -> Self::Output {
+        self.0 - rhs.0
+    }
+}
+
 /// A writeable view of the unfilled portion of a [`BorrowedBuffer`].
 pub struct BorrowedCursor<'a> {
     /// The buffer's underlying data.
@@ -78,14 +89,21 @@ pub struct BorrowedCursor<'a> {
 }
 
 impl BorrowedCursor<'_> {
-    /// Returns the available space in the cursor.
-    pub fn remaining_capacity(&self) -> usize {
-        self.buffer.len().saturating_sub(self.written())
+    /// Reborrows this cursor by cloning it with a smaller lifetime.
+    pub fn reborrow(&mut self) -> BorrowedCursor<'_> {
+        let Self { buffer, filled } = self;
+
+        BorrowedCursor { buffer, filled }
     }
 
-    /// Returns the number of bytes written to the [`BorrowedBuffer`] this cursor was created from.
-    pub fn written(&self) -> usize {
-        *self.filled
+    /// Returns the available space in the cursor.
+    pub fn remaining_capacity(&self) -> usize {
+        BorrowedCursorPosition(self.buffer.len()) - self.position()
+    }
+
+    /// Returns the current [`position`](BorrowedCursorPosition) of the cursor, which implements [`Sub`](core::ops::Sub).
+    pub fn position(&self) -> BorrowedCursorPosition {
+        BorrowedCursorPosition(*self.filled)
     }
 
     fn filled_count_and_unfilled_slice(&mut self) -> (&mut usize, &mut [u8]) {
@@ -286,6 +304,10 @@ mod tests {
             let mut buffer = test_data.generate_blob(1..=128);
             let mut buffer = BorrowedBuffer::new(&mut buffer);
 
+            let start_position = buffer.unfilled().position();
+
+            assert_eq!(start_position.0, 0);
+
             for _ in 1..=test_data.generate_value_with_parameter(1..=100) {
                 if test_data.generate_value() {
                     _ = buffer
@@ -301,7 +323,7 @@ mod tests {
 
                 let cursor = buffer.unfilled();
                 assert_eq!(
-                    cursor.written() + cursor.remaining_capacity(),
+                    (cursor.position() - start_position) + cursor.remaining_capacity(),
                     buffer.capacity(),
                 )
             }

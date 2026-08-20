@@ -62,14 +62,14 @@ impl<W: Write> BaseWrite for EventDataWriterCore<W> {
 }
 
 impl<W: Write> Write for EventDataWriterCore<W> {
-    async fn write_with<F: FnOnce(&mut crate::mem::BorrowedBuffer<'_>) -> R, R>(
+    async fn write_with<F: FnOnce(crate::mem::BorrowedCursor<'_>) -> R, R>(
         &mut self,
         f: F,
     ) -> Result<R, Self::Error> {
         let mut buffer = [0; 128];
         let mut buffer = crate::mem::BorrowedBuffer::new(&mut buffer);
 
-        let output = f(&mut buffer);
+        let output = f(buffer.unfilled());
 
         self.write_all(buffer.filled()).await?;
 
@@ -369,14 +369,14 @@ mod tests {
     }
 
     impl Write for CountWriteSize {
-        async fn write_with<F: FnOnce(&mut mem::BorrowedBuffer<'_>) -> R, R>(
+        async fn write_with<F: FnOnce(mem::BorrowedCursor<'_>) -> R, R>(
             &mut self,
             f: F,
         ) -> Result<R, Self::Error> {
             let mut buffer = std::vec![0;1024];
             let mut buffer = crate::mem::BorrowedBuffer::new(&mut buffer);
 
-            let output = f(&mut buffer);
+            let output = f(buffer.unfilled());
 
             self.0 += buffer.len();
 
@@ -411,14 +411,14 @@ mod tests {
     }
 
     impl io::Write for ThrottledWriter {
-        async fn write_with<F: FnOnce(&mut mem::BorrowedBuffer<'_>) -> R, R>(
+        async fn write_with<F: FnOnce(mem::BorrowedCursor<'_>) -> R, R>(
             &mut self,
             f: F,
         ) -> Result<R, Self::Error> {
             let mut buffer = [0];
             let mut buffer = crate::mem::BorrowedBuffer::new(&mut buffer);
 
-            Ok(f(&mut buffer))
+            Ok(f(buffer.unfilled()))
         }
     }
 

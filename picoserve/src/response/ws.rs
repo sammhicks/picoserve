@@ -577,7 +577,7 @@ impl<W: Write> SocketTx<W> {
         self.writer.write_all(payload).await
     }
 
-    async fn write_frame_with<R, F: FnOnce(&mut crate::mem::BorrowedBuffer) -> R>(
+    async fn write_frame_with<R, F: FnOnce(crate::mem::BorrowedCursor) -> R>(
         &mut self,
         opcode: u8,
         is_final: bool,
@@ -588,10 +588,9 @@ impl<W: Write> SocketTx<W> {
 
         let (overflow_payload, output) = self
             .writer
-            .write_with(|buffer| {
+            .write_with(|mut cursor| {
                 // If there's space in the buffer to write the header
-                if let Some((header_buffer, payload_buffer)) = buffer
-                    .unfilled()
+                if let Some((header_buffer, payload_buffer)) = cursor
                     .as_mut_slice()
                     .split_at_mut_checked(Header::MAX_LENGTH)
                     .filter(|(_, payload_buffer)| !payload_buffer.is_empty())
@@ -599,7 +598,7 @@ impl<W: Write> SocketTx<W> {
                     let mut header_buffer = crate::mem::BorrowedBuffer::new(header_buffer);
                     let mut payload_buffer = crate::mem::BorrowedBuffer::new(payload_buffer);
 
-                    let output = write_payload(&mut payload_buffer);
+                    let output = write_payload(payload_buffer.unfilled());
 
                     let payload_length = payload_buffer.len();
 
@@ -610,11 +609,10 @@ impl<W: Write> SocketTx<W> {
 
                     let header_length = header_buffer.len();
 
-                    buffer.unfilled().as_mut_slice()
-                        [header_length..(Header::MAX_LENGTH + payload_length)]
+                    cursor.as_mut_slice()[header_length..(Header::MAX_LENGTH + payload_length)]
                         .rotate_left(Header::MAX_LENGTH - header_length);
 
-                    buffer.unfilled().advance(header_length + payload_length);
+                    cursor.advance(header_length + payload_length);
 
                     (None, output)
                 } else {
@@ -622,7 +620,7 @@ impl<W: Write> SocketTx<W> {
 
                     let mut overflow_buffer = crate::mem::BorrowedBuffer::new(&mut overflow_buffer);
 
-                    let output = write_payload(&mut overflow_buffer);
+                    let output = write_payload(overflow_buffer.unfilled());
 
                     // No data was written to the buffer, so the length is 0
                     (Some(overflow_buffer), output)
@@ -731,7 +729,7 @@ impl<W: Write> embedded_io_async::Write for FrameWriter<'_, W> {
 }
 
 impl<W: Write> Write for FrameWriter<'_, W> {
-    fn write_with<F: FnOnce(&mut crate::mem::BorrowedBuffer<'_>) -> R, R>(
+    fn write_with<F: FnOnce(crate::mem::BorrowedCursor<'_>) -> R, R>(
         &mut self,
         write_payload: F,
     ) -> impl core::future::Future<Output = Result<R, Self::Error>> {

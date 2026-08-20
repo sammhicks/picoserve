@@ -184,7 +184,7 @@ impl<Runtime, W: crate::io::Write, T: Timer<Runtime>> crate::io::Write
 where
     W::Error: 'static,
 {
-    async fn write_with<F: FnOnce(&mut crate::mem::BorrowedBuffer<'_>) -> R, R>(
+    async fn write_with<F: FnOnce(crate::mem::BorrowedCursor<'_>) -> R, R>(
         &mut self,
         f: F,
     ) -> Result<R, Self::Error> {
