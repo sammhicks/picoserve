@@ -184,20 +184,20 @@ impl<Runtime, W: crate::io::Write, T: Timer<Runtime>> crate::io::Write
 where
     W::Error: 'static,
 {
-    async fn write_fmt(&mut self, args: core::fmt::Arguments<'_>) -> Result<(), Self::Error> {
-        self.timer
-            .run_with_timeout(self.timeout_duration, self.inner.write_fmt(args))
-            .await
-            .map_err(super::Error::WriteTimeout)?
-            .map_err(super::Error::Write)
-    }
-
-    async fn write_with<F: FnOnce(&mut [u8]) -> (usize, R), R>(
+    async fn write_with<F: FnOnce(&mut crate::mem::BorrowedBuffer<'_>) -> R, R>(
         &mut self,
         f: F,
     ) -> Result<R, Self::Error> {
         self.timer
             .run_with_timeout(self.timeout_duration, self.inner.write_with(f))
+            .await
+            .map_err(super::Error::WriteTimeout)?
+            .map_err(super::Error::Write)
+    }
+
+    async fn write_fmt(&mut self, args: core::fmt::Arguments<'_>) -> Result<(), Self::Error> {
+        self.timer
+            .run_with_timeout(self.timeout_duration, self.inner.write_fmt(args))
             .await
             .map_err(super::Error::WriteTimeout)?
             .map_err(super::Error::Write)

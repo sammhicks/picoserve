@@ -142,15 +142,13 @@ impl BaseWrite for PipeTx {
 }
 
 impl Write for PipeTx {
-    async fn write_with<F: FnOnce(&mut [u8]) -> (usize, R), R>(
+    async fn write_with<F: FnOnce(&mut mem::BorrowedBuffer<'_>) -> R, R>(
         &mut self,
         f: F,
     ) -> Result<R, Self::Error> {
-        let mut buffer = std::vec![0; 1024];
+        let mut buffer = std::vec::Vec::new();
 
-        let (write_size, output) = f(&mut buffer);
-
-        buffer.resize(write_size, 0);
+        let Ok(output) = buffer.write_with(f).await;
 
         // Ignore if the channel is closed
         _ = self.0.send(buffer);

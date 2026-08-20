@@ -62,16 +62,16 @@ impl<W: Write> BaseWrite for EventDataWriterCore<W> {
 }
 
 impl<W: Write> Write for EventDataWriterCore<W> {
-    async fn write_with<F: FnOnce(&mut [u8]) -> (usize, R), R>(
+    async fn write_with<F: FnOnce(&mut crate::mem::BorrowedBuffer<'_>) -> R, R>(
         &mut self,
         f: F,
     ) -> Result<R, Self::Error> {
         let mut buffer = [0; 128];
+        let mut buffer = crate::mem::BorrowedBuffer::new(&mut buffer);
 
-        let (write_size, output) = f(&mut buffer);
+        let output = f(&mut buffer);
 
-        self.write_all(&buffer[..(write_size.min(buffer.len()))])
-            .await?;
+        self.write_all(buffer.filled()).await?;
 
         Ok(output)
     }
@@ -317,7 +317,7 @@ impl<S: EventSource> super::IntoResponse for EventStream<S> {
 
 #[cfg(test)]
 mod tests {
-    use crate::io;
+    use crate::{io, mem};
 
     use super::*;
 
@@ -369,13 +369,16 @@ mod tests {
     }
 
     impl Write for CountWriteSize {
-        async fn write_with<F: FnOnce(&mut [u8]) -> (usize, R), R>(
+        async fn write_with<F: FnOnce(&mut mem::BorrowedBuffer<'_>) -> R, R>(
             &mut self,
             f: F,
         ) -> Result<R, Self::Error> {
-            let (write_size, output) = f(&mut [0; 1024]);
+            let mut buffer = std::vec![0;1024];
+            let mut buffer = crate::mem::BorrowedBuffer::new(&mut buffer);
 
-            self.0 += write_size;
+            let output = f(&mut buffer);
+
+            self.0 += buffer.len();
 
             Ok(output)
         }
@@ -408,15 +411,14 @@ mod tests {
     }
 
     impl io::Write for ThrottledWriter {
-        async fn write_with<F: FnOnce(&mut [u8]) -> (usize, R), R>(
+        async fn write_with<F: FnOnce(&mut mem::BorrowedBuffer<'_>) -> R, R>(
             &mut self,
             f: F,
         ) -> Result<R, Self::Error> {
-            let (write_size, output) = f(&mut [0]);
+            let mut buffer = [0];
+            let mut buffer = crate::mem::BorrowedBuffer::new(&mut buffer);
 
-            self.write_size += write_size;
-
-            Ok(output)
+            Ok(f(&mut buffer))
         }
     }
 

@@ -521,36 +521,34 @@ impl<R: Read> SocketRx<R> {
     }
 }
 
-const MAX_FRAME_HEADER_LENGTH: usize = 10;
-
-fn encode_first_byte(opcode: u8, is_final: bool) -> u8 {
-    (if is_final { 0b10000000 } else { 0 }) | opcode
+enum Header {
+    Short([u8; 2]),
+    Medium([u8; 4]),
+    Long([u8; 10]),
 }
 
-enum PayloadLength {
-    OneByte([u8; 1]),
-    ThreeBytes([u8; 3]),
-    NineBytes([u8; 9]),
-}
+impl Header {
+    const MAX_LENGTH: usize = 10;
 
-impl PayloadLength {
-    fn new(length: usize) -> Self {
+    fn new(opcode: u8, is_final: bool, length: usize) -> Self {
+        let first_byte = (if is_final { 0b10000000 } else { 0 }) | opcode;
+
         if let Some(length_byte) = u8::try_from(length).ok().filter(|length| *length <= 125) {
-            Self::OneByte([length_byte])
+            Self::Short([first_byte, length_byte])
         } else if let Ok(length) = u16::try_from(length) {
             let [b0, b1] = length.to_be_bytes();
-            Self::ThreeBytes([126, b0, b1])
+            Self::Medium([first_byte, 126, b0, b1])
         } else {
             let [b0, b1, b2, b3, b4, b5, b6, b7] = (length as u64).to_be_bytes();
-            Self::NineBytes([127, b0, b1, b2, b3, b4, b5, b6, b7])
+            Self::Long([first_byte, 127, b0, b1, b2, b3, b4, b5, b6, b7])
         }
     }
 
     fn as_bytes(&self) -> &[u8] {
         match self {
-            PayloadLength::OneByte(bytes) => bytes,
-            PayloadLength::ThreeBytes(bytes) => bytes,
-            PayloadLength::NineBytes(bytes) => bytes,
+            Self::Short(bytes) => bytes,
+            Self::Medium(bytes) => bytes,
+            Self::Long(bytes) => bytes,
         }
     }
 }
@@ -566,12 +564,6 @@ impl<W: Write> SocketTx<W> {
         self.writer.flush().await
     }
 
-    async fn write_length(&mut self, length: usize) -> Result<(), W::Error> {
-        self.writer
-            .write_all(PayloadLength::new(length).as_bytes())
-            .await
-    }
-
     async fn write_frame(
         &mut self,
         is_final: bool,
@@ -579,110 +571,67 @@ impl<W: Write> SocketTx<W> {
         payload: &[u8],
     ) -> Result<(), W::Error> {
         self.writer
-            .write_all(&[encode_first_byte(opcode, is_final)])
+            .write_all(Header::new(opcode, is_final, payload.len()).as_bytes())
             .await?;
-
-        self.write_length(payload.len()).await?;
 
         self.writer.write_all(payload).await
     }
 
-    async fn write_frame_with<R, F: FnOnce(&mut [u8]) -> (usize, R)>(
+    async fn write_frame_with<R, F: FnOnce(&mut crate::mem::BorrowedBuffer) -> R>(
         &mut self,
-        is_final: bool,
         opcode: u8,
+        is_final: bool,
         write_payload: F,
     ) -> Result<R, W::Error> {
-        fn write_frame_and_rotate_payload_buffer(
-            opcode: u8,
-            is_final: bool,
-            payload_length: usize,
-            buffer: &mut [u8],
-        ) -> usize {
-            fn write_payload_length_bytes_and_rotate_payload_buffer<const N: usize>(
-                length: [u8; N],
-                buffer: &mut [u8],
-            ) -> usize {
-                #[allow(
-                    clippy::unwrap_used,
-                    reason = "buffer is guaranteed to be at least 10 items long, and N is at most 9"
-                )]
-                let (length_buffer, data_buffer) = buffer.split_first_chunk_mut().unwrap();
-
-                *length_buffer = length;
-
-                data_buffer.rotate_left(9 - N);
-
-                1 + N
-            }
-
-            #[allow(
-                clippy::unwrap_used,
-                reason = "buffer is guaranteed to be at least 10 items long"
-            )]
-            let (opcode_buffer, buffer) = buffer.split_first_mut().unwrap();
-
-            *opcode_buffer = encode_first_byte(opcode, is_final);
-
-            match PayloadLength::new(payload_length) {
-                PayloadLength::OneByte(length) => {
-                    write_payload_length_bytes_and_rotate_payload_buffer(length, buffer)
-                }
-                PayloadLength::ThreeBytes(length) => {
-                    write_payload_length_bytes_and_rotate_payload_buffer(length, buffer)
-                }
-                PayloadLength::NineBytes(length) => {
-                    write_payload_length_bytes_and_rotate_payload_buffer(length, buffer)
-                }
-            }
-        }
-
-        // Always cap the declared payload length to the length of the buffer.
-        // In case there's a bug in the `write_payload` function argument,
-        // it's better to send the wrong amount of data than panic due to buffer overflow.
-        let write_payload = |buffer: &mut [u8]| {
-            let buffer_length = buffer.len();
-
-            let (payload_length, output) = write_payload(buffer);
-
-            (payload_length.min(buffer_length), output)
-        };
-
         // In case there's not space to write the frame header in the current buffer, have a small buffer to store a payload.
-        let mut overflow_buffer = [0; MAX_FRAME_HEADER_LENGTH];
+        let mut overflow_buffer = [0; Header::MAX_LENGTH];
 
         let (overflow_payload, output) = self
             .writer
             .write_with(|buffer| {
                 // If there's space in the buffer to write the header
-                if let Some(payload_buffer) = buffer
-                    .get_mut(MAX_FRAME_HEADER_LENGTH..)
-                    .filter(|payload_buffer| !payload_buffer.is_empty())
+                if let Some((header_buffer, payload_buffer)) = buffer
+                    .unfilled()
+                    .as_mut_slice()
+                    .split_at_mut_checked(Header::MAX_LENGTH)
+                    .filter(|(_, payload_buffer)| !payload_buffer.is_empty())
                 {
-                    let (payload_length, output) = write_payload(payload_buffer);
+                    let mut header_buffer = crate::mem::BorrowedBuffer::new(header_buffer);
+                    let mut payload_buffer = crate::mem::BorrowedBuffer::new(payload_buffer);
 
-                    let header_length = write_frame_and_rotate_payload_buffer(
-                        opcode,
-                        is_final,
-                        payload_length,
-                        &mut buffer[..(MAX_FRAME_HEADER_LENGTH + payload_length)],
-                    );
+                    let output = write_payload(&mut payload_buffer);
 
-                    // The frame was written to the buffer, so the overflow_buffer isn't used
-                    (header_length + payload_length, (None, output))
+                    let payload_length = payload_buffer.len();
+
+                    // Ignore the error as there's guaranteed to be enough space
+                    _ = header_buffer
+                        .unfilled()
+                        .try_append(Header::new(opcode, is_final, payload_length).as_bytes());
+
+                    let header_length = header_buffer.len();
+
+                    buffer.unfilled().as_mut_slice()
+                        [header_length..(Header::MAX_LENGTH + payload_length)]
+                        .rotate_left(Header::MAX_LENGTH - header_length);
+
+                    buffer.unfilled().advance(header_length + payload_length);
+
+                    (None, output)
                 } else {
                     // Write the frame into the overflow buffer and return the used portion
 
-                    let (payload_length, output) = write_payload(&mut overflow_buffer);
+                    let mut overflow_buffer = crate::mem::BorrowedBuffer::new(&mut overflow_buffer);
+
+                    let output = write_payload(&mut overflow_buffer);
 
                     // No data was written to the buffer, so the length is 0
-                    (0, (Some(&overflow_buffer[..payload_length]), output))
+                    (Some(overflow_buffer), output)
                 }
             })
             .await?;
 
         if let Some(payload) = overflow_payload {
-            self.write_frame(is_final, opcode, payload).await?;
+            self.write_frame(is_final, opcode, payload.filled()).await?;
             self.flush().await?;
         }
 
@@ -722,16 +671,25 @@ impl<W: Write> SocketTx<W> {
 
     /// Close the connection with the given reason.
     pub async fn close(mut self, reason: impl Into<Option<(u16, &str)>>) -> Result<(), W::Error> {
-        self.writer.write_all(&[encode_first_byte(8, true)]).await?; // Final Close frame
+        let opcode = 8;
+        let is_final = true;
 
         match reason.into() {
             Some((code, message)) => {
                 let code_bytes = code.to_be_bytes();
-                self.write_length(code_bytes.len() + message.len()).await?;
+                self.writer
+                    .write_all(
+                        Header::new(opcode, is_final, code_bytes.len() + message.len()).as_bytes(),
+                    )
+                    .await?;
                 self.writer.write_all(&code_bytes).await?;
                 self.writer.write_all(message.as_bytes()).await
             }
-            None => self.write_length(0).await,
+            None => {
+                self.writer
+                    .write_all(Header::new(opcode, is_final, 0).as_bytes())
+                    .await
+            }
         }?;
 
         self.flush().await
@@ -773,13 +731,12 @@ impl<W: Write> embedded_io_async::Write for FrameWriter<'_, W> {
 }
 
 impl<W: Write> Write for FrameWriter<'_, W> {
-    async fn write_with<F: FnOnce(&mut [u8]) -> (usize, R), R>(
+    fn write_with<F: FnOnce(&mut crate::mem::BorrowedBuffer<'_>) -> R, R>(
         &mut self,
         write_payload: F,
-    ) -> Result<R, Self::Error> {
+    ) -> impl core::future::Future<Output = Result<R, Self::Error>> {
         self.tx
-            .write_frame_with(false, core::mem::replace(self.opcode, 0), write_payload)
-            .await
+            .write_frame_with(core::mem::replace(self.opcode, 0), false, write_payload)
     }
 }
 

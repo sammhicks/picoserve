@@ -39,6 +39,7 @@ mod logging;
 pub mod extract;
 pub mod futures;
 pub mod io;
+pub mod mem;
 pub mod request;
 pub mod response;
 pub mod routing;

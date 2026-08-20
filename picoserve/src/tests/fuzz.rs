@@ -24,17 +24,27 @@ impl<W: crate::io::BaseWrite> crate::io::BaseWrite for FragmentedWriter<W> {
 }
 
 impl<W: crate::io::Write> crate::io::Write for FragmentedWriter<W> {
-    async fn write_with<F: FnOnce(&mut [u8]) -> (usize, R), R>(
+    fn write_with<F: FnOnce(&mut crate::mem::BorrowedBuffer<'_>) -> R, R>(
         &mut self,
         f: F,
-    ) -> Result<R, Self::Error> {
-        self.writer
-            .write_with(|buffer| {
-                let buffer_size = self.rng.random_range(1..=buffer.len());
+    ) -> impl core::future::Future<Output = Result<R, Self::Error>> {
+        self.writer.write_with(|buffer| {
+            let buffer_capacity = buffer.capacity();
 
-                f(&mut buffer[..buffer_size])
-            })
-            .await
+            let mut cursor = buffer.unfilled();
+
+            let mut fragment_buffer = crate::mem::BorrowedBuffer::new(
+                &mut cursor.as_mut_slice()[..self.rng.random_range(1..=buffer_capacity)],
+            );
+
+            let output = f(&mut fragment_buffer);
+
+            let fragment_length = fragment_buffer.len();
+
+            buffer.unfilled().advance(fragment_length);
+
+            output
+        })
     }
 }
 
@@ -106,8 +116,28 @@ impl TestValue<core::ops::Range<usize>> for String {
     }
 }
 
+impl TestValue<usize> for std::vec::Vec<u8> {
+    fn generate(test_data: &mut TestData, length: usize) -> Self {
+        let mut blob = std::vec![0; length];
+
+        test_data.rng.fill_bytes(&mut blob);
+
+        blob
+    }
+}
+
 impl TestValue<core::ops::Range<usize>> for std::vec::Vec<u8> {
     fn generate(test_data: &mut TestData, length_range: core::ops::Range<usize>) -> Self {
+        let mut blob = std::vec![0; test_data.generate_value_with_parameter(length_range)];
+
+        test_data.rng.fill_bytes(&mut blob);
+
+        blob
+    }
+}
+
+impl TestValue<core::ops::RangeInclusive<usize>> for std::vec::Vec<u8> {
+    fn generate(test_data: &mut TestData, length_range: core::ops::RangeInclusive<usize>) -> Self {
         let mut blob = std::vec![0; test_data.generate_value_with_parameter(length_range)];
 
         test_data.rng.fill_bytes(&mut blob);
@@ -127,11 +157,15 @@ impl TestData {
         values.choose(&mut self.rng).unwrap()
     }
 
+    pub fn derived(&mut self) -> TestData {
+        TestData {
+            rng: rand_pcg::Pcg64::new(self.generate_value(), self.generate_value()),
+        }
+    }
+
     pub fn generate_replayable(&mut self) -> ReplayableTestData {
         ReplayableTestData {
-            test_data: TestData {
-                rng: rand_pcg::Pcg64::new(self.generate_value(), self.generate_value()),
-            },
+            test_data: self.derived(),
         }
     }
 
@@ -147,8 +181,10 @@ impl TestData {
         self.generate_value_with_parameter(length_range)
     }
 
-    #[cfg(feature = "ws")]
-    pub fn generate_blob(&mut self, length_range: core::ops::Range<usize>) -> std::vec::Vec<u8> {
+    pub fn generate_blob<R>(&mut self, length_range: R) -> std::vec::Vec<u8>
+    where
+        std::vec::Vec<u8>: TestValue<R>,
+    {
         self.generate_value_with_parameter(length_range)
     }
 
@@ -201,6 +237,21 @@ fn setup(test_name: impl AsRef<str>) -> TestInfo {
     TestInfo {
         test_data: TestData { rng },
     }
+}
+
+pub fn run_sync(test_name: impl AsRef<str>, test: impl Fn(&mut TestData)) {
+    let TestInfo { mut test_data } = setup(test_name);
+
+    std::panic::set_hook(Box::new(move |panic_info| {
+        eprintln!("TEST_RNG_SEED={}", TEST_RNG_SEED.as_str());
+        eprintln!("{panic_info}");
+    }));
+
+    for _ in 0..100 {
+        test(&mut test_data)
+    }
+
+    _ = std::panic::take_hook();
 }
 
 pub async fn run_async(test_name: impl AsRef<str>, test: impl AsyncFn(&mut TestData)) {
