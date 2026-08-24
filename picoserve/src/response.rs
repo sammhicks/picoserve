@@ -518,6 +518,36 @@ impl<C: Content> Response<ContentHeaders, ContentBody<C>> {
     pub fn ok(body: C) -> Self {
         Self::new(StatusCode::OK, body)
     }
+
+    /// Return a new response with the given `Content-Type`, overriding the value
+    /// derived from the body.
+    ///
+    /// [`Content`] implementations report a fixed content type, so a body holding
+    /// JSON in a string is reported as `text/plain; charset=utf-8`. Supplying the
+    /// correct type via [`with_header`](Response::with_header) does not help,
+    /// because headers are appended rather than replaced, so the response would
+    /// carry two `Content-Type` headers.
+    ///
+    /// ```
+    /// # use picoserve::response::Response;
+    /// let response = Response::ok("{}").with_content_type("application/json");
+    /// ```
+    pub fn with_content_type(self, content_type: &'static str) -> Self {
+        let Self {
+            status_code,
+            headers,
+            body,
+        } = self;
+
+        Self {
+            status_code,
+            headers: ContentHeaders {
+                content_type,
+                ..headers
+            },
+            body,
+        }
+    }
 }
 
 impl Response<NoHeaders, NoBody> {
@@ -774,4 +804,77 @@ impl IntoResponse for Redirect {
 pub trait ErrorWithStatusCode: fmt::Display + IntoResponse {
     /// The [`StatusCode`] to return for this error.
     fn status_code(&self) -> StatusCode;
+}
+
+#[cfg(test)]
+mod tests {
+    use futures_util::FutureExt;
+
+    use super::{ForEachHeader, HeadersIter, Response};
+
+    /// Collects every emitted header into `(name, value)` pairs.
+    struct CollectHeaders(alloc::vec::Vec<(alloc::string::String, alloc::string::String)>);
+
+    impl ForEachHeader for CollectHeaders {
+        type Output = alloc::vec::Vec<(alloc::string::String, alloc::string::String)>;
+        type Error = core::convert::Infallible;
+
+        async fn call<Value: core::fmt::Display>(
+            &mut self,
+            name: &str,
+            value: Value,
+        ) -> Result<(), Self::Error> {
+            self.0.push((
+                alloc::string::ToString::to_string(&name),
+                alloc::string::ToString::to_string(&value),
+            ));
+            Ok(())
+        }
+
+        async fn finalize(self) -> Result<Self::Output, Self::Error> {
+            Ok(self.0)
+        }
+    }
+
+    fn headers_of<H: HeadersIter>(
+        headers: H,
+    ) -> alloc::vec::Vec<(alloc::string::String, alloc::string::String)> {
+        headers
+            .for_each_header(CollectHeaders(alloc::vec::Vec::new()))
+            .now_or_never()
+            .expect("Future must resolve")
+            .expect("Collecting headers is infallible")
+    }
+
+    #[test]
+    #[ntest::timeout(1000)]
+    fn content_type_is_derived_from_the_body_by_default() {
+        let headers = headers_of(Response::ok("{}").headers);
+
+        let content_types = headers
+            .iter()
+            .filter(|(name, _)| name == "Content-Type")
+            .map(|(_, value)| value.as_str())
+            .collect::<alloc::vec::Vec<_>>();
+
+        assert_eq!(content_types, ["text/plain; charset=utf-8"]);
+    }
+
+    #[test]
+    #[ntest::timeout(1000)]
+    fn with_content_type_replaces_the_derived_value() {
+        let headers = headers_of(
+            Response::ok("{}")
+                .with_content_type("application/json")
+                .headers,
+        );
+
+        let content_types = headers
+            .iter()
+            .filter(|(name, _)| name == "Content-Type")
+            .map(|(_, value)| value.as_str())
+            .collect::<alloc::vec::Vec<_>>();
+
+        assert_eq!(content_types, ["application/json"]);
+    }
 }
