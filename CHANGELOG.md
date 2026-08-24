@@ -18,6 +18,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Several write operations now write directly to the socket's transmit buffer, no longer requiring a local buffer, and thus improving both time and space efficiency.
 
+### Added
+
+- [`Response::with_content_type`](https://docs.rs/picoserve/latest/picoserve/response/struct.Response.html), which overrides the `Content-Type` derived from the body without appending a second header.
+
 ### Fixed
 
 - Future combinators no longer store two copies of the future, greatly reducing memory usage.
