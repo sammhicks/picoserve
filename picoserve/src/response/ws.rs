@@ -1,6 +1,6 @@
 //! Web Sockets. See [web_sockets](https://github.com/sammhicks/picoserve/blob/main/examples/web_sockets/src/main.rs) for usage example.
 
-use core::marker::PhantomData;
+use core::{future::Future, marker::PhantomData};
 
 use picoserve_derive::ErrorWithStatusCode;
 
@@ -348,7 +348,7 @@ pub struct SocketRx<R: Read> {
 }
 
 impl<R: Read> SocketRx<R> {
-    async fn next_frame_internal<Signal: core::future::Future>(
+    async fn next_frame_internal<Signal: Future>(
         &mut self,
         buffer: &mut [u8],
         other_signal: Signal,
@@ -422,7 +422,7 @@ impl<R: Read> SocketRx<R> {
     /// `next_frame` must be repeatedly called until a final frame is received.
     ///
     /// `next_frame` is *not* cancel-safe.
-    pub async fn next_frame<Signal: core::future::Future>(
+    pub async fn next_frame<Signal: Future>(
         &mut self,
         buffer: &mut [u8],
         signal: Signal,
@@ -432,7 +432,7 @@ impl<R: Read> SocketRx<R> {
             .into_nested_result()
     }
 
-    async fn next_message_internal<'a, Signal: core::future::Future>(
+    async fn next_message_internal<'a, Signal: Future>(
         &mut self,
         buffer: &'a mut [u8],
         signal: Signal,
@@ -510,7 +510,7 @@ impl<R: Read> SocketRx<R> {
     }
 
     /// Read the next message unless `signal` resolves before receiving the start of the message. `signal` **must** be cancel-safe. Frame data is concatenated together.
-    pub async fn next_message<'a, Signal: core::future::Future>(
+    pub async fn next_message<'a, Signal: Future>(
         &mut self,
         buffer: &'a mut [u8],
         signal: Signal,
@@ -732,7 +732,7 @@ impl<W: Write> Write for FrameWriter<'_, W> {
     fn write_with<F: FnOnce(crate::mem::BorrowedCursor<'_>) -> R, R>(
         &mut self,
         write_payload: F,
-    ) -> impl core::future::Future<Output = Result<R, Self::Error>> {
+    ) -> impl Future<Output = Result<R, Self::Error>> {
         self.tx
             .write_frame_with(core::mem::replace(self.opcode, 0), false, write_payload)
     }
@@ -752,7 +752,7 @@ impl<C: WebSocketCallback> WebSocketCallbackWithShutdownSignal for C {
     async fn run_with_shutdown_signal<
         R: Read,
         W: Write<Error = R::Error>,
-        S: core::future::Future<Output = ()> + Clone + Unpin,
+        S: Future<Output = ()> + Clone + Unpin,
     >(
         self,
         rx: SocketRx<R>,
@@ -770,7 +770,7 @@ pub trait WebSocketCallbackWithShutdownSignal {
     async fn run_with_shutdown_signal<
         R: Read,
         W: Write<Error = R::Error>,
-        S: core::future::Future<Output = ()> + Clone + Unpin,
+        S: Future<Output = ()> + Clone + Unpin,
     >(
         self,
         rx: SocketRx<R>,
@@ -807,7 +807,7 @@ pub trait WebSocketCallbackWithStateAndShutdownSignal<State> {
     async fn run_with_state_and_shutdown_signal<
         R: Read,
         W: Write<Error = R::Error>,
-        S: core::future::Future<Output = ()> + Clone + Unpin,
+        S: Future<Output = ()> + Clone + Unpin,
     >(
         self,
         state: &State,
@@ -823,7 +823,7 @@ impl<State, C: WebSocketCallbackWithState<State>> WebSocketCallbackWithStateAndS
     async fn run_with_state_and_shutdown_signal<
         R: Read,
         W: Write<Error = R::Error>,
-        S: core::future::Future<Output = ()> + Clone + Unpin,
+        S: Future<Output = ()> + Clone + Unpin,
     >(
         self,
         state: &State,

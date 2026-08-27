@@ -1,6 +1,6 @@
 //! IO Utility
 
-use core::fmt;
+use core::{fmt, future::Future};
 
 pub use embedded_io_async::{
     self, Error, ErrorKind, ErrorType, Read, ReadExactError, Write as BaseWrite,
@@ -74,10 +74,10 @@ pub trait Write: BaseWrite {
     /// Call f with the largest contiguous slice of octets in the transmit buffer, and enqueue the filled bytes.
     ///
     /// If the writer is not ready to accept data, it waits until it is.
-    fn write_with<F: FnOnce(BorrowedCursor<'_>) -> R, R>(
+    async fn write_with<F: FnOnce(BorrowedCursor<'_>) -> R, R>(
         &mut self,
         f: F,
-    ) -> impl core::future::Future<Output = Result<R, Self::Error>>;
+    ) -> Result<R, Self::Error>;
 
     /// Write a formatted string into the writer. If the string cannot be written in one go, the string will be formatted multiple times.
     /// It's crucial that the same output is produced each time the string is formatted.
@@ -114,14 +114,14 @@ impl<W: Write> Write for &mut W {
     fn write_with<F: FnOnce(BorrowedCursor<'_>) -> R, R>(
         &mut self,
         f: F,
-    ) -> impl core::future::Future<Output = Result<R, Self::Error>> {
+    ) -> impl Future<Output = Result<R, Self::Error>> {
         W::write_with(self, f)
     }
 
     fn write_fmt(
         &mut self,
         args: fmt::Arguments<'_>,
-    ) -> impl core::future::Future<Output = Result<(), Self::Error>> {
+    ) -> impl Future<Output = Result<(), Self::Error>> {
         W::write_fmt(self, args)
     }
 }
@@ -293,7 +293,7 @@ impl<'a> Write for embassy_net::tcp::TcpWriter<'a> {
     fn write_with<F: FnOnce(BorrowedCursor<'_>) -> R, R>(
         &mut self,
         f: F,
-    ) -> impl core::future::Future<Output = Result<R, Self::Error>> {
+    ) -> impl Future<Output = Result<R, Self::Error>> {
         embassy_net::tcp::TcpWriter::write_with(self, |buffer| {
             let mut buffer = BorrowedBuffer::new(buffer);
 

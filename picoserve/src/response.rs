@@ -20,7 +20,7 @@
 //!
 //! For a complete list, see [`IntoResponse`].
 
-use core::fmt;
+use core::{fmt, future::Future};
 
 use crate::{
     io::{Read, Write},
@@ -194,7 +194,7 @@ impl<'r, R: Read> Connection<'r, R> {
     pub async fn run_until_disconnection<T>(
         self,
         default: T,
-        action: impl core::future::Future<Output = Result<T, R::Error>>,
+        action: impl Future<Output = Result<T, R::Error>>,
     ) -> Result<T, R::Error> {
         crate::futures::select(action, async {
             self.wait_for_disconnection().await?;

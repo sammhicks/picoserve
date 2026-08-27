@@ -1,4 +1,4 @@
-use core::{cell::Cell, task::Waker};
+use core::{cell::Cell, future::Future, task::Waker};
 
 pub struct SignalCore<T: Copy> {
     value: Cell<Option<T>>,
@@ -40,7 +40,7 @@ impl<'a, T: Copy> Signal<'a, T> {
     }
 }
 
-impl<T: Copy> core::future::Future for Signal<'_, T> {
+impl<T: Copy> Future for Signal<'_, T> {
     type Output = T;
 
     fn poll(

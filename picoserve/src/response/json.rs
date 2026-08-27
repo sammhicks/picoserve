@@ -37,7 +37,7 @@
 //!
 //! These functions are designed to be used with the `#[serde(serialize_with = "..."]` field annotations when deriving `serde::Serialize` on a custom type.
 
-use core::fmt;
+use core::{fmt, future::Future};
 
 use serde::Serialize;
 
@@ -743,10 +743,7 @@ impl<T: serde::Serialize> super::Content for JsonBody<T> {
             .map_or(0, |()| content_length)
     }
 
-    fn write_content<W: Write>(
-        self,
-        writer: W,
-    ) -> impl core::future::Future<Output = Result<(), W::Error>> {
+    fn write_content<W: Write>(self, writer: W) -> impl Future<Output = Result<(), W::Error>> {
         Json(self.0).write_to(writer)
     }
 }

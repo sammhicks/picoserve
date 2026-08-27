@@ -26,7 +26,7 @@ extern crate alloc;
 #[cfg(any(feature = "std", test))]
 extern crate std;
 
-use core::marker::PhantomData;
+use core::{future::Future, marker::PhantomData};
 
 use futures_util::{FutureExt, TryFutureExt};
 
@@ -266,10 +266,7 @@ impl<R: io::Read> io::Read for MapReadErrorReader<R>
 where
     R::Error: 'static,
 {
-    fn read(
-        &mut self,
-        buf: &mut [u8],
-    ) -> impl core::future::Future<Output = Result<usize, Self::Error>> {
+    fn read(&mut self, buf: &mut [u8]) -> impl Future<Output = Result<usize, Self::Error>> {
         self.0.read(buf).map_err(Error::Read)
     }
 
@@ -310,7 +307,7 @@ async fn serve_and_shutdown<
     P: routing::PathRouter,
     S: io::Socket<Runtime>,
     ShutdownReason,
-    ShutdownSignal: core::future::Future<Output = (ShutdownReason, Duration)>,
+    ShutdownSignal: Future<Output = (ShutdownReason, Duration)>,
 >(
     app: &Router<P>,
     timer: &T,
@@ -546,13 +543,7 @@ impl NoGracefulShutdown {
 }
 
 /// A HTTP Server.
-pub struct Server<
-    'a,
-    Runtime,
-    T: Timer<Runtime>,
-    P: routing::PathRouter,
-    ShutdownSignal: core::future::Future,
-> {
+pub struct Server<'a, Runtime, T: Timer<Runtime>, P: routing::PathRouter, ShutdownSignal: Future> {
     app: &'a Router<P>,
     timer: T,
     config: &'a Config,
@@ -586,17 +577,11 @@ impl<'a, Runtime, T: Timer<Runtime>, P: routing::PathRouter>
     /// Prepares a server to handle graceful shutdown when the provided future completes.
     ///
     /// If `shutdown_timeout` is not None and the request handler does not complete within that time, it is killed abruptly.
-    pub fn with_graceful_shutdown<ShutdownSignal: core::future::Future>(
+    pub fn with_graceful_shutdown<ShutdownSignal: Future>(
         self,
         shutdown_signal: ShutdownSignal,
         shutdown_timeout: impl Into<Duration>,
-    ) -> Server<
-        'a,
-        Runtime,
-        T,
-        P,
-        impl core::future::Future<Output = (ShutdownSignal::Output, Duration)>,
-    > {
+    ) -> Server<'a, Runtime, T, P, impl Future<Output = (ShutdownSignal::Output, Duration)>> {
         let Self {
             app,
             timer,
@@ -628,7 +613,7 @@ impl<
         T: Timer<Runtime>,
         P: routing::PathRouter,
         ShutdownReason,
-        ShutdownSignal: core::future::Future<Output = (ShutdownReason, Duration)>,
+        ShutdownSignal: Future<Output = (ShutdownReason, Duration)>,
     > Server<'_, Runtime, T, P, ShutdownSignal>
 {
     /// Serve requests read from the connected socket.
@@ -708,7 +693,7 @@ impl<
         'a,
         P: routing::PathRouter,
         ShutdownReason,
-        ShutdownSignal: core::future::Future<Output = (ShutdownReason, embassy_time::Duration)>,
+        ShutdownSignal: Future<Output = (ShutdownReason, embassy_time::Duration)>,
     > Server<'a, EmbassyRuntime, time::EmbassyTimer, P, ShutdownSignal>
 {
     /// Listen for incoming connections, and serve requests read from the connection.

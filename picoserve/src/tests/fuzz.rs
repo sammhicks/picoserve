@@ -1,4 +1,4 @@
-use std::{boxed::Box, eprintln, string::String};
+use std::{boxed::Box, eprintln, future::Future, string::String};
 
 use rand::{Rng, RngExt};
 
@@ -27,7 +27,7 @@ impl<W: crate::io::Write> crate::io::Write for FragmentedWriter<W> {
     fn write_with<F: FnOnce(crate::mem::BorrowedCursor<'_>) -> R, R>(
         &mut self,
         f: F,
-    ) -> impl core::future::Future<Output = Result<R, Self::Error>> {
+    ) -> impl Future<Output = Result<R, Self::Error>> {
         self.writer.write_with(|mut cursor| {
             let buffer_capacity = cursor.remaining_capacity();
 
