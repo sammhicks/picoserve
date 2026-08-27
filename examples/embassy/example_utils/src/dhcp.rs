@@ -13,16 +13,7 @@ pub async fn dhcp_task(address: Ipv4Address, stack: Stack<'static>) {
 
     socket.bind(67).expect("Failed to bind DHCP Socket");
 
-    let dns_addresses = [address];
-
-    let server_options = {
-        let mut server_options = edge_dhcp::server::ServerOptions::new(address, None);
-
-        server_options.dns = &dns_addresses;
-        server_options.captive_url = Some("http://10.0.0.1/");
-
-        server_options
-    };
+    let server_options = edge_dhcp::server::ServerOptions::new(address, None);
 
     let mut dhcp_server = edge_dhcp::server::Server::<_, 16>::new_with_et(address);
 
