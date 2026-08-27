@@ -522,14 +522,14 @@ impl<C: Content> Response<ContentHeaders, ContentBody<C>> {
     /// Return a new response with the given `Content-Type`, overriding the value
     /// derived from the body.
     ///
-    /// [`Content`] implementations report a fixed content type, so a body holding
-    /// JSON in a string is reported as `text/plain; charset=utf-8`. Supplying the
-    /// correct type via [`with_header`](Response::with_header) does not help,
+    /// [`Content`] implementations report a fixed content type, so for example,
+    /// a body holding JSON in a string is reported as `text/plain; charset=utf-8`.
+    /// Supplying the correct type via [`with_header`](Response::with_header) does not help,
     /// because headers are appended rather than replaced, so the response would
     /// carry two `Content-Type` headers.
     ///
     /// ```
-    /// # use picoserve::response::Response;
+    /// use picoserve::response::Response;
     /// let response = Response::ok("{}").with_content_type("application/json");
     /// ```
     pub fn with_content_type(self, content_type: &'static str) -> Self {
