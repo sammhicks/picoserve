@@ -1,7 +1,7 @@
 [package]
 name = "layers"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 description = "Middleware example which logs how long a request took to be handled."
 categories = ["Tokio"]
 

@@ -20,12 +20,12 @@
 //!
 //! For a complete list, see [`IntoResponse`].
 
-use core::{fmt, future::Future};
+use core::fmt;
 
 use crate::{
+    KeepAlive, ResponseSent,
     io::{Read, Write},
     sync::oneshot_broadcast,
-    KeepAlive, ResponseSent,
 };
 
 pub use picoserve_derive::ErrorWithStatusCode;

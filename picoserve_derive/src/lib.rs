@@ -1,8 +1,8 @@
 #![warn(clippy::doc_markdown)]
 
 use proc_macro2::TokenStream;
-use quote::{quote, ToTokens};
-use syn::{parse_macro_input, spanned::Spanned, DeriveInput};
+use quote::{ToTokens, quote};
+use syn::{DeriveInput, parse_macro_input, spanned::Spanned};
 
 /// Helpers used interally by picoserve
 #[doc(hidden)]
@@ -157,7 +157,7 @@ fn try_derive_error_with_status_code(input: &DeriveInput) -> Result<TokenStream,
             }
         }
         syn::Data::Union(..) => {
-            return Err(syn::Error::new(input.span(), "Must be a struct or an enum"))
+            return Err(syn::Error::new(input.span(), "Must be a struct or an enum"));
         }
     };
 

@@ -10,7 +10,7 @@ use embassy_rp::{
 };
 
 use panic_persist as _;
-use picoserve::{make_static, routing::get, AppBuilder, AppRouter};
+use picoserve::{AppBuilder, AppRouter, make_static, routing::get};
 use rand::Rng;
 
 embassy_rp::bind_interrupts!(struct Irqs {

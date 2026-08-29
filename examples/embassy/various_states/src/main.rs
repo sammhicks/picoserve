@@ -11,8 +11,8 @@ use embassy_rp::{
 
 use panic_persist as _;
 use picoserve::{
-    extract::FromRequestParts, make_static, response::IntoResponse, routing::get, AppRouter,
-    AppWithStateBuilder,
+    AppRouter, AppWithStateBuilder, extract::FromRequestParts, make_static, response::IntoResponse,
+    routing::get,
 };
 use portable_atomic::AtomicUsize;
 use rand::Rng;

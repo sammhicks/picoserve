@@ -11,7 +11,7 @@ use embassy_rp::{
 
 use defmt_rtt as _;
 use panic_probe as _;
-use picoserve::{make_static, routing::get, AppBuilder, AppRouter};
+use picoserve::{AppBuilder, AppRouter, make_static, routing::get};
 use rand::Rng;
 
 embassy_rp::bind_interrupts!(struct Irqs {

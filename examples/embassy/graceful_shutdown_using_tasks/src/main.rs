@@ -12,7 +12,7 @@ use embassy_rp::{
 use embassy_sync::watch::Watch;
 use embassy_time::Duration;
 use panic_persist as _;
-use picoserve::{make_static, routing::get, AppBuilder, AppRouter};
+use picoserve::{AppBuilder, AppRouter, make_static, routing::get};
 use rand::Rng;
 
 embassy_rp::bind_interrupts!(struct Irqs {

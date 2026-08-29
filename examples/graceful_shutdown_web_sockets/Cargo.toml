@@ -1,7 +1,7 @@
 [package]
 name = "graceful_shutdown_web_sockets"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 description = "Gracefully shutting down a server and its WS connections."
 categories = ["Tokio"]
 

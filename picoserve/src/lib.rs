@@ -26,7 +26,7 @@ extern crate alloc;
 #[cfg(any(feature = "std", test))]
 extern crate std;
 
-use core::{future::Future, marker::PhantomData};
+use core::marker::PhantomData;
 
 use futures_util::{FutureExt, TryFutureExt};
 
@@ -381,7 +381,7 @@ async fn serve_and_shutdown<
                 }
                 Ok(futures::Either::Second(Ok(Some(request_is_pending)))) => request_is_pending,
                 Ok(futures::Either::Second(Ok(None))) | Err(time::TimeoutError) => {
-                    return Ok(DisconnectionInfo::no_shutdown_reason(request_count))
+                    return Ok(DisconnectionInfo::no_shutdown_reason(request_count));
                 }
                 Ok(futures::Either::Second(Err(err))) => return Err(err),
             };
@@ -428,17 +428,19 @@ async fn serve_and_shutdown<
                         ),
                     };
 
-                    let mut handle_request = core::pin::pin!(futures::select_either(
-                        // The timeout is handled by the socket returning an error when reads are attempted after the
-                        read_request_timeout
-                            .map(futures::ignore_output)
-                            .then(futures::pend_forever),
-                        app.handle_request(
-                            request,
-                            response::ResponseStream::new(&mut writer, connection_header),
-                        ),
-                    )
-                    .map(futures::Either::ignore_never_a));
+                    let mut handle_request = core::pin::pin!(
+                        futures::select_either(
+                            // The timeout is handled by the socket returning an error when reads are attempted after the
+                            read_request_timeout
+                                .map(futures::ignore_output)
+                                .then(futures::pend_forever),
+                            app.handle_request(
+                                request,
+                                response::ResponseStream::new(&mut writer, connection_header),
+                            ),
+                        )
+                        .map(futures::Either::ignore_never_a)
+                    );
 
                     match futures::select_either(shutdown_signal.as_mut(), handle_request.as_mut())
                         .await
@@ -609,12 +611,12 @@ impl<'a, Runtime, T: Timer<Runtime>, P: routing::PathRouter>
 }
 
 impl<
-        Runtime,
-        T: Timer<Runtime>,
-        P: routing::PathRouter,
-        ShutdownReason,
-        ShutdownSignal: Future<Output = (ShutdownReason, Duration)>,
-    > Server<'_, Runtime, T, P, ShutdownSignal>
+    Runtime,
+    T: Timer<Runtime>,
+    P: routing::PathRouter,
+    ShutdownReason,
+    ShutdownSignal: Future<Output = (ShutdownReason, Duration)>,
+> Server<'_, Runtime, T, P, ShutdownSignal>
 {
     /// Serve requests read from the connected socket.
     pub async fn serve<S: io::Socket<Runtime>>(
@@ -690,11 +692,11 @@ impl<'a, P: routing::PathRouter>
 
 #[cfg(feature = "embassy")]
 impl<
-        'a,
-        P: routing::PathRouter,
-        ShutdownReason,
-        ShutdownSignal: Future<Output = (ShutdownReason, embassy_time::Duration)>,
-    > Server<'a, EmbassyRuntime, time::EmbassyTimer, P, ShutdownSignal>
+    'a,
+    P: routing::PathRouter,
+    ShutdownReason,
+    ShutdownSignal: Future<Output = (ShutdownReason, embassy_time::Duration)>,
+> Server<'a, EmbassyRuntime, time::EmbassyTimer, P, ShutdownSignal>
 {
     /// Listen for incoming connections, and serve requests read from the connection.
     ///

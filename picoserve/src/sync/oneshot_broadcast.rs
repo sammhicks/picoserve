@@ -1,4 +1,4 @@
-use core::{cell::Cell, future::Future, task::Waker};
+use core::{cell::Cell, task::Waker};
 
 pub struct SignalCore<T: Copy> {
     value: Cell<Option<T>>,

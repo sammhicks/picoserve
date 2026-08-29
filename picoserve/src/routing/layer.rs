@@ -1,7 +1,7 @@
 use crate::{
+    ResponseSent,
     io::Read,
     request::{Path, Request, RequestParts},
-    ResponseSent,
 };
 
 use super::{MethodHandler, PathRouter, ResponseWriter};
@@ -97,11 +97,11 @@ pub(crate) struct MethodRouterLayer<L, I> {
 impl<L, I> super::sealed::MethodHandlerIsSealed for MethodRouterLayer<L, I> {}
 
 impl<
-        L: Layer<State, PathParameters>,
-        I: MethodHandler<L::NextState, L::NextPathParameters>,
-        State,
-        PathParameters,
-    > MethodHandler<State, PathParameters> for MethodRouterLayer<L, I>
+    L: Layer<State, PathParameters>,
+    I: MethodHandler<L::NextState, L::NextPathParameters>,
+    State,
+    PathParameters,
+> MethodHandler<State, PathParameters> for MethodRouterLayer<L, I>
 {
     async fn call_method_handler<R: Read, W: ResponseWriter<Error = R::Error>>(
         &self,
@@ -168,11 +168,11 @@ pub(crate) struct PathRouterLayer<L, I> {
 impl<L, I> super::sealed::PathRouterIsSealed for PathRouterLayer<L, I> {}
 
 impl<
-        L: Layer<State, CurrentPathParameters>,
-        I: PathRouter<L::NextState, L::NextPathParameters>,
-        State,
-        CurrentPathParameters,
-    > PathRouter<State, CurrentPathParameters> for PathRouterLayer<L, I>
+    L: Layer<State, CurrentPathParameters>,
+    I: PathRouter<L::NextState, L::NextPathParameters>,
+    State,
+    CurrentPathParameters,
+> PathRouter<State, CurrentPathParameters> for PathRouterLayer<L, I>
 {
     async fn call_path_router<R: Read, W: ResponseWriter<Error = R::Error>>(
         &self,

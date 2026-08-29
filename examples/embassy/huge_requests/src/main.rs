@@ -11,7 +11,7 @@ use embassy_rp::{
 
 use panic_persist as _;
 use picoserve::{
-    io::Read, make_static, response::IntoResponse, routing::get_service, AppBuilder, AppRouter,
+    AppBuilder, AppRouter, io::Read, make_static, response::IntoResponse, routing::get_service,
 };
 use rand::Rng;
 use sha2::Digest;

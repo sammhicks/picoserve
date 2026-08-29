@@ -3,10 +3,10 @@
 use core::fmt;
 
 use crate::{
+    ResponseSent,
     io::{Read, Write},
     request::Path,
     routing::{PathRouter, PathRouterService, RequestHandler, RequestHandlerService},
-    ResponseSent,
 };
 
 use super::{IntoResponse, StatusCode};
@@ -164,22 +164,21 @@ impl<State, PathParameters> crate::routing::RequestHandlerService<State, PathPar
             }
         }
 
-        if let Some(if_none_match) = request.parts.headers().get("If-None-Match") {
-            if if_none_match
+        if let Some(if_none_match) = request.parts.headers().get("If-None-Match")
+            && if_none_match
                 .split(b',')
                 .any(|etag| self.etag == etag.as_raw())
-            {
-                return response_writer
-                    .write_response(
-                        request.body_connection.finalize().await?,
-                        super::Response {
-                            status_code: StatusCode::NOT_MODIFIED,
-                            headers: self.etag.clone(),
-                            body: super::NoBody,
-                        },
-                    )
-                    .await;
-            }
+        {
+            return response_writer
+                .write_response(
+                    request.body_connection.finalize().await?,
+                    super::Response {
+                        status_code: StatusCode::NOT_MODIFIED,
+                        headers: self.etag.clone(),
+                        body: super::NoBody,
+                    },
+                )
+                .await;
         }
 
         super::Response::ok(FileContent(self))

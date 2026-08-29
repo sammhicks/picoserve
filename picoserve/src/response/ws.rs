@@ -1,6 +1,6 @@
 //! Web Sockets. See [web_sockets](https://github.com/sammhicks/picoserve/blob/main/examples/web_sockets/src/main.rs) for usage example.
 
-use core::{future::Future, marker::PhantomData};
+use core::marker::PhantomData;
 
 use picoserve_derive::ErrorWithStatusCode;
 
@@ -449,7 +449,7 @@ impl<R: Read> SocketRx<R> {
 
         let opcode = match opcode {
             Opcode::Data(Data::Continue) => {
-                return Err(ReadMessageError::MessageStartsWithContinuation.into())
+                return Err(ReadMessageError::MessageStartsWithContinuation.into());
             }
             Opcode::Data(Data::Text) => MessageOpcode::Text,
             Opcode::Data(Data::Binary) => MessageOpcode::Binary,
@@ -457,7 +457,7 @@ impl<R: Read> SocketRx<R> {
             Opcode::Control(Control::Ping) => MessageOpcode::Ping,
             Opcode::Control(Control::Pong) => MessageOpcode::Pong,
             Opcode::Data(Data::Reserved(opcode)) | Opcode::Control(Control::Reserved(opcode)) => {
-                return Err(ReadMessageError::ReservedOpcode(opcode).into())
+                return Err(ReadMessageError::ReservedOpcode(opcode).into());
             }
         };
 
@@ -476,11 +476,11 @@ impl<R: Read> SocketRx<R> {
                     Opcode::Data(Data::Continue) => (),
                     Opcode::Data(Data::Text | Data::Binary)
                     | Opcode::Control(Control::Close | Control::Ping | Control::Pong) => {
-                        return Err(ReadMessageError::UnexpectedMessageStart.into())
+                        return Err(ReadMessageError::UnexpectedMessageStart.into());
                     }
                     Opcode::Data(Data::Reserved(opcode))
                     | Opcode::Control(Control::Reserved(opcode)) => {
-                        return Err(ReadMessageError::ReservedOpcode(opcode).into())
+                        return Err(ReadMessageError::ReservedOpcode(opcode).into());
                     }
                 }
 

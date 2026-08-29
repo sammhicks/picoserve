@@ -1,6 +1,6 @@
 //! [`Timer`] for creating timeouts during request parsing and request handling.
 
-use core::future::Future;
+use Future;
 
 use futures_util::FutureExt;
 

@@ -206,7 +206,7 @@ impl<'r, State> FromRequest<'r, State> for alloc::borrow::Cow<'r, [u8]> {
         state: &'r State,
         request_parts: RequestParts<'r>,
         request_body: RequestBody<'r, R>,
-    ) -> impl core::future::Future<Output = Result<Self, Self::Rejection>> {
+    ) -> impl Future<Output = Result<Self, Self::Rejection>> {
         use futures_util::TryFutureExt;
 
         use crate::futures::Either;
@@ -311,7 +311,7 @@ impl<'r, State> FromRequest<'r, State> for alloc::borrow::Cow<'r, str> {
         state: &'r State,
         request_parts: RequestParts<'r>,
         request_body: RequestBody<'r, R>,
-    ) -> impl core::future::Future<Output = Result<Self, Self::Rejection>> {
+    ) -> impl Future<Output = Result<Self, Self::Rejection>> {
         use futures_util::TryFutureExt;
 
         use crate::futures::Either;

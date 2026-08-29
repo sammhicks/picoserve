@@ -4,15 +4,15 @@
 
 use embassy_rp::peripherals::USB;
 use embassy_usb::{
+    Builder, Config, UsbDevice,
     class::cdc_acm::{CdcAcmClass, State as AcmState},
     class::cdc_ncm::embassy_net::{Device, Runner, State as NetState},
     class::cdc_ncm::{CdcNcmClass, State as NcmState},
-    Builder, Config, UsbDevice,
 };
 use static_cell::StaticCell;
 
 use panic_persist as _;
-use picoserve::{make_static, routing::get, AppBuilder, AppRouter};
+use picoserve::{AppBuilder, AppRouter, make_static, routing::get};
 use rand::Rng;
 
 // USB IRQs are handled by embassy_rp::usb directly

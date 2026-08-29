@@ -37,7 +37,7 @@
 //!
 //! These functions are designed to be used with the `#[serde(serialize_with = "..."]` field annotations when deriving `serde::Serialize` on a custom type.
 
-use core::{fmt, future::Future};
+use core::fmt;
 
 use serde::Serialize;
 

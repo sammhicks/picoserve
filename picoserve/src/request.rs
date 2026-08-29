@@ -1,6 +1,6 @@
 //! HTTP request types.
 
-use core::{fmt, future::Future, ops::Range};
+use core::{fmt, ops::Range};
 
 use futures_util::FutureExt;
 
@@ -283,7 +283,7 @@ impl<'r> PartialEq<&'r str> for Path<'r> {
 impl<'r> Path<'r> {
     /// Return the encoded string
     pub fn encoded(self) -> &'r str {
-        self.0 .0
+        self.0.0
     }
 
     pub(crate) fn strip_slash_and_prefix(self, prefix: &str) -> Option<Self> {
@@ -493,7 +493,9 @@ impl<'r, R: Read> RequestBodyReader<'r, ReaderWithReadRequestTimeout<'r, R>> {
 /// Errors arising when reading the entire body
 pub enum ReadAllBodyError {
     /// The body does not fit into the remaining request buffer.
-    #[error("No space to extract entire body. Content Length: {content_length}. Buffer Length: {buffer_length}.")]
+    #[error(
+        "No space to extract entire body. Content Length: {content_length}. Buffer Length: {buffer_length}."
+    )]
     #[status_code(PAYLOAD_TOO_LARGE)]
     BufferIsTooSmall {
         content_length: usize,

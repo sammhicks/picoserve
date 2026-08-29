@@ -965,10 +965,9 @@ async fn not_reading_the_entire_request_body_closes_the_connection() {
     let app = Router::new().route("/", crate::routing::post(|| async {}));
     let mut http_buffer = [0; 1024];
 
-    let mut server_task =
-        std::pin::pin!(
-            crate::Server::new_tokio(&app, &TEST_CONFIG, &mut http_buffer).serve(server_socket)
-        );
+    let mut server_task = std::pin::pin!(
+        crate::Server::new_tokio(&app, &TEST_CONFIG, &mut http_buffer).serve(server_socket)
+    );
 
     client_socket
         .send("POST / HTTP/1.1\r\nContent-Length: 1024\r\n\r\nINCOMPLETE_DATA")

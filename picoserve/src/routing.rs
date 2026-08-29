@@ -5,15 +5,15 @@
 //!     + [`File`](crate::response::fs::File)
 //!     + [`Directory`](crate::response::fs::File)
 
-use core::{fmt, future::Future, marker::PhantomData, str::FromStr};
+use core::{fmt, marker::PhantomData, str::FromStr};
 
 use crate::{
+    ResponseSent,
     extract::{FromRequest, FromRequestParts},
     futures::Either,
     io::Read,
     request::{Path, Request},
-    response::{with_state::IntoResponseWithState, IntoResponse, ResponseWriter, StatusCode},
-    ResponseSent,
+    response::{IntoResponse, ResponseWriter, StatusCode, with_state::IntoResponseWithState},
 };
 
 mod layer;
@@ -89,11 +89,11 @@ impl<State, FunctionReturn: IntoResponseWithState<State>, H: AsyncFn() -> Functi
 }
 
 impl<
-        State,
-        PathParameter,
-        FunctionReturn: IntoResponseWithState<State>,
-        H: AsyncFn(PathParameter) -> FunctionReturn,
-    >
+    State,
+    PathParameter,
+    FunctionReturn: IntoResponseWithState<State>,
+    H: AsyncFn(PathParameter) -> FunctionReturn,
+>
     sealed::RequestHandlerFunctionIsSealed<
         State,
         (PathParameter,),
@@ -103,16 +103,12 @@ impl<
 }
 
 impl<
-        State,
-        PathParameter,
-        FunctionReturn: IntoResponseWithState<State>,
-        H: AsyncFn(PathParameter) -> FunctionReturn,
-    >
-    RequestHandlerFunction<
-        State,
-        (PathParameter,),
-        (OnePathParameter<PathParameter>, FunctionReturn),
-    > for H
+    State,
+    PathParameter,
+    FunctionReturn: IntoResponseWithState<State>,
+    H: AsyncFn(PathParameter) -> FunctionReturn,
+> RequestHandlerFunction<State, (PathParameter,), (OnePathParameter<PathParameter>, FunctionReturn)>
+    for H
 {
     async fn call_request_handler_function<R: Read, W: ResponseWriter<Error = R::Error>>(
         &self,
@@ -133,11 +129,11 @@ impl<
 }
 
 impl<
-        State,
-        PathParameters,
-        FunctionReturn: IntoResponseWithState<State>,
-        H: AsyncFn(PathParameters) -> FunctionReturn,
-    >
+    State,
+    PathParameters,
+    FunctionReturn: IntoResponseWithState<State>,
+    H: AsyncFn(PathParameters) -> FunctionReturn,
+>
     sealed::RequestHandlerFunctionIsSealed<
         State,
         PathParameters,
@@ -147,11 +143,11 @@ impl<
 }
 
 impl<
-        State,
-        PathParameters,
-        FunctionReturn: IntoResponseWithState<State>,
-        H: AsyncFn(PathParameters) -> FunctionReturn,
-    >
+    State,
+    PathParameters,
+    FunctionReturn: IntoResponseWithState<State>,
+    H: AsyncFn(PathParameters) -> FunctionReturn,
+>
     RequestHandlerFunction<
         State,
         PathParameters,
@@ -328,11 +324,11 @@ impl<Handler, HandlerTypeSigniature> HandlerFunctionRequestHandler<Handler, Hand
 }
 
 impl<
-        State,
-        PathParameters,
-        HandlerTypeSigniature,
-        Handler: RequestHandlerFunction<State, PathParameters, HandlerTypeSigniature>,
-    > RequestHandler<State, PathParameters>
+    State,
+    PathParameters,
+    HandlerTypeSigniature,
+    Handler: RequestHandlerFunction<State, PathParameters, HandlerTypeSigniature>,
+> RequestHandler<State, PathParameters>
     for HandlerFunctionRequestHandler<Handler, HandlerTypeSigniature>
 {
     async fn call_request_handler<R: Read, W: ResponseWriter<Error = R::Error>>(
@@ -775,12 +771,12 @@ struct Route<PD, Handler, Fallback> {
 impl<PD, Handler, Fallback> sealed::PathRouterIsSealed for Route<PD, Handler, Fallback> {}
 
 impl<
-        State,
-        CurrentPathParameters,
-        PD: PathDescription<CurrentPathParameters>,
-        Handler: MethodHandler<State, PD::NewPathParameters>,
-        Fallback: PathRouter<State, CurrentPathParameters>,
-    > PathRouter<State, CurrentPathParameters> for Route<PD, Handler, Fallback>
+    State,
+    CurrentPathParameters,
+    PD: PathDescription<CurrentPathParameters>,
+    Handler: MethodHandler<State, PD::NewPathParameters>,
+    Fallback: PathRouter<State, CurrentPathParameters>,
+> PathRouter<State, CurrentPathParameters> for Route<PD, Handler, Fallback>
 {
     fn call_path_router<R: Read, W: ResponseWriter<Error = R::Error>>(
         &self,
@@ -836,15 +832,12 @@ impl<PD, Service, Fallback> sealed::PathRouterIsSealed
 }
 
 impl<
-        State,
-        CurrentPathParameters,
-        PD: PathDescription<CurrentPathParameters>,
-        Service: MethodHandlerService<
-            State,
-            <PD as PathDescription<CurrentPathParameters>>::NewPathParameters,
-        >,
-        Fallback: PathRouter<State, CurrentPathParameters>,
-    > PathRouter<State, CurrentPathParameters>
+    State,
+    CurrentPathParameters,
+    PD: PathDescription<CurrentPathParameters>,
+    Service: MethodHandlerService<State, <PD as PathDescription<CurrentPathParameters>>::NewPathParameters>,
+    Fallback: PathRouter<State, CurrentPathParameters>,
+> PathRouter<State, CurrentPathParameters>
     for MethodHandlerServicePathRouter<PD, Service, Fallback>
 {
     fn call_path_router<R: Read, W: ResponseWriter<Error = R::Error>>(
@@ -886,12 +879,12 @@ struct NestedService<PD, Service, Fallback> {
 impl<PD, Service, Fallback> sealed::PathRouterIsSealed for NestedService<PD, Service, Fallback> {}
 
 impl<
-        State,
-        CurrentPathParameters,
-        PD: PathDescription<CurrentPathParameters>,
-        Service: PathRouter<State, PD::NewPathParameters>,
-        Fallback: PathRouter<State, CurrentPathParameters>,
-    > PathRouter<State, CurrentPathParameters> for NestedService<PD, Service, Fallback>
+    State,
+    CurrentPathParameters,
+    PD: PathDescription<CurrentPathParameters>,
+    Service: PathRouter<State, PD::NewPathParameters>,
+    Fallback: PathRouter<State, CurrentPathParameters>,
+> PathRouter<State, CurrentPathParameters> for NestedService<PD, Service, Fallback>
 {
     fn call_path_router<R: Read, W: ResponseWriter<Error = R::Error>>(
         &self,
@@ -948,13 +941,12 @@ impl<PD, Service, Fallback> sealed::PathRouterIsSealed
 }
 
 impl<
-        State,
-        CurrentPathParameters,
-        PD: PathDescription<CurrentPathParameters>,
-        Service: PathRouterService<State, <PD as PathDescription<CurrentPathParameters>>::NewPathParameters>,
-        Fallback: PathRouter<State, CurrentPathParameters>,
-    > PathRouter<State, CurrentPathParameters>
-    for PathRouterServicePathRouter<PD, Service, Fallback>
+    State,
+    CurrentPathParameters,
+    PD: PathDescription<CurrentPathParameters>,
+    Service: PathRouterService<State, <PD as PathDescription<CurrentPathParameters>>::NewPathParameters>,
+    Fallback: PathRouter<State, CurrentPathParameters>,
+> PathRouter<State, CurrentPathParameters> for PathRouterServicePathRouter<PD, Service, Fallback>
 {
     fn call_path_router<R: Read, W: ResponseWriter<Error = R::Error>>(
         &self,
@@ -1024,11 +1016,8 @@ pub struct Router<
     _data: PhantomData<fn(CurrentPathParameters, State)>,
 }
 
-impl<
-        RouterInner: PathRouter<State, CurrentPathParameters> + Clone,
-        State,
-        CurrentPathParameters,
-    > Clone for Router<RouterInner, State, CurrentPathParameters>
+impl<RouterInner: PathRouter<State, CurrentPathParameters> + Clone, State, CurrentPathParameters>
+    Clone for Router<RouterInner, State, CurrentPathParameters>
 {
     fn clone(&self) -> Self {
         let &Self { ref router, _data } = self;
@@ -1040,11 +1029,8 @@ impl<
     }
 }
 
-impl<
-        RouterInner: PathRouter<State, CurrentPathParameters> + Copy,
-        State,
-        CurrentPathParameters,
-    > Copy for Router<RouterInner, State, CurrentPathParameters>
+impl<RouterInner: PathRouter<State, CurrentPathParameters> + Copy, State, CurrentPathParameters>
+    Copy for Router<RouterInner, State, CurrentPathParameters>
 {
 }
 
@@ -1304,11 +1290,11 @@ impl<State, CurrentPathParameters, RouterInner: PathRouter<State, CurrentPathPar
         OuterState,
         OuterPathParameters,
         L: Layer<
-            OuterState,
-            OuterPathParameters,
-            NextState = State,
-            NextPathParameters = CurrentPathParameters,
-        >,
+                OuterState,
+                OuterPathParameters,
+                NextState = State,
+                NextPathParameters = CurrentPathParameters,
+            >,
     >(
         self,
         layer: L,
@@ -1347,11 +1333,8 @@ impl<State, CurrentPathParameters, RouterInner: PathRouter<State, CurrentPathPar
 
         impl<RouterInner> sealed::PathRouterIsSealed for SharedPathRouter<'_, RouterInner> {}
 
-        impl<
-                State,
-                CurrentPathParameters,
-                RouterInner: PathRouter<State, CurrentPathParameters>,
-            > PathRouter<State, CurrentPathParameters> for SharedPathRouter<'_, RouterInner>
+        impl<State, CurrentPathParameters, RouterInner: PathRouter<State, CurrentPathParameters>>
+            PathRouter<State, CurrentPathParameters> for SharedPathRouter<'_, RouterInner>
         {
             async fn call_path_router<R: Read, W: ResponseWriter<Error = R::Error>>(
                 &self,
@@ -1404,13 +1387,12 @@ impl<State, CurrentPathParameters, RouterInner: PathRouter<State, CurrentPathPar
         }
 
         impl<
-                NewState,
-                State,
-                StateRef: core::borrow::Borrow<State>,
-                CurrentPathParameters,
-                RouterInner: PathRouter<State, CurrentPathParameters>,
-            > PathRouter<NewState, CurrentPathParameters>
-            for WithState<State, StateRef, RouterInner>
+            NewState,
+            State,
+            StateRef: core::borrow::Borrow<State>,
+            CurrentPathParameters,
+            RouterInner: PathRouter<State, CurrentPathParameters>,
+        > PathRouter<NewState, CurrentPathParameters> for WithState<State, StateRef, RouterInner>
         {
             fn call_path_router<R: Read, W: ResponseWriter<Error = R::Error>>(
                 &self,
@@ -1466,11 +1448,11 @@ pub enum EitherPathRoute<L, R> {
 impl<L, R> sealed::PathRouterIsSealed for EitherPathRoute<L, R> {}
 
 impl<
-        State,
-        CurrentPathParameters,
-        Left: PathRouter<State, CurrentPathParameters>,
-        Right: PathRouter<State, CurrentPathParameters>,
-    > PathRouter<State, CurrentPathParameters> for EitherPathRoute<Left, Right>
+    State,
+    CurrentPathParameters,
+    Left: PathRouter<State, CurrentPathParameters>,
+    Right: PathRouter<State, CurrentPathParameters>,
+> PathRouter<State, CurrentPathParameters> for EitherPathRoute<Left, Right>
 {
     fn call_path_router<R: Read, W: ResponseWriter<Error = R::Error>>(
         &self,

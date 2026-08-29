@@ -11,9 +11,8 @@ use embassy_rp::{
 
 use panic_persist as _;
 use picoserve::{
-    make_static,
+    AppBuilder, AppRouter, make_static,
     routing::{get, post},
-    AppBuilder, AppRouter,
 };
 use rand::Rng;
 

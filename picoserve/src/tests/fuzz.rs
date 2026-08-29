@@ -1,4 +1,4 @@
-use std::{boxed::Box, eprintln, future::Future, string::String};
+use std::{boxed::Box, eprintln, string::String};
 
 use rand::{Rng, RngExt};
 

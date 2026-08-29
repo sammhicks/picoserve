@@ -2,7 +2,7 @@
 
 use futures_util::FutureExt;
 
-use core::future::Future;
+use Future;
 
 use crate::io::{BaseWrite, Read, Write};
 

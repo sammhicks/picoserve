@@ -1,7 +1,7 @@
 [package]
 name = "set_pico_w_led"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 description = "Controlling the LED on the Raspberry Pi Pico via a web interface."
 categories = ["Embassy on Raspberry Pi Pico"]
 

@@ -1,7 +1,7 @@
 [package]
 name = "response_using_state"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 description = "Returning a response which uses the State when writing itself to the socket."
 categories = ["Tokio"]
 

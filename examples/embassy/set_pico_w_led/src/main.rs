@@ -12,10 +12,9 @@ use embassy_rp::{
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, mutex::Mutex};
 use panic_persist as _;
 use picoserve::{
-    make_static,
+    AppBuilder, AppRouter, make_static,
     response::DebugValue,
-    routing::{get, parse_path_segment, PathRouter},
-    AppBuilder, AppRouter,
+    routing::{PathRouter, get, parse_path_segment},
 };
 use rand::Rng;
 

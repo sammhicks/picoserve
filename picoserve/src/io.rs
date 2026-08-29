@@ -1,6 +1,6 @@
 //! IO Utility
 
-use core::{fmt, future::Future};
+use core::fmt;
 
 pub use embedded_io_async::{
     self, Error, ErrorKind, ErrorType, Read, ReadExactError, Write as BaseWrite,

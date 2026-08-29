@@ -17,7 +17,7 @@ impl response::ws::WebSocketCallbackWithShutdownSignal for WebSocketCallback {
     async fn run_with_shutdown_signal<
         R: picoserve::io::Read,
         W: picoserve::io::Write<Error = R::Error>,
-        S: core::future::Future<Output = ()> + Clone + Unpin,
+        S: Future<Output = ()> + Clone + Unpin,
     >(
         self,
         mut rx: response::ws::SocketRx<R>,

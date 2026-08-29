@@ -1,6 +1,6 @@
 use crate::{
-    io::{Read, Write},
     ResponseSent,
+    io::{Read, Write},
 };
 
 use super::{Connection, Content, IntoResponse, ResponseWriter};

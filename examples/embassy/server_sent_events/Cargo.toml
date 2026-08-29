@@ -1,7 +1,7 @@
 [package]
 name = "server_sent_events"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 description = "A long-lived connection generating Server-Sent Events with Keep-Alive messages."
 categories = ["Embassy on Raspberry Pi Pico"]
 

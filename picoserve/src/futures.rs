@@ -1,5 +1,4 @@
 use core::{
-    future::Future,
     pin::Pin,
     task::{Context, Poll},
 };
@@ -139,8 +138,10 @@ mod tests {
     fn select_neither() {
         enum Never {}
 
-        assert!(select(pending::<Never>(), pending::<Never>())
-            .now_or_never()
-            .is_none());
+        assert!(
+            select(pending::<Never>(), pending::<Never>())
+                .now_or_never()
+                .is_none()
+        );
     }
 }
