@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 description = "Stateful Applications with data coming from the connection."
 categories = ["Tokio"]
+publish = false
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

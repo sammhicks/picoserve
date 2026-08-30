@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 description = "Controlling the LED on the Raspberry Pi Pico via a web interface."
 categories = ["Embassy on Raspberry Pi Pico"]
+publish = false
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
