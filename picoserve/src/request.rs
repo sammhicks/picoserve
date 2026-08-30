@@ -101,7 +101,7 @@ impl fmt::Debug for HeaderName<'_> {
 #[cfg(feature = "defmt")]
 impl defmt::Format for HeaderName<'_> {
     fn format(&self, fmt: defmt::Formatter) {
-        self.name.format(fmt)
+        self.name.format(fmt);
     }
 }
 
@@ -153,7 +153,7 @@ impl fmt::Debug for HeaderValue<'_> {
 #[cfg(feature = "defmt")]
 impl defmt::Format for HeaderValue<'_> {
     fn format(&self, fmt: defmt::Formatter) {
-        self.value.format(fmt)
+        self.value.format(fmt);
     }
 }
 
@@ -501,7 +501,7 @@ pub enum ReadAllBodyError {
         content_length: usize,
         buffer_length: usize,
     },
-    /// EndOfFile reached while reading the body before the entire body has been read.
+    /// `EndOfFile` reached while reading the body before the entire body has been read.
     #[error("The client closed the connection")]
     #[status_code(BAD_REQUEST)]
     UnexpectedEof,
@@ -642,7 +642,7 @@ impl<'r, R: Read> RequestBodyConnection<'r, R> {
     }
 
     /// "Finalize" the connection, returning the underlying connection.
-    /// Also cancels the read timeout to avoid long-lived connections such as WebSockets triggering it.
+    /// Also cancels the read timeout to avoid long-lived connections such as Web Sockets triggering it.
     pub async fn finalize(
         self,
     ) -> Result<crate::response::Connection<'r, impl Read<Error = R::Error> + 'r>, R::Error> {
@@ -720,7 +720,7 @@ impl<'r, R: Read> RequestBodyConnection<'r, R> {
 
         Ok(crate::response::Connection {
             reader: crate::response::AfterBodyReader { mode, reader },
-            connection_flags,
+            flags: connection_flags,
             shutdown_signal,
         })
     }
@@ -802,7 +802,7 @@ pub(crate) enum ReadError<E> {
     BadRequestLine,
     /// A Header line does not contain a ':'
     HeaderDoesNotContainColon,
-    /// EndOfFile before the end of the request line or headers
+    /// `EndOfFile` before the end of the request line or headers
     UnexpectedEof,
     /// IO Error
     IO(E),

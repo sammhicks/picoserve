@@ -52,7 +52,7 @@ impl<'data> BorrowedBuffer<'data> {
     }
 
     /// Returns a cursor over the unfilled part of the buffer.
-    pub fn unfilled<'this>(&'this mut self) -> BorrowedCursor<'this> {
+    pub fn unfilled(&mut self) -> BorrowedCursor<'_> {
         let Self { buffer, filled } = self;
 
         BorrowedCursor { buffer, filled }
@@ -61,7 +61,6 @@ impl<'data> BorrowedBuffer<'data> {
 
 /// The error produced by [`BorrowedCursor::try_append`]
 #[derive(Debug)]
-#[must_use]
 pub struct FailedToAppendError<'a> {
     /// The portion of data that was appended to the [`BorrowedCursor`].
     pub written_data: &'a [u8],
@@ -165,6 +164,10 @@ impl BorrowedCursor<'_> {
     }
 
     /// Run the given closure with a [`BorrowedBuffer`] containing the unfilled part of the cursor.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the `BorrowedBuf` given to the closure is replaced by another one.
     pub fn with_unfilled_buf<T>(&mut self, f: impl FnOnce(&mut BorrowedBuffer<'_>) -> T) -> T {
         let mut buffer = BorrowedBuffer::new(self.as_mut_slice());
         let previous_buffer_pointer = buffer.buffer.as_ptr();
@@ -288,8 +291,8 @@ mod tests {
                     buffer.unfilled().with_unfilled_buf(|buffer| {
                         buffer.unfilled().try_append(second_data).unwrap();
                         buffer.unfilled().with_unfilled_buf(|buffer| {
-                            buffer.unfilled().try_append(third_data).unwrap()
-                        })
+                            buffer.unfilled().try_append(third_data).unwrap();
+                        });
                     });
 
                     assert_eq!(buffer.filled(), data);
@@ -325,7 +328,7 @@ mod tests {
                 assert_eq!(
                     (cursor.position() - start_position) + cursor.remaining_capacity(),
                     buffer.capacity(),
-                )
+                );
             }
         });
     }

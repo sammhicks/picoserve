@@ -16,7 +16,7 @@ pub struct Sender<'a, T: Copy> {
     channel: &'a SignalCore<T>,
 }
 
-impl<'a, T: Copy> Sender<'a, T> {
+impl<T: Copy> Sender<'_, T> {
     pub fn send(self, value: T) {
         self.channel.value.set(Some(value));
 
@@ -31,7 +31,7 @@ pub struct Signal<'a, T: Copy> {
     channel: &'a SignalCore<T>,
 }
 
-impl<'a, T: Copy> Signal<'a, T> {
+impl<T: Copy> Signal<'_, T> {
     pub fn core() -> SignalCore<T> {
         SignalCore {
             value: None.into(),

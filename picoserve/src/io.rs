@@ -289,7 +289,7 @@ pub(crate) mod tokio_support {
 }
 
 #[cfg(feature = "embassy")]
-impl<'a> Write for embassy_net::tcp::TcpWriter<'a> {
+impl Write for embassy_net::tcp::TcpWriter<'_> {
     fn write_with<F: FnOnce(BorrowedCursor<'_>) -> R, R>(
         &mut self,
         f: F,

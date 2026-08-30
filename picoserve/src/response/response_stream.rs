@@ -192,13 +192,11 @@ impl<W: Write> super::ResponseWriter for ResponseStream<W> {
         headers
             .for_each_header(HeadersWriter {
                 writer: &mut self.writer,
-                connection_header: Some(
-                    if connection.connection_flags.connection_must_be_closed() {
-                        ConnectionHeader::ForceClose
-                    } else {
-                        ConnectionHeader::DefaultTo(self.connection_header)
-                    },
-                ),
+                connection_header: Some(if connection.flags.connection_must_be_closed() {
+                    ConnectionHeader::ForceClose
+                } else {
+                    ConnectionHeader::DefaultTo(self.connection_header)
+                }),
             })
             .await?;
 

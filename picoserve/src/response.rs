@@ -171,14 +171,14 @@ impl<R: Read> Read for UpgradedConnection<'_, R> {
 /// A handle to the current connection. Allows a long-lasting response to check if the client has disconnected.
 pub struct Connection<'r, R: Read> {
     pub(crate) reader: AfterBodyReader<'r, R>,
-    pub(crate) connection_flags: &'r mut crate::request::ConnectionFlags,
+    pub(crate) flags: &'r mut crate::request::ConnectionFlags,
     pub(crate) shutdown_signal: oneshot_broadcast::Signal<'r, ()>,
 }
 
 impl<'r, R: Read> Connection<'r, R> {
     /// Upgrade the connection and get access to the inner reader
     pub fn upgrade(self, upgrade_token: crate::extract::UpgradeToken) -> UpgradedConnection<'r, R> {
-        self.connection_flags.notify_connection_has_been_upgraded();
+        self.flags.notify_connection_has_been_upgraded();
 
         UpgradedConnection {
             upgrade_token,
@@ -242,7 +242,7 @@ impl<'r, E: crate::io::Error> Connection<'r, EmptyReader<E>> {
                 mode: AfterBodyReadMode::ReadFromReader,
                 reader: EmptyReader(core::marker::PhantomData),
             },
-            connection_flags,
+            flags: connection_flags,
             shutdown_signal: shutdown_signal.make_signal().1,
         }
     }
@@ -475,7 +475,7 @@ impl Content for fmt::Arguments<'_> {
     }
 
     async fn write_content<W: Write>(self, mut writer: W) -> Result<(), W::Error> {
-        write!(writer, "{}", self).await
+        write!(writer, "{self}").await
     }
 }
 

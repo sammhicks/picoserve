@@ -396,7 +396,7 @@ struct SerializeObjectKey<'a, W: fmt::Write> {
     serializer: Serializer<'a, W>,
 }
 
-impl<'a, W: fmt::Write> serde::Serializer for SerializeObjectKey<'a, W> {
+impl<W: fmt::Write> serde::Serializer for SerializeObjectKey<'_, W> {
     type Ok = ();
     type Error = SerializeError;
 
@@ -785,10 +785,6 @@ mod tests {
 
     impl crate::tests::fuzz::TestValue<usize> for Value {
         fn generate(test_data: &mut crate::tests::fuzz::TestData, fuel: usize) -> Self {
-            let Some(fuel) = fuel.checked_sub(1) else {
-                return Self::Null;
-            };
-
             fn generate_array(
                 test_data: &mut crate::tests::fuzz::TestData,
                 fuel: usize,
@@ -799,6 +795,10 @@ mod tests {
                     .take(length)
                     .collect()
             }
+
+            let Some(fuel) = fuel.checked_sub(1) else {
+                return Self::Null;
+            };
 
             match test_data.choose_value(strum::VariantArray::VARIANTS) {
                 JsonValueType::Null => Value::Null,
@@ -827,7 +827,7 @@ mod tests {
 
         let actual = serde_json::from_str::<Value>(&buffer).unwrap();
 
-        assert_eq!(&actual, expected)
+        assert_eq!(&actual, expected);
     }
 
     #[tokio::test]
@@ -837,7 +837,7 @@ mod tests {
 
             verify_json(&value, &value);
         })
-        .await
+        .await;
     }
 
     #[test]
@@ -856,6 +856,12 @@ mod tests {
 
     #[test]
     fn serialize_map_as_array_of_pairs() {
+        #[derive(serde::Serialize)]
+        struct TestStruct {
+            #[serde(serialize_with = "super::serialize_map_as_array_of_pairs")]
+            map: std::collections::BTreeMap<(i32, i32), i32>,
+        }
+
         verify_json(
             &super::SerializeMapAsArrayOfPairs(std::collections::BTreeMap::from([
                 ((1, 2), (3, 4)),
@@ -863,12 +869,6 @@ mod tests {
             ])),
             &serde_json::json!([[[1, 2], [3, 4]], [[5, 6], [7, 8]]]),
         );
-
-        #[derive(serde::Serialize)]
-        struct TestStruct {
-            #[serde(serialize_with = "super::serialize_map_as_array_of_pairs")]
-            map: std::collections::BTreeMap<(i32, i32), i32>,
-        }
 
         verify_json(
             &TestStruct {
@@ -902,10 +902,11 @@ mod tests {
                 .display()
                 .to_string();
 
-            if json_value.contains('\n') {
-                panic!("JSON values must not contain '\n'");
-            }
+            assert!(
+                !json_value.contains('\n'),
+                "JSON values must not contain '\n'"
+            );
         })
-        .await
+        .await;
     }
 }

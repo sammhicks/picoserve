@@ -1128,7 +1128,7 @@ mod tests {
                 0
             );
         })
-        .await
+        .await;
     }
 
     #[tokio::test]
@@ -1195,6 +1195,6 @@ mod tests {
             );
             assert_eq!(socket_rx.reader, &[] as &[u8]);
         })
-        .await
+        .await;
     }
 }

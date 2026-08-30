@@ -336,7 +336,7 @@ async fn io_write_fmt_works() {
 
         assert_eq!(buffer, data.to_string().as_bytes());
     })
-    .await
+    .await;
 }
 
 #[tokio::test]
@@ -362,7 +362,7 @@ async fn simple_routing() {
 }
 
 #[tokio::test]
-/// Test that requesting a nonexistant route returns NOT_FOUND
+/// Test that requesting a nonexistant route returns `NOT_FOUND`
 async fn not_found() {
     let (response_parts, _response_body) = run_single_request_test(
         &Router::new().route("/", routing::get(|| async move {})),

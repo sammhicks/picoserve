@@ -506,10 +506,10 @@ async fn serve_and_shutdown<
                 }),
             };
 
-            match result_future.await {
+            return match result_future.await {
                 LoopResult::Continue => continue,
-                LoopResult::Stop(result) => return result,
-            }
+                LoopResult::Stop(result) => result,
+            };
         }
     }
     .await;
@@ -692,11 +692,10 @@ impl<'a, P: routing::PathRouter>
 
 #[cfg(feature = "embassy")]
 impl<
-    'a,
     P: routing::PathRouter,
     ShutdownReason,
     ShutdownSignal: Future<Output = (ShutdownReason, embassy_time::Duration)>,
-> Server<'a, EmbassyRuntime, time::EmbassyTimer, P, ShutdownSignal>
+> Server<'_, EmbassyRuntime, time::EmbassyTimer, P, ShutdownSignal>
 {
     /// Listen for incoming connections, and serve requests read from the connection.
     ///

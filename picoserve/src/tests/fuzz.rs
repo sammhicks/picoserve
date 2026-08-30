@@ -246,7 +246,7 @@ pub fn run_sync(test_name: impl AsRef<str>, test: impl Fn(&mut TestData)) {
     }));
 
     for _ in 0..100 {
-        test(&mut test_data)
+        test(&mut test_data);
     }
 
     _ = std::panic::take_hook();
@@ -261,7 +261,7 @@ pub async fn run_async(test_name: impl AsRef<str>, test: impl AsyncFn(&mut TestD
     }));
 
     for _ in 0..100 {
-        test(&mut test_data).await
+        test(&mut test_data).await;
     }
 
     _ = std::panic::take_hook();

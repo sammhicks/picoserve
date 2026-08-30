@@ -119,7 +119,7 @@ pub trait EventData {
     async fn write_to<W: Write>(self, writer: &mut EventDataWriter<W>) -> Result<(), W::Error>;
 }
 
-impl<'a> EventData for core::fmt::Arguments<'a> {
+impl EventData for core::fmt::Arguments<'_> {
     async fn write_to<W: Write>(self, writer: &mut EventDataWriter<W>) -> Result<(), W::Error> {
         writer.write_fmt(self).await
     }
@@ -175,7 +175,7 @@ impl<W: Write> EventWriter<'_, W> {
         // If the connection was shutting down, block writing suspend the task to allow `write_events_until_shutdown` to terminate.
         if !event_writer_state.is_running.get() {
             return core::future::pending().await;
-        };
+        }
 
         result
     }
@@ -518,7 +518,7 @@ mod tests {
 
             verify_sse_output(&entire_generated_string, &buffer);
         })
-        .await
+        .await;
     }
 
     #[tokio::test]
