@@ -843,7 +843,7 @@ dependencies = [
 
 [[package]]
 name = "picoserve"
-version = "0.19.0"
+version = "0.20.0"
 dependencies = [
  "const-sha1",
  "data-encoding",
@@ -877,7 +877,7 @@ dependencies = [
 
 [[package]]
 name = "picoserve_derive"
-version = "0.1.4"
+version = "0.2.0"
 dependencies = [
  "proc-macro2",
  "quote",
