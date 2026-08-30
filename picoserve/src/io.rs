@@ -6,10 +6,7 @@ pub use embedded_io_async::{
     self, Error, ErrorKind, ErrorType, Read, ReadExactError, Write as BaseWrite,
 };
 
-use crate::{
-    mem::{BorrowedBuffer, BorrowedCursor},
-    time::Timer,
-};
+use crate::{mem::BorrowedCursor, time::Timer};
 
 /// An extension trait for [`Read`] which allows discarding of all incoming data until the client closes the connection.
 pub trait ReadExt: Read {
@@ -133,7 +130,7 @@ impl Write for alloc::vec::Vec<u8> {
         f: F,
     ) -> Result<R, Self::Error> {
         let mut buffer = [0; 1024];
-        let mut buffer = BorrowedBuffer::new(&mut buffer);
+        let mut buffer = crate::mem::BorrowedBuffer::new(&mut buffer);
 
         let output = f(buffer.unfilled());
 
@@ -223,7 +220,7 @@ pub(crate) mod tokio_support {
             use tokio::io::AsyncWriteExt;
 
             let mut buffer = [0; 1024];
-            let mut buffer = super::BorrowedBuffer::new(&mut buffer);
+            let mut buffer = crate::mem::BorrowedBuffer::new(&mut buffer);
 
             let output = f(buffer.unfilled());
 
@@ -295,7 +292,7 @@ impl Write for embassy_net::tcp::TcpWriter<'_> {
         f: F,
     ) -> impl Future<Output = Result<R, Self::Error>> {
         embassy_net::tcp::TcpWriter::write_with(self, |buffer| {
-            let mut buffer = BorrowedBuffer::new(buffer);
+            let mut buffer = crate::mem::BorrowedBuffer::new(buffer);
 
             let output = f(buffer.unfilled());
 
