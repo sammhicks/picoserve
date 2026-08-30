@@ -14,9 +14,9 @@ categories = ["asynchronous", "network-programming", "web-programming::http-serv
 proc-macro = true
 
 [dependencies]
-proc-macro2 = "1.0.92"
-quote = "1.0.38"
-syn = { version = "2.0.92", features = ["full"] }
+proc-macro2 = "1.0.107"
+quote = "1.0.47"
+syn = { version = "3.0.4", features = ["full"] }
 
 [dev-dependencies]
-thiserror = { version = "2.0.9", default-features = false }
+thiserror = { version = "2.0.20", default-features = false }

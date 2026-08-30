@@ -427,6 +427,10 @@ impl<const N: usize> Content for heapless::Vec<u8, N> {
     content_methods!(as_slice);
 }
 
+impl<const N: usize> Content for heapless_0_8::Vec<u8, N> {
+    content_methods!(as_slice);
+}
+
 #[cfg(any(test, feature = "alloc"))]
 impl Content for alloc::vec::Vec<u8> {
     content_methods!(as_slice);
@@ -447,6 +451,10 @@ impl Content for &str {
 }
 
 impl<const N: usize> Content for heapless::String<N> {
+    content_methods!(as_str);
+}
+
+impl<const N: usize> Content for heapless_0_8::String<N> {
     content_methods!(as_str);
 }
 

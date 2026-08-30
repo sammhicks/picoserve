@@ -9,7 +9,6 @@ use embassy_usb::{
     class::cdc_ncm::embassy_net::{Device, Runner, State as NetState},
     class::cdc_ncm::{CdcNcmClass, State as NcmState},
 };
-use static_cell::StaticCell;
 
 use panic_persist as _;
 use picoserve::{AppBuilder, AppRouter, make_static, routing::get};
@@ -97,16 +96,13 @@ async fn main(spawner: embassy_executor::Spawner) {
     config.max_packet_size_0 = 64;
 
     // Create embassy-usb DeviceBuilder using the driver and config.
-    static CONFIG_DESC: StaticCell<[u8; 256]> = StaticCell::new();
-    static BOS_DESC: StaticCell<[u8; 256]> = StaticCell::new();
-    static CONTROL_BUF: StaticCell<[u8; 128]> = StaticCell::new();
     let mut builder = Builder::new(
         driver,
         config,
-        &mut CONFIG_DESC.init([0; 256])[..],
-        &mut BOS_DESC.init([0; 256])[..],
+        picoserve::make_static!([u8; 256], [0; _]),
+        picoserve::make_static!([u8; 256], [0; _]),
         &mut [], // no msos descriptors
-        &mut CONTROL_BUF.init([0; 128])[..],
+        picoserve::make_static!([u8; 128], [0; _]),
     );
 
     // Our MAC addr.
@@ -116,24 +112,32 @@ async fn main(spawner: embassy_executor::Spawner) {
 
     // Create classes on the builder
     // CDC NCM for the Ethernet emulation and the web server
-    static STATE: StaticCell<NcmState> = StaticCell::new();
-    let ncm_class = CdcNcmClass::new(&mut builder, STATE.init(NcmState::new()), host_mac_addr, 64);
+    let ncm_class = CdcNcmClass::new(
+        &mut builder,
+        picoserve::make_static!(NcmState, NcmState::new()),
+        host_mac_addr,
+        64,
+    );
 
     // CDC ACM for the logger via emulated serial
-    static LOGGER_STATE: StaticCell<AcmState> = StaticCell::new();
-    let logger_class = CdcAcmClass::new(&mut builder, LOGGER_STATE.init(AcmState::new()), 64);
+    let logger_class = CdcAcmClass::new(
+        &mut builder,
+        picoserve::make_static!(AcmState, AcmState::new()),
+        64,
+    );
 
     // Build the builder.
     let usb = builder.build();
 
-    spawner.must_spawn(usb_task(usb));
-    spawner.must_spawn(logger_task(logger_class));
+    spawner.spawn(usb_task(usb).unwrap());
+    spawner.spawn(logger_task(logger_class).unwrap());
 
     // Create the NCM net_device from the NCM class
-    static NET_STATE: StaticCell<NetState<MTU, 4, 4>> = StaticCell::new();
-    let (runner, net_device) = ncm_class
-        .into_embassy_net_device::<MTU, 4, 4>(NET_STATE.init(NetState::new()), our_mac_addr);
-    let _ = spawner.spawn(usb_ncm_task(runner));
+    let (runner, net_device) = ncm_class.into_embassy_net_device::<MTU, 4, 4>(
+        picoserve::make_static!(NetState<MTU, 4, 4>, NetState::new()),
+        our_mac_addr,
+    );
+    spawner.spawn(usb_ncm_task(runner).unwrap());
 
     // Init the network stack with static IPv4 and using the NCM device
     let (stack, runner) = embassy_net::new(
@@ -150,12 +154,9 @@ async fn main(spawner: embassy_executor::Spawner) {
         embassy_rp::clocks::RoscRng.random(),
     );
 
-    spawner.must_spawn(net_task(runner));
+    spawner.spawn(net_task(runner).unwrap());
 
-    spawner.must_spawn(example_utils::dhcp::dhcp_task(
-        example_utils::ADDRESS,
-        stack,
-    ));
+    spawner.spawn(example_utils::dhcp::dhcp_task(example_utils::ADDRESS, stack).unwrap());
 
     // Start the web server and span its tasks
     let app = make_static!(AppRouter<AppProps>, AppProps.build_app());
@@ -163,6 +164,6 @@ async fn main(spawner: embassy_executor::Spawner) {
     log::info!("{}", example_utils::WELCOME_MESSAGE);
 
     for task_id in 0..WEB_TASK_POOL_SIZE {
-        spawner.must_spawn(web_task(task_id, stack, app));
+        spawner.spawn(web_task(task_id, stack, app).unwrap());
     }
 }

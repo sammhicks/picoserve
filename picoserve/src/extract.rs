@@ -127,39 +127,48 @@ impl<'r, State> FromRequest<'r, State> for &'r [u8] {
     }
 }
 
-impl<'r, State, const N: usize> FromRequest<'r, State> for heapless::Vec<u8, N> {
-    type Rejection = ReadAllBodyError;
+macro_rules! heapless_vec_from_request {
+    ($module:ident) => {
+        impl<'r, State, const N: usize> FromRequest<'r, State> for $module::Vec<u8, N> {
+            type Rejection = ReadAllBodyError;
 
-    async fn from_request<R: Read>(
-        _state: &'r State,
-        _request_parts: RequestParts<'r>,
-        request_body: RequestBody<'r, R>,
-    ) -> Result<Self, Self::Rejection> {
-        let mut buffer = Self::new();
+            async fn from_request<R: Read>(
+                _state: &'r State,
+                _request_parts: RequestParts<'r>,
+                request_body: RequestBody<'r, R>,
+            ) -> Result<Self, Self::Rejection> {
+                let mut buffer = Self::new();
 
-        let content_length = request_body.content_length();
+                let content_length = request_body.content_length();
 
-        buffer
-            .resize(request_body.content_length(), 0)
-            .map_err(|()| ReadAllBodyError::BufferIsTooSmall {
-                content_length,
-                buffer_length: N,
-            })?;
+                buffer
+                    .resize(request_body.content_length(), 0)
+                    .map_err(|_| ReadAllBodyError::BufferIsTooSmall {
+                        content_length,
+                        buffer_length: N,
+                    })?;
 
-        request_body
-            .reader()
-            .read_exact(buffer.as_mut_slice())
-            .await
-            .map_err(|error| match error {
-                embedded_io_async::ReadExactError::UnexpectedEof => ReadAllBodyError::UnexpectedEof,
-                embedded_io_async::ReadExactError::Other(error) => {
-                    ReadAllBodyError::IO(error.kind())
-                }
-            })?;
+                request_body
+                    .reader()
+                    .read_exact(buffer.as_mut_slice())
+                    .await
+                    .map_err(|error| match error {
+                        embedded_io_async::ReadExactError::UnexpectedEof => {
+                            ReadAllBodyError::UnexpectedEof
+                        }
+                        embedded_io_async::ReadExactError::Other(error) => {
+                            ReadAllBodyError::IO(error.kind())
+                        }
+                    })?;
 
-        Ok(buffer)
-    }
+                Ok(buffer)
+            }
+        }
+    };
 }
+
+heapless_vec_from_request!(heapless);
+heapless_vec_from_request!(heapless_0_8);
 
 #[cfg(any(test, feature = "alloc"))]
 impl<'r, State> FromRequest<'r, State> for alloc::vec::Vec<u8> {
@@ -268,22 +277,31 @@ impl<'r, State> FromRequest<'r, State> for &'r str {
     }
 }
 
-impl<'r, State, const N: usize> FromRequest<'r, State> for heapless::String<N> {
-    type Rejection = FailedToExtractEntireBodyAsStringError;
+macro_rules! heapless_string_from_request {
+    ($module:ident) => {
+        impl<'r, State, const N: usize> FromRequest<'r, State> for $module::String<N> {
+            type Rejection = FailedToExtractEntireBodyAsStringError;
 
-    async fn from_request<R: Read>(
-        state: &'r State,
-        request_parts: RequestParts<'r>,
-        request_body: RequestBody<'r, R>,
-    ) -> Result<Self, Self::Rejection> {
-        heapless::String::from_utf8(
-            heapless::Vec::from_request(state, request_parts, request_body)
-                .await
-                .map_err(FailedToExtractEntireBodyAsStringError::FailedToExtractEntireBody)?,
-        )
-        .map_err(FailedToExtractEntireBodyAsStringError::StringIsNotUtf8)
-    }
+            async fn from_request<R: Read>(
+                state: &'r State,
+                request_parts: RequestParts<'r>,
+                request_body: RequestBody<'r, R>,
+            ) -> Result<Self, Self::Rejection> {
+                $module::String::from_utf8(
+                    $module::Vec::from_request(state, request_parts, request_body)
+                        .await
+                        .map_err(
+                            FailedToExtractEntireBodyAsStringError::FailedToExtractEntireBody,
+                        )?,
+                )
+                .map_err(FailedToExtractEntireBodyAsStringError::StringIsNotUtf8)
+            }
+        }
+    };
 }
+
+heapless_string_from_request!(heapless);
+heapless_string_from_request!(heapless_0_8);
 
 #[cfg(any(test, feature = "alloc"))]
 impl<'r, State> FromRequest<'r, State> for alloc::string::String {

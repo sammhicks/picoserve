@@ -19,22 +19,23 @@ features = ["tokio", "embassy", "json", "ws"]
 
 [dependencies]
 const-sha1 = { version = "0.3.0", default-features = false }
-data-encoding = { version = "2.4.0", default-features = false, optional = true }
-defmt = { version = "1.0.1", optional = true }
+data-encoding = { version = "2.11.1", default-features = false, optional = true }
+defmt = { version = "1.1.1", optional = true }
 embassy-net = { version = "0.9.1", optional = true, features = ["tcp", "proto-ipv4", "medium-ethernet"] }
-embassy-time = { version = "0.5.0", optional = true }
-embedded-io-async = "0.7"
-futures-util = { version = "0.3.28", default-features = false }
-heapless = { version = "0.8.0", features = ["serde"] }
+embassy-time = { version = "0.5.1", optional = true }
+embedded-io-async = "0.7.0"
+futures-util = { version = "0.3.34", default-features = false }
+heapless = { version = "0.9.3", features = ["serde"] }
+heapless-0-8 = { package = "heapless", version = "0.8.0" }
 lhash = { version = "1.1.0", features = ["sha1"], optional = true }
-log = { version = "0.4.19", optional = true, default-features = false }
+log = { version = "0.4.34", optional = true, default-features = false }
 picoserve_derive = { version = "0.1.4", path = "../picoserve_derive" }
-pin-project = "1.1.10"
-ryu = { version = "1.0.14", optional = true }
-serde = { version = "1.0.171", default-features = false, features = ["derive"] }
+pin-project = "1.1.13"
+ryu = { version = "1.0.23", optional = true }
+serde = { version = "1.0.229", default-features = false, features = ["derive"] }
 serde-json-core = { version = "0.6.0", optional = true }
-thiserror = { version = "2.0.9", default-features = false }
-tokio = { version = "1.32.0", optional = true, features = ["io-util", "net", "time"] }
+thiserror = { version = "2.0.20", default-features = false }
+tokio = { version = "1.53.1", optional = true, features = ["io-util", "net", "time"] }
 
 [features]
 std = ["alloc"]     # Use the standard library. Used by examples.
@@ -50,15 +51,15 @@ ws = ["dep:data-encoding", "dep:lhash"]     # Enable WebSocket support
 
 [dev-dependencies]
 embedded-io-async = { version = "0.7.0", features = ["std"] }
-futures-util = { version = "0.3.28", default-features = false }
-http-body-util = "0.1.0"
+futures-util = { version = "0.3.34", default-features = false }
+http-body-util = "0.1.5"
 httparse = "1.10.1"
-hyper = { version = "1.1.0", features = ["client", "http1"] }
-ntest = "0.9.3"
+hyper = { version = "1.11.1", features = ["client", "http1"] }
+ntest = "0.9.5"
 rand = "0.10.2"
 rand_pcg = "0.10.2"
 serde_json = { version = "1.0.151", features = ["preserve_order"] }
 sha2 = "0.11.0"
 strum = { version = "0.28.0", features = ["derive"] }
-tokio = { version = "1.0.0", features = ["rt", "io-util", "net", "time", "macros", "sync", "test-util"] }
+tokio = { version = "1.53.1", features = ["rt", "io-util", "net", "time", "macros", "sync", "test-util"] }
 tungstenite = "0.30.0"

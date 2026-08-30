@@ -214,7 +214,7 @@ impl<'a> UrlEncodedString<'a> {
 
         for c in self.chars() {
             str.push(c.map_err(DecodeError::BadUrlEncodedCharacter)?.into_char())
-                .map_err(|()| DecodeError::NoSpace)?;
+                .map_err(|_| DecodeError::NoSpace)?;
         }
 
         Ok(str)

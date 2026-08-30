@@ -33,11 +33,11 @@ exclude = [
 ]
 
 [workspace.dependencies]
-anyhow = "1.0.86"
+anyhow = "1.0.104"
 futures-util = "0.3.31"
-heapless = { version = "0.8.0", features = ["serde"] }
-log = "0.4.19"
+heapless = { version = "0.9.3", features = ["serde"] }
+log = "0.4.34"
 pretty_env_logger = "0.5.0"
-serde = { version = "1.0.204", features = ["derive"] }
-thiserror = { version = "2.0.9", default-features = false }
-tokio = { version = "1.38.1", features = ["rt", "io-util", "net", "time", "macros"] }
+serde = { version = "1.0.229", features = ["derive"] }
+thiserror = { version = "2.0.20", default-features = false }
+tokio = { version = "1.53.1", features = ["rt", "io-util", "net", "time", "macros"] }

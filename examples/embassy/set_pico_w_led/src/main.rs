@@ -3,10 +3,8 @@
 #![feature(impl_trait_in_assoc_type)]
 
 use cyw43::Control;
-use cyw43_pio::PioSpi;
 use embassy_rp::{
     gpio::{Level, Output},
-    peripherals::{DMA_CH0, PIO0},
     pio::Pio,
 };
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, mutex::Mutex};
@@ -21,6 +19,7 @@ use rand::Rng;
 use picoserve::extract::State;
 
 embassy_rp::bind_interrupts!(struct Irqs {
+    DMA_IRQ_0 => embassy_rp::dma::InterruptHandler<embassy_rp::peripherals::DMA_CH0>;
     PIO0_IRQ_0 => embassy_rp::pio::InterruptHandler<embassy_rp::peripherals::PIO0>;
     USBCTRL_IRQ => embassy_rp::usb::InterruptHandler<embassy_rp::peripherals::USB>;
 });
@@ -35,7 +34,13 @@ async fn logger_task(usb: embassy_rp::Peri<'static, embassy_rp::peripherals::USB
 
 #[embassy_executor::task]
 async fn wifi_task(
-    runner: cyw43::Runner<'static, Output<'static>, PioSpi<'static, PIO0, 0, DMA_CH0>>,
+    runner: cyw43::Runner<
+        'static,
+        cyw43::SpiBus<
+            Output<'static>,
+            cyw43_pio::PioSpi<'static, embassy_rp::peripherals::PIO0, 0>,
+        >,
+    >,
 ) -> ! {
     runner.run().await
 }
@@ -123,7 +128,7 @@ async fn web_task(
 async fn main(spawner: embassy_executor::Spawner) {
     let p = embassy_rp::init(Default::default());
 
-    spawner.must_spawn(logger_task(p.USB));
+    spawner.spawn(logger_task(p.USB).unwrap());
 
     if let Some(panic_message) = panic_persist::get_panic_message_utf8() {
         loop {
@@ -132,8 +137,9 @@ async fn main(spawner: embassy_executor::Spawner) {
         }
     }
 
-    let fw = include_bytes!("../../cyw43-firmware/43439A0.bin");
-    let clm = include_bytes!("../../cyw43-firmware/43439A0_clm.bin");
+    let fw = cyw43::aligned_bytes!("../../cyw43-firmware/43439A0.bin");
+    let clm = cyw43::aligned_bytes!("../../cyw43-firmware/43439A0_clm.bin");
+    let nvram = cyw43::aligned_bytes!("../../cyw43-firmware/nvram_rp2040.bin");
 
     let pwr = Output::new(p.PIN_23, Level::Low);
     let cs = Output::new(p.PIN_25, Level::High);
@@ -146,12 +152,12 @@ async fn main(spawner: embassy_executor::Spawner) {
         cs,
         p.PIN_24,
         p.PIN_29,
-        p.DMA_CH0,
+        embassy_rp::dma::Channel::new(p.DMA_CH0, Irqs),
     );
 
     let state = make_static!(cyw43::State, cyw43::State::new());
-    let (net_device, mut control, runner) = cyw43::new(state, pwr, spi, fw).await;
-    spawner.must_spawn(wifi_task(runner));
+    let (net_device, mut control, runner) = cyw43::new(state, pwr, spi, fw, nvram).await;
+    spawner.spawn(wifi_task(runner).unwrap());
 
     control.init(clm).await;
 
@@ -169,7 +175,7 @@ async fn main(spawner: embassy_executor::Spawner) {
         embassy_rp::clocks::RoscRng.random(),
     );
 
-    spawner.must_spawn(net_task(runner));
+    spawner.spawn(net_task(runner).unwrap());
 
     control
         .start_ap_wpa2(
@@ -179,10 +185,7 @@ async fn main(spawner: embassy_executor::Spawner) {
         )
         .await;
 
-    spawner.must_spawn(example_utils::dhcp::dhcp_task(
-        example_utils::ADDRESS,
-        stack,
-    ));
+    spawner.spawn(example_utils::dhcp::dhcp_task(example_utils::ADDRESS, stack).unwrap());
 
     let shared_control = SharedControl(
         make_static!(Mutex<CriticalSectionRawMutex, Control<'static>>, Mutex::new(control)),
@@ -199,6 +202,6 @@ async fn main(spawner: embassy_executor::Spawner) {
     log::info!("{}", example_utils::WELCOME_MESSAGE);
 
     for task_id in 0..WEB_TASK_POOL_SIZE {
-        spawner.must_spawn(web_task(task_id, stack, app));
+        spawner.spawn(web_task(task_id, stack, app).unwrap());
     }
 }
