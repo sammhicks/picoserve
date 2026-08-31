@@ -1,6 +1,7 @@
 #![no_std]
 #![no_main]
 #![feature(impl_trait_in_assoc_type)]
+#![recursion_limit = "256"]
 
 use embassy_rp::{
     gpio::{Level, Output},
@@ -14,7 +15,7 @@ use picoserve::{make_static, routing::get};
 use rand::Rng;
 
 embassy_rp::bind_interrupts!(struct Irqs {
-    DMA_IRQ_0 => embassy_rp::dma::InterruptHandler<embassy_rp::peripherals::DMA_CH0>;
+    DMA_IRQ_0 => embassy_rp::dma::InterruptHandler<embassy_rp::peripherals::DMA_CH0>, embassy_rp::dma::InterruptHandler<embassy_rp::peripherals::DMA_CH1>;
     PIO0_IRQ_0 => embassy_rp::pio::InterruptHandler<embassy_rp::peripherals::PIO0>;
     USBCTRL_IRQ => embassy_rp::usb::InterruptHandler<embassy_rp::peripherals::USB>;
 });
@@ -35,13 +36,14 @@ async fn wifi_task(
             Output<'static>,
             cyw43_pio::PioSpi<'static, embassy_rp::peripherals::PIO0, 0>,
         >,
+        cyw43::Cyw43439
     >,
 ) -> ! {
     runner.run().await
 }
 
 #[embassy_executor::task]
-async fn net_task(mut stack: embassy_net::Runner<'static, cyw43::NetDriver<'static>>) -> ! {
+async fn net_task(mut stack: embassy_net::Runner<'static>) -> ! {
     stack.run().await
 }
 
@@ -89,6 +91,8 @@ static CONFIG: picoserve::Config = picoserve::Config::new(picoserve::Timeouts {
 })
 .keep_connection_alive();
 
+type SharedListener<'s> = embassy_sync::mutex::Mutex<embassy_sync::blocking_mutex::raw::NoopRawMutex, embassy_net::tcp::TcpListener<'s>>;
+
 #[embassy_executor::main]
 async fn main(spawner: embassy_executor::Spawner) {
     let p = embassy_rp::init(Default::default());
@@ -118,6 +122,7 @@ async fn main(spawner: embassy_executor::Spawner) {
         p.PIN_24,
         p.PIN_29,
         embassy_rp::dma::Channel::new(p.DMA_CH0, Irqs),
+        embassy_rp::dma::Channel::new(p.DMA_CH1, Irqs),
     );
 
     let state = make_static!(cyw43::State, cyw43::State::new());
@@ -126,19 +131,16 @@ async fn main(spawner: embassy_executor::Spawner) {
 
     control.init(clm).await;
 
-    let (stack, runner) = embassy_net::new(
-        net_device,
-        embassy_net::Config::ipv4_static(embassy_net::StaticConfigV4 {
-            address: embassy_net::Ipv4Cidr::new(example_utils::ADDRESS, 24),
-            gateway: None,
-            dns_servers: Default::default(),
-        }),
+    let (stack, runner) = embassy_net::Stack::new(
         make_static!(
-            embassy_net::StackResources<{ WEB_TASK_POOL_SIZE + example_utils::dhcp::SOCKET_COUNT }>,
-            embassy_net::StackResources::new()
+            embassy_net::StackStorage,
+            embassy_net::StackStorage::new()
         ),
         embassy_rp::clocks::RoscRng.random(),
     );
+
+    let iface = stack.add_iface(make_static!(cyw43::NetDriver<'static>, net_device)).unwrap();
+    iface.add_ip_addr(embassy_net::wire::IpCidr::new(example_utils::ADDRESS.into(), 24)).unwrap();
 
     spawner.spawn(net_task(runner).unwrap());
 
@@ -176,6 +178,14 @@ async fn main(spawner: embassy_executor::Spawner) {
 
     log::info!("{}", example_utils::WELCOME_MESSAGE);
 
+    const PORT: u16 = 80;
+    let listener = {
+        let mut listener = embassy_net::tcp::TcpListener::new(stack).unwrap();
+        listener.listen(PORT).unwrap();
+        log::info!("Listening on TCP:{}", PORT);
+        &*make_static!(SharedListener, SharedListener::new(listener))
+    };
+
     loop {
         log::info!("Waiting for startup");
 
@@ -186,21 +196,34 @@ async fn main(spawner: embassy_executor::Spawner) {
                 let mut server_state = SERVER_STATE.receiver().unwrap();
 
                 async move {
-                    let port = 80;
                     let mut tcp_rx_buffer = [0; 1024];
                     let mut tcp_tx_buffer = [0; 1024];
                     let mut http_buffer = [0; 2048];
                     let shutdown_timeout = embassy_time::Duration::from_secs(3);
 
-                    picoserve::Server::new(app, &CONFIG, &mut http_buffer)
+                    let mut listener = listener.lock().await;
+                    let token = loop {
+                        match listener.accept().await {
+                            Ok(token) => {
+                                break token;
+                            },
+                            Err(err) => {
+                                log::warn!("accept error: {:?}", err);
+                                continue;
+                            }
+                        }
+                    };
+                    drop(listener);
+
+                    let _ = picoserve::Server::new(app, &CONFIG, &mut http_buffer)
                         .with_graceful_shutdown(
                             server_state.get_and(ServerState::is_shutdown),
                             shutdown_timeout,
                         )
-                        .listen_and_serve(
+                        .accept_and_serve(
                             task_id,
                             stack,
-                            port,
+                            token,
                             &mut tcp_rx_buffer,
                             &mut tcp_tx_buffer,
                         )

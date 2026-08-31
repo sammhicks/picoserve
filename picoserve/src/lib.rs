@@ -690,6 +690,33 @@ impl<'a, P: routing::PathRouter>
     }
 }
 
+/// Errors arising while serving.
+#[cfg(feature = "embassy")]
+#[derive(Debug, thiserror::Error)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub enum AcceptAndServeError<E: io::Error> {
+    /// Error accepting connection.
+    #[error("Accept: {0}")]
+    Accept(#[source] embassy_net::tcp::AcceptError),
+    /// Error while serving.
+    #[error("Serve: {0}")]
+    Serve(#[source] Error<E>)
+}
+
+#[cfg(feature = "embassy")]
+impl From<embassy_net::tcp::AcceptError> for AcceptAndServeError<embassy_net::tcp::Error> {
+    fn from(value: embassy_net::tcp::AcceptError) -> Self {
+        Self::Accept(value)
+    }
+}
+
+#[cfg(feature = "embassy")]
+impl From<Error<embassy_net::tcp::Error>> for AcceptAndServeError<embassy_net::tcp::Error> {
+    fn from(value: Error<embassy_net::tcp::Error>) -> Self {
+        Self::Serve(value)
+    }
+}
+
 #[cfg(feature = "embassy")]
 impl<
     P: routing::PathRouter,
@@ -697,17 +724,17 @@ impl<
     ShutdownSignal: Future<Output = (ShutdownReason, embassy_time::Duration)>,
 > Server<'_, EmbassyRuntime, time::EmbassyTimer, P, ShutdownSignal>
 {
-    /// Listen for incoming connections, and serve requests read from the connection.
+    /// Accept an incoming connection, and serve requests read from it.
     ///
-    /// This will serve at most 1 connection at a time, so you will typically have multiple tasks running `listen_and_serve`.
-    pub async fn listen_and_serve(
+    /// This will serve one connection and return afterwards.
+    pub async fn accept_and_serve(
         self,
         task_id: impl LogDisplay,
         stack: embassy_net::Stack<'_>,
-        port: u16,
+        token: embassy_net::tcp::AcceptToken,
         tcp_rx_buffer: &mut [u8],
         tcp_tx_buffer: &mut [u8],
-    ) -> ShutdownReason {
+    ) -> Result<Option<ShutdownReason>, AcceptAndServeError<embassy_net::tcp::Error>> {
         let Self {
             app,
             timer,
@@ -719,67 +746,54 @@ impl<
 
         let mut shutdown_signal = core::pin::pin!(shutdown_signal);
 
-        loop {
-            let mut socket = match futures::select_either(shutdown_signal.as_mut(), async {
-                let mut socket =
-                    embassy_net::tcp::TcpSocket::new(stack, tcp_rx_buffer, tcp_tx_buffer);
+        let mut socket = match futures::select_either(shutdown_signal.as_mut(), async {
+            let mut socket =
+                embassy_net::tcp::TcpSocket::new(stack, tcp_rx_buffer, tcp_tx_buffer).unwrap();
 
-                log_info!("{}: Listening on TCP:{}...", task_id, port);
+            log_info!("{}: Accepting on TCP:{}...", task_id, token.local_endpoint().port);
 
-                socket.accept(port).await.map(|()| socket)
-            })
-            .await
-            {
-                futures::Either::First((shutdown_reason, _)) => return shutdown_reason,
-                futures::Either::Second(Err(error)) => {
-                    log_warn!("{}: accept error: {:?}", task_id, error);
-                    continue;
-                }
-                futures::Either::Second(Ok(socket)) => socket,
-            };
+            socket.accept(token).await.map(|()| socket)
+        })
+        .await
+        {
+            futures::Either::First((shutdown_reason, _)) => return Ok(Some(shutdown_reason)),
+            futures::Either::Second(socket_result) => socket_result?
+        };
 
-            let remote_endpoint = socket.remote_endpoint();
+        let remote_endpoint = socket.remote_endpoint();
 
-            log_info!(
-                "{}: Received connection from {:?}",
-                task_id,
-                remote_endpoint
-            );
+        log_info!(
+            "{}: Received connection from {:?}",
+            task_id,
+            remote_endpoint
+        );
 
-            socket.set_keep_alive(Some(embassy_time::Duration::from_secs(30)));
-            socket.set_timeout(Some(embassy_time::Duration::from_secs(45)));
+        socket.set_keep_alive(Some(embassy_time::Duration::from_secs(30)));
+        socket.set_timeout(Some(embassy_time::Duration::from_secs(45)));
 
-            return match serve_and_shutdown(
-                app,
-                &timer,
-                config,
-                http_buffer,
-                socket,
-                shutdown_signal.as_mut(),
-            )
-            .await
-            {
-                Ok(DisconnectionInfo {
-                    handled_requests_count,
-                    shutdown_reason,
-                }) => {
-                    log_info!(
-                        "{} requests handled from {:?}",
-                        handled_requests_count,
-                        remote_endpoint
-                    );
+        let DisconnectionInfo {
+            handled_requests_count,
+            shutdown_reason,
+        } = serve_and_shutdown(
+            app,
+            &timer,
+            config,
+            http_buffer,
+            socket,
+            shutdown_signal.as_mut(),
+        )
+        .await
+        .inspect_err(|err| {
+            log_error!("{:?}", logging::Debug2Format(err));
+        })?;
 
-                    match shutdown_reason {
-                        Some(shutdown_reason) => shutdown_reason,
-                        None => continue,
-                    }
-                }
-                Err(err) => {
-                    log_error!("{:?}", logging::Debug2Format(&err));
-                    continue;
-                }
-            };
-        }
+        log_info!(
+            "{} requests handled from {:?}",
+            handled_requests_count,
+            remote_endpoint
+        );
+
+        Ok(shutdown_reason)
     }
 }
 

@@ -1,5 +1,6 @@
 [env]
 DEFMT_LOG = "info"
+XARXA_TCP_SOCKET_COUNT = "8"
 
 [profile.dev]
 opt-level = 3

@@ -1,15 +1,10 @@
-use embassy_net::{Ipv4Address, Stack, udp::UdpSocket};
+use embassy_net::{wire::Ipv4Address, Stack, udp::UdpSocket};
 
 pub const SOCKET_COUNT: usize = 1;
 
 #[embassy_executor::task]
 pub async fn dhcp_task(address: Ipv4Address, stack: Stack<'static>) {
-    let rx_meta = &mut [embassy_net::udp::PacketMetadata::EMPTY; 16];
-    let rx_buffer = &mut [0; 512];
-    let tx_meta = &mut [embassy_net::udp::PacketMetadata::EMPTY; 16];
-    let tx_buffer = &mut [0; 512];
-
-    let mut socket = UdpSocket::new(stack, rx_meta, rx_buffer, tx_meta, tx_buffer);
+    let mut socket = UdpSocket::new(stack).unwrap();
 
     socket.bind(67).expect("Failed to bind DHCP Socket");
 
@@ -50,8 +45,8 @@ pub async fn dhcp_task(address: Ipv4Address, stack: Stack<'static>) {
             let Ok(()) = socket
                 .send_to(
                     response,
-                    embassy_net::IpEndpoint {
-                        addr: embassy_net::Ipv4Address::BROADCAST.into(),
+                    embassy_net::wire::IpEndpoint {
+                        addr: Ipv4Address::BROADCAST.into(),
                         port: remote_endpoint.endpoint.port,
                     },
                 )
