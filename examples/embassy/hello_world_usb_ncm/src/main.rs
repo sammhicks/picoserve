@@ -38,12 +38,12 @@ async fn usb_task(mut device: UsbDevice<'static, MyDriver>) -> ! {
 }
 
 #[embassy_executor::task]
-async fn usb_ncm_task(class: Runner<'static, MyDriver, MTU>) -> ! {
+async fn usb_ncm_task(class: Runner<'static, MyDriver>) -> ! {
     class.run().await
 }
 
 #[embassy_executor::task]
-async fn net_task(mut runner: embassy_net::Runner<'static, Device<'static, MTU>>) -> ! {
+async fn net_task(mut runner: embassy_net::Runner<'static>) -> ! {
     runner.run().await
 }
 
@@ -65,17 +65,16 @@ const WEB_TASK_POOL_SIZE: usize = 8;
 async fn web_task(
     task_id: usize,
     stack: embassy_net::Stack<'static>,
+    token: embassy_net::tcp::AcceptToken,
     app: &'static AppRouter<AppProps>,
-) -> ! {
-    let port = 80;
+) {
     let mut tcp_rx_buffer = [0; 1024];
     let mut tcp_tx_buffer = [0; 1024];
     let mut http_buffer = [0; 2048];
 
-    picoserve::Server::new(app, &CONFIG, &mut http_buffer)
-        .listen_and_serve(task_id, stack, port, &mut tcp_rx_buffer, &mut tcp_tx_buffer)
-        .await
-        .into_never()
+    let _ = picoserve::Server::new(app, &CONFIG, &mut http_buffer)
+        .accept_and_serve(task_id, stack, token, &mut tcp_rx_buffer, &mut tcp_tx_buffer)
+        .await;
 }
 
 #[embassy_executor::main]
@@ -133,37 +132,49 @@ async fn main(spawner: embassy_executor::Spawner) {
     spawner.spawn(logger_task(logger_class).unwrap());
 
     // Create the NCM net_device from the NCM class
-    let (runner, net_device) = ncm_class.into_embassy_net_device::<MTU, 4, 4>(
-        picoserve::make_static!(NetState<MTU, 4, 4>, NetState::new()),
+    let (runner, net_device) = ncm_class.into_embassy_net_device::<4, 4>(
+        picoserve::make_static!(NetState<4, 4>, NetState::new()),
         our_mac_addr,
+        MTU
     );
     spawner.spawn(usb_ncm_task(runner).unwrap());
 
     // Init the network stack with static IPv4 and using the NCM device
-    let (stack, runner) = embassy_net::new(
-        net_device,
-        embassy_net::Config::ipv4_static(embassy_net::StaticConfigV4 {
-            address: embassy_net::Ipv4Cidr::new(example_utils::ADDRESS, 24),
-            gateway: None,
-            dns_servers: Default::default(),
-        }),
+    let (stack, runner) = embassy_net::Stack::new(
         make_static!(
-            embassy_net::StackResources<{ WEB_TASK_POOL_SIZE + example_utils::dhcp::SOCKET_COUNT }>,
-            embassy_net::StackResources::new()
+            embassy_net::StackStorage,
+            embassy_net::StackStorage::new()
         ),
         embassy_rp::clocks::RoscRng.random(),
     );
 
-    spawner.spawn(net_task(runner).unwrap());
+    let iface = stack.add_iface(make_static!(Device<'static>, net_device)).unwrap();
+    iface.add_ip_addr(embassy_net::wire::IpCidr::new(example_utils::ADDRESS.into(), 24)).unwrap();
+    iface.set_dhcpv4_server(Some(example_utils::dhcp_server_config()));
 
-    spawner.spawn(example_utils::dhcp::dhcp_task(example_utils::ADDRESS, stack).unwrap());
+    spawner.spawn(net_task(runner).unwrap());
 
     // Start the web server and span its tasks
     let app = make_static!(AppRouter<AppProps>, AppProps.build_app());
 
     log::info!("{}", example_utils::WELCOME_MESSAGE);
 
-    for task_id in 0..WEB_TASK_POOL_SIZE {
-        spawner.spawn(web_task(task_id, stack, app).unwrap());
+    const PORT: u16 = 80;
+    let mut listener = embassy_net::tcp::TcpListener::new(stack).unwrap();
+    listener.listen(PORT).unwrap();
+    log::info!("Listening on TCP:{}", PORT);
+
+    for conn_id in 0.. {
+        let token = match listener.accept().await {
+            Ok(token) => token,
+            Err(err) => {
+                log::warn!("accept error: {:?}", err);
+                continue;
+            }
+        };
+        match web_task(conn_id, stack, token, app) {
+            Ok(spawn_token) => spawner.spawn(spawn_token),
+            Err(_) => log::warn!("conn {}: no free socket, dropping the connection attempt", conn_id),
+        }
     }
 }

@@ -19,7 +19,7 @@ use rand::Rng;
 use picoserve::extract::State;
 
 embassy_rp::bind_interrupts!(struct Irqs {
-    DMA_IRQ_0 => embassy_rp::dma::InterruptHandler<embassy_rp::peripherals::DMA_CH0>;
+    DMA_IRQ_0 => embassy_rp::dma::InterruptHandler<embassy_rp::peripherals::DMA_CH0>, embassy_rp::dma::InterruptHandler<embassy_rp::peripherals::DMA_CH1>;
     PIO0_IRQ_0 => embassy_rp::pio::InterruptHandler<embassy_rp::peripherals::PIO0>;
     USBCTRL_IRQ => embassy_rp::usb::InterruptHandler<embassy_rp::peripherals::USB>;
 });
@@ -40,13 +40,14 @@ async fn wifi_task(
             Output<'static>,
             cyw43_pio::PioSpi<'static, embassy_rp::peripherals::PIO0, 0>,
         >,
+        cyw43::Cyw43439
     >,
 ) -> ! {
     runner.run().await
 }
 
 #[embassy_executor::task]
-async fn net_task(mut stack: embassy_net::Runner<'static, cyw43::NetDriver<'static>>) -> ! {
+async fn net_task(mut stack: embassy_net::Runner<'static>) -> ! {
     stack.run().await
 }
 
@@ -111,17 +112,16 @@ const WEB_TASK_POOL_SIZE: usize = 8;
 async fn web_task(
     task_id: usize,
     stack: embassy_net::Stack<'static>,
+    token: embassy_net::tcp::AcceptToken,
     app: &'static AppRouter<AppProps>,
-) -> ! {
-    let port = 80;
+) {
     let mut tcp_rx_buffer = [0; 1024];
     let mut tcp_tx_buffer = [0; 1024];
     let mut http_buffer = [0; 2048];
 
-    picoserve::Server::new(app, &CONFIG, &mut http_buffer)
-        .listen_and_serve(task_id, stack, port, &mut tcp_rx_buffer, &mut tcp_tx_buffer)
-        .await
-        .into_never()
+    let _ = picoserve::Server::new(app, &CONFIG, &mut http_buffer)
+        .accept_and_serve(task_id, stack, token, &mut tcp_rx_buffer, &mut tcp_tx_buffer)
+        .await;
 }
 
 #[embassy_executor::main]
@@ -153,6 +153,7 @@ async fn main(spawner: embassy_executor::Spawner) {
         p.PIN_24,
         p.PIN_29,
         embassy_rp::dma::Channel::new(p.DMA_CH0, Irqs),
+        embassy_rp::dma::Channel::new(p.DMA_CH1, Irqs),
     );
 
     let state = make_static!(cyw43::State, cyw43::State::new());
@@ -161,19 +162,17 @@ async fn main(spawner: embassy_executor::Spawner) {
 
     control.init(clm).await;
 
-    let (stack, runner) = embassy_net::new(
-        net_device,
-        embassy_net::Config::ipv4_static(embassy_net::StaticConfigV4 {
-            address: embassy_net::Ipv4Cidr::new(example_utils::ADDRESS, 24),
-            gateway: None,
-            dns_servers: Default::default(),
-        }),
+    let (stack, runner) = embassy_net::Stack::new(
         make_static!(
-            embassy_net::StackResources::<{ WEB_TASK_POOL_SIZE + example_utils::dhcp::SOCKET_COUNT }>,
-            embassy_net::StackResources::new()
+            embassy_net::StackStorage,
+            embassy_net::StackStorage::new()
         ),
         embassy_rp::clocks::RoscRng.random(),
     );
+
+    let iface = stack.add_iface(make_static!(cyw43::NetDriver<'static>, net_device)).unwrap();
+    iface.add_ip_addr(embassy_net::wire::IpCidr::new(example_utils::ADDRESS.into(), 24)).unwrap();
+    iface.set_dhcpv4_server(Some(example_utils::dhcp_server_config()));
 
     spawner.spawn(net_task(runner).unwrap());
 
@@ -184,8 +183,6 @@ async fn main(spawner: embassy_executor::Spawner) {
             8,
         )
         .await;
-
-    spawner.spawn(example_utils::dhcp::dhcp_task(example_utils::ADDRESS, stack).unwrap());
 
     let shared_control = SharedControl(
         make_static!(Mutex<CriticalSectionRawMutex, Control<'static>>, Mutex::new(control)),
@@ -200,8 +197,22 @@ async fn main(spawner: embassy_executor::Spawner) {
     );
 
     log::info!("{}", example_utils::WELCOME_MESSAGE);
+    const PORT: u16 = 80;
+    let mut listener = embassy_net::tcp::TcpListener::new(stack).unwrap();
+    listener.listen(PORT).unwrap();
+    log::info!("Listening on TCP:{}", PORT);
 
-    for task_id in 0..WEB_TASK_POOL_SIZE {
-        spawner.spawn(web_task(task_id, stack, app).unwrap());
+    for conn_id in 0.. {
+        let token = match listener.accept().await {
+            Ok(token) => token,
+            Err(err) => {
+                log::warn!("accept error: {:?}", err);
+                continue;
+            }
+        };
+        match web_task(conn_id, stack, token, app) {
+            Ok(spawn_token) => spawner.spawn(spawn_token),
+            Err(_) => log::warn!("conn {}: no free socket, dropping the connection attempt", conn_id),
+        }
     }
 }

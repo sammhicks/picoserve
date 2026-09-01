@@ -3,7 +3,7 @@ name = "picoserve"
 version = "0.20.0"
 authors = ["Samuel Hicks"]
 edition = "2024"
-rust-version = "1.93"
+rust-version = "1.95"
 description = "An async no_std HTTP server suitable for bare-metal environments"
 readme = "../README.md"
 repository = "https://github.com/sammhicks/picoserve"
@@ -21,7 +21,7 @@ features = ["tokio", "embassy", "json", "ws"]
 const-sha1 = { version = "0.3.0", default-features = false }
 data-encoding = { version = "2.11.1", default-features = false, optional = true }
 defmt = { version = "1.1.1", optional = true }
-embassy-net = { version = "0.9.1", optional = true, features = ["tcp", "proto-ipv4", "medium-ethernet"] }
+embassy-net = { version = "0.9.1", optional = true, features = ["tcp", "tcp-listener", "ipv4", "medium-ethernet"] }
 embassy-time = { version = "0.5.1", optional = true }
 embedded-io-async = "0.7.0"
 futures-util = { version = "0.3.34", default-features = false }

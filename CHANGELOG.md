@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+### Breaking
+- Changed MSRV to 1.95.
+- Embassy: `listen_and_serve` changed to `accept_and_serve`. It returns a `Result` after handling a single connection instead of continuing to accept new ones, since that has to be handled by a single `embassy_net::tcp::TcpListener` per port, which passes on an `embassy_net::tcp::AcceptToken` per incoming connection.
+
+### Changed
+- Updated embassy examples. Examples use rust `nightly-2026-08-26`.
+
 ## [0.20.0] 2026-08-30
 
 ### Breaking
