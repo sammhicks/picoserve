@@ -1253,7 +1253,7 @@ checksum = "5be167a7af36ee22fe3115051bc51f6e6c7054c9348e28deb4f49bd6f705a315"
 
 [[package]]
 name = "picoserve"
-version = "0.19.0"
+version = "0.20.0"
 dependencies = [
  "const-sha1",
  "defmt 1.1.1",
@@ -1272,7 +1272,7 @@ dependencies = [
 
 [[package]]
 name = "picoserve_derive"
-version = "0.1.4"
+version = "0.2.0"
 dependencies = [
  "proc-macro2",
  "quote",
