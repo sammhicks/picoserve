@@ -150,10 +150,9 @@ async fn main(spawner: embassy_executor::Spawner) {
 
     let iface = stack.add_iface(make_static!(Device<'static>, net_device)).unwrap();
     iface.add_ip_addr(embassy_net::wire::IpCidr::new(example_utils::ADDRESS.into(), 24)).unwrap();
+    iface.set_dhcpv4_server(Some(example_utils::dhcp_server_config()));
 
     spawner.spawn(net_task(runner).unwrap());
-
-    spawner.spawn(example_utils::dhcp::dhcp_task(example_utils::ADDRESS, stack).unwrap());
 
     // Start the web server and span its tasks
     let app = make_static!(AppRouter<AppProps>, AppProps.build_app());

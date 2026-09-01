@@ -172,6 +172,7 @@ async fn main(spawner: embassy_executor::Spawner) {
 
     let iface = stack.add_iface(make_static!(cyw43::NetDriver<'static>, net_device)).unwrap();
     iface.add_ip_addr(embassy_net::wire::IpCidr::new(example_utils::ADDRESS.into(), 24)).unwrap();
+    iface.set_dhcpv4_server(Some(example_utils::dhcp_server_config()));
 
     spawner.spawn(net_task(runner).unwrap());
 
@@ -182,8 +183,6 @@ async fn main(spawner: embassy_executor::Spawner) {
             8,
         )
         .await;
-
-    spawner.spawn(example_utils::dhcp::dhcp_task(example_utils::ADDRESS, stack).unwrap());
 
     let shared_control = SharedControl(
         make_static!(Mutex<CriticalSectionRawMutex, Control<'static>>, Mutex::new(control)),

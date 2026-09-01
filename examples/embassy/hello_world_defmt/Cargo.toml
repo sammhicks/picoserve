@@ -34,17 +34,17 @@ example_utils = { path = "../example_utils", default-features = false, features 
 
 # temporary patches to use updated embassy
 [patch.crates-io]
-cyw43 = { git = "https://github.com/embassy-rs/embassy", rev = "7330106" }
-cyw43-pio = { git = "https://github.com/embassy-rs/embassy", rev = "7330106" }
-embassy-executor = { git = "https://github.com/embassy-rs/embassy", rev = "7330106" }
-embassy-futures = { git = "https://github.com/embassy-rs/embassy", rev = "7330106" }
-embassy-net-driver-channel = { git = "https://github.com/embassy-rs/embassy", rev = "7330106" }
-embassy-net = { git = "https://github.com/embassy-rs/embassy", rev = "7330106" }
-embassy-rp = { git = "https://github.com/embassy-rs/embassy", rev = "7330106" }
-embassy-sync = { git = "https://github.com/embassy-rs/embassy", rev = "7330106" }
-embassy-time-driver = { git = "https://github.com/embassy-rs/embassy", rev = "7330106" }
-embassy-time = { git = "https://github.com/embassy-rs/embassy", rev = "7330106" }
-embassy-usb-driver = { git = "https://github.com/embassy-rs/embassy", rev = "7330106" }
+cyw43 = { git = "https://github.com/embassy-rs/embassy", rev = "b62fbb4" }
+cyw43-pio = { git = "https://github.com/embassy-rs/embassy", rev = "b62fbb4" }
+embassy-executor = { git = "https://github.com/embassy-rs/embassy", rev = "b62fbb4" }
+embassy-futures = { git = "https://github.com/embassy-rs/embassy", rev = "b62fbb4" }
+embassy-net-driver-channel = { git = "https://github.com/embassy-rs/embassy", rev = "b62fbb4" }
+embassy-net = { git = "https://github.com/embassy-rs/embassy", rev = "b62fbb4" }
+embassy-rp = { git = "https://github.com/embassy-rs/embassy", rev = "b62fbb4" }
+embassy-sync = { git = "https://github.com/embassy-rs/embassy", rev = "b62fbb4" }
+embassy-time-driver = { git = "https://github.com/embassy-rs/embassy", rev = "b62fbb4" }
+embassy-time = { git = "https://github.com/embassy-rs/embassy", rev = "b62fbb4" }
+embassy-usb-driver = { git = "https://github.com/embassy-rs/embassy", rev = "b62fbb4" }
 
 [profile.dev]
 # Rust debug is too slow.
