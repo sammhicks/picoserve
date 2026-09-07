@@ -16,12 +16,11 @@ use super::HeadersIter;
 pub struct CustomHeaders;
 
 impl HeadersIter for CustomHeaders {
-    async fn for_each_header<F: super::ForEachHeader>(
+    fn write_with<W: super::HeadersWriter>(
         self,
-        mut f: F,
-    ) -> Result<F::Output, F::Error> {
-        f.call("Connection", "close").await?;
-        f.finalize().await
+        writer: &mut W,
+    ) -> impl Future<Output = Result<(), W::Error>> {
+        writer.write_header("Connection", "close")
     }
 }
 
@@ -82,16 +81,13 @@ impl<H: HeadersIter, B: CustomBody> super::IntoResponse for CustomResponse<H, B>
             body,
         } = self;
 
-        response_writer
-            .write_response(
-                connection,
-                super::Response {
-                    status_code,
-                    headers,
-                    body: Body { body },
-                },
-            )
-            .await
+        super::Response {
+            status_code,
+            headers,
+            body: Body { body },
+        }
+        .write_to(connection, response_writer)
+        .await
     }
 }
 

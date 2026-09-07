@@ -77,12 +77,11 @@ impl PartialEq<&[u8]> for ETag {
 }
 
 impl super::HeadersIter for ETag {
-    async fn for_each_header<F: super::ForEachHeader>(
+    fn write_with<W: super::HeadersWriter>(
         self,
-        mut f: F,
-    ) -> Result<F::Output, F::Error> {
-        f.call("ETag", self).await?;
-        f.finalize().await
+        writer: &mut W,
+    ) -> impl Future<Output = Result<(), W::Error>> {
+        writer.write_header("ETag", self)
     }
 }
 
@@ -169,21 +168,16 @@ impl<State, PathParameters> crate::routing::RequestHandlerService<State, PathPar
                 .split(b',')
                 .any(|etag| self.etag == etag.as_raw())
         {
-            return response_writer
-                .write_response(
-                    request.body_connection.finalize().await?,
-                    super::Response {
-                        status_code: StatusCode::NOT_MODIFIED,
-                        headers: self.etag.clone(),
-                        body: super::NoBody,
-                    },
-                )
-                .await;
+            return super::Response {
+                status_code: StatusCode::NOT_MODIFIED,
+                headers: self.etag.clone(),
+                body: super::NoBody,
+            }
+            .write_to(request.body_connection.finalize().await?, response_writer)
+            .await;
         }
 
-        super::Response::ok(FileContent(self))
-            .with_headers(self.headers)
-            .with_headers(self.etag.clone())
+        (self.headers, self.etag.clone(), FileContent(self))
             .write_to(request.body_connection.finalize().await?, response_writer)
             .await
     }

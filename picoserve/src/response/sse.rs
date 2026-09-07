@@ -304,14 +304,12 @@ impl<S: EventSource> super::Body for EventStream<S> {
 }
 
 impl<S: EventSource> super::IntoResponse for EventStream<S> {
-    async fn write_to<R: Read, W: super::ResponseWriter<Error = R::Error>>(
+    fn write_to<R: embedded_io_async::Read, W: super::ResponseWriter<Error = R::Error>>(
         self,
         connection: super::Connection<'_, R>,
         response_writer: W,
-    ) -> Result<crate::ResponseSent, W::Error> {
-        response_writer
-            .write_response(connection, self.into_response())
-            .await
+    ) -> impl Future<Output = Result<crate::ResponseSent, W::Error>> {
+        self.into_response().write_to(connection, response_writer)
     }
 }
 

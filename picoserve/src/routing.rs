@@ -405,9 +405,11 @@ impl<State, PathParameters> RequestHandler<State, PathParameters> for MethodNotA
 }
 
 mod head_method_util {
+    use futures_util::TryFutureExt;
+
     use crate::{
         io::{Read, Write},
-        response::{Body, Connection, HeadersIter, Response, ResponseWriter},
+        response::{Body, Connection, ResponseWriter},
     };
 
     struct EmptyBody;
@@ -424,28 +426,42 @@ mod head_method_util {
 
     struct IgnoreBody<W>(pub W);
 
-    impl<W: ResponseWriter> ResponseWriter for IgnoreBody<W> {
+    impl<W: crate::response::HeadersWriter> crate::response::HeadersWriter for IgnoreBody<W> {
         type Error = W::Error;
 
-        async fn write_response<R: Read<Error = Self::Error>, H: HeadersIter, B: Body>(
+        fn write_header(
+            &mut self,
+            name: &str,
+            value: impl core::fmt::Display,
+        ) -> impl Future<Output = Result<(), Self::Error>> {
+            self.0.write_header(name, value)
+        }
+    }
+
+    impl<W: crate::response::BodyWriter> crate::response::BodyWriter for IgnoreBody<W> {
+        type Error = W::Error;
+
+        fn write_body<R: Read<Error = Self::Error>, B: Body>(
             self,
             connection: Connection<'_, R>,
-            Response {
-                status_code,
-                headers,
-                body: _,
-            }: Response<H, B>,
-        ) -> Result<crate::ResponseSent, Self::Error> {
+            _body: B,
+        ) -> impl Future<Output = Result<crate::ResponseSent, Self::Error>> {
+            self.0.write_body(connection, EmptyBody)
+        }
+    }
+
+    impl<W: ResponseWriter> ResponseWriter for IgnoreBody<W> {
+        type Error = W::Error;
+        type HeadersAndBodyWriter = IgnoreBody<W::HeadersAndBodyWriter>;
+
+        fn start_writing_headers<R: Read>(
+            self,
+            status_code: crate::response::StatusCode,
+            connection: &Connection<'_, R>,
+        ) -> impl Future<Output = Result<Self::HeadersAndBodyWriter, Self::Error>> {
             self.0
-                .write_response(
-                    connection,
-                    Response {
-                        status_code,
-                        headers,
-                        body: EmptyBody,
-                    },
-                )
-                .await
+                .start_writing_headers(status_code, connection)
+                .map_ok(IgnoreBody)
         }
     }
 

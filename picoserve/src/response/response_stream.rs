@@ -102,6 +102,77 @@ pub(crate) struct ResponseSentCore(());
 /// A marker showing that the response has been sent.
 pub struct ResponseSent(pub(crate) ResponseSentCore);
 
+enum ConnectionHeader {
+    DefaultTo(super::KeepAlive),
+    ForceClose,
+}
+
+pub(crate) struct ResponseHeadersAndBodyStream<W: Write> {
+    writer: W,
+    connection_header: Option<ConnectionHeader>,
+}
+
+impl<W: Write> ResponseHeadersAndBodyStream<W> {
+    async fn do_write_header(
+        &mut self,
+        name: &str,
+        value: impl core::fmt::Display,
+    ) -> Result<(), W::Error> {
+        write!(self.writer, "{name}: {value}\r\n").await
+    }
+}
+
+impl<W: Write> super::HeadersWriter for ResponseHeadersAndBodyStream<W> {
+    type Error = W::Error;
+
+    fn write_header(
+        &mut self,
+        name: &str,
+        value: impl core::fmt::Display,
+    ) -> impl Future<Output = Result<(), Self::Error>> {
+        if name.eq_ignore_ascii_case("connection") {
+            if matches!(self.connection_header, Some(ConnectionHeader::ForceClose))
+                && !display_contains(b"upgrade", &value)
+            {
+                return crate::futures::Either::First(core::future::ready(Ok(())));
+            }
+
+            self.connection_header = None;
+        }
+
+        crate::futures::Either::Second(self.do_write_header(name, value))
+    }
+}
+
+impl<W: Write> super::BodyWriter for ResponseHeadersAndBodyStream<W> {
+    type Error = W::Error;
+
+    async fn write_body<R: Read<Error = Self::Error>, B: super::Body>(
+        mut self,
+        connection: super::Connection<'_, R>,
+        body: B,
+    ) -> Result<ResponseSent, Self::Error> {
+        if let Some(connection_header) =
+            self.connection_header
+                .as_ref()
+                .map(|connection_header| match connection_header {
+                    &ConnectionHeader::DefaultTo(connection_header) => connection_header,
+                    ConnectionHeader::ForceClose => super::KeepAlive::Close,
+                })
+        {
+            self.do_write_header("Connection", connection_header)
+                .await?;
+        }
+
+        self.writer.write_all(b"\r\n").await?;
+        self.writer.flush().await?;
+
+        body.write_response_body(connection, &mut self.writer)
+            .await
+            .map(|()| super::ResponseSent(ResponseSentCore(())))
+    }
+}
+
 pub(crate) struct ResponseStream<W: Write> {
     writer: W,
     connection_header: super::KeepAlive,
@@ -118,95 +189,118 @@ impl<W: Write> ResponseStream<W> {
 
 impl<W: Write> super::ResponseWriter for ResponseStream<W> {
     type Error = W::Error;
+    type HeadersAndBodyWriter = ResponseHeadersAndBodyStream<W>;
 
-    async fn write_response<R: Read<Error = Self::Error>, H: super::HeadersIter, B: super::Body>(
-        mut self,
-        connection: super::Connection<'_, R>,
-        super::Response {
-            status_code,
-            headers,
-            body,
-        }: super::Response<H, B>,
-    ) -> Result<ResponseSent, Self::Error> {
-        #[derive(Debug)]
-        enum ConnectionHeader {
-            DefaultTo(super::KeepAlive),
-            ForceClose,
-        }
+    async fn start_writing_headers<R: Read>(
+        self,
+        status_code: super::StatusCode,
+        connection: &super::Connection<'_, R>,
+    ) -> Result<Self::HeadersAndBodyWriter, Self::Error> {
+        let Self {
+            mut writer,
+            connection_header,
+        } = self;
 
-        struct HeadersWriter<WW: Write> {
-            writer: WW,
-            connection_header: Option<ConnectionHeader>,
-        }
+        write!(writer, "HTTP/1.1 {status_code} \r\n").await?;
 
-        impl<WW: Write> HeadersWriter<WW> {
-            async fn write_header(
-                &mut self,
-                name: &str,
-                value: impl core::fmt::Display,
-            ) -> Result<(), WW::Error> {
-                write!(self.writer, "{name}: {value}\r\n").await
-            }
-        }
-
-        impl<WW: Write> super::ForEachHeader for HeadersWriter<WW> {
-            type Output = ();
-            type Error = WW::Error;
-
-            async fn call<Value: core::fmt::Display>(
-                &mut self,
-                name: &str,
-                value: Value,
-            ) -> Result<(), Self::Error> {
-                if name.eq_ignore_ascii_case("connection") {
-                    if matches!(self.connection_header, Some(ConnectionHeader::ForceClose))
-                        && !display_contains(b"upgrade", &value)
-                    {
-                        return Ok(());
-                    }
-
-                    self.connection_header = None;
-                }
-
-                self.write_header(name, value).await
-            }
-
-            async fn finalize(mut self) -> Result<(), Self::Error> {
-                if let Some(connection_header) =
-                    self.connection_header
-                        .as_ref()
-                        .map(|connection_header| match connection_header {
-                            &ConnectionHeader::DefaultTo(connection_header) => connection_header,
-                            ConnectionHeader::ForceClose => super::KeepAlive::Close,
-                        })
-                {
-                    self.write_header("Connection", connection_header).await?;
-                }
-
-                Ok(())
-            }
-        }
-
-        write!(self.writer, "HTTP/1.1 {status_code} \r\n").await?;
-
-        headers
-            .for_each_header(HeadersWriter {
-                writer: &mut self.writer,
-                connection_header: Some(if connection.flags.connection_must_be_closed() {
-                    ConnectionHeader::ForceClose
-                } else {
-                    ConnectionHeader::DefaultTo(self.connection_header)
-                }),
-            })
-            .await?;
-
-        self.writer.write_all(b"\r\n").await?;
-        self.writer.flush().await?;
-
-        body.write_response_body(connection, &mut self.writer)
-            .await
-            .map(|()| super::ResponseSent(ResponseSentCore(())))
+        Ok(ResponseHeadersAndBodyStream {
+            writer,
+            connection_header: Some(if connection.flags.connection_must_be_closed() {
+                ConnectionHeader::ForceClose
+            } else {
+                ConnectionHeader::DefaultTo(connection_header)
+            }),
+        })
     }
+
+    // async fn write_response<R: Read<Error = Self::Error>, H: super::HeadersIter, B: super::Body>(
+    //     mut self,
+    //     connection: super::Connection<'_, R>,
+    //     super::Response {
+    //         status_code,
+    //         headers,
+    //         body,
+    //     }: super::Response<H, B>,
+    // ) -> Result<ResponseSent, Self::Error> {
+    //     #[derive(Debug)]
+    //     enum ConnectionHeader {
+    //         DefaultTo(super::KeepAlive),
+    //         ForceClose,
+    //     }
+
+    //     struct HeadersWriter<WW: Write> {
+    //         writer: WW,
+    //         connection_header: Option<ConnectionHeader>,
+    //     }
+
+    //     impl<WW: Write> HeadersWriter<WW> {
+    //         async fn write_header(
+    //             &mut self,
+    //             name: &str,
+    //             value: impl core::fmt::Display,
+    //         ) -> Result<(), WW::Error> {
+    //             write!(self.writer, "{name}: {value}\r\n").await
+    //         }
+    //     }
+
+    //     impl<WW: Write> super::ForEachHeader for HeadersWriter<WW> {
+    //         type Output = ();
+    //         type Error = WW::Error;
+
+    //         async fn call<Value: core::fmt::Display>(
+    //             &mut self,
+    //             name: &str,
+    //             value: Value,
+    //         ) -> Result<(), Self::Error> {
+    //             if name.eq_ignore_ascii_case("connection") {
+    //                 if matches!(self.connection_header, Some(ConnectionHeader::ForceClose))
+    //                     && !display_contains(b"upgrade", &value)
+    //                 {
+    //                     return Ok(());
+    //                 }
+
+    //                 self.connection_header = None;
+    //             }
+
+    //             self.write_header(name, value).await
+    //         }
+
+    //         async fn finalize(mut self) -> Result<(), Self::Error> {
+    //             if let Some(connection_header) =
+    //                 self.connection_header
+    //                     .as_ref()
+    //                     .map(|connection_header| match connection_header {
+    //                         &ConnectionHeader::DefaultTo(connection_header) => connection_header,
+    //                         ConnectionHeader::ForceClose => super::KeepAlive::Close,
+    //                     })
+    //             {
+    //                 self.write_header("Connection", connection_header).await?;
+    //             }
+
+    //             Ok(())
+    //         }
+    //     }
+
+    //     write!(self.writer, "HTTP/1.1 {status_code} \r\n").await?;
+
+    //     headers
+    //         .for_each_header(HeadersWriter {
+    //             writer: &mut self.writer,
+    //             connection_header: Some(if connection.flags.connection_must_be_closed() {
+    //                 ConnectionHeader::ForceClose
+    //             } else {
+    //                 ConnectionHeader::DefaultTo(self.connection_header)
+    //             }),
+    //         })
+    //         .await?;
+
+    //     self.writer.write_all(b"\r\n").await?;
+    //     self.writer.flush().await?;
+
+    //     body.write_response_body(connection, &mut self.writer)
+    //         .await
+    //         .map(|()| super::ResponseSent(ResponseSentCore(())))
+    // }
 }
 
 #[cfg(test)]

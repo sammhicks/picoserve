@@ -24,6 +24,7 @@ use core::fmt;
 
 use crate::{
     KeepAlive, ResponseSent,
+    futures::Either,
     io::{Read, Write},
     sync::oneshot_broadcast,
 };
@@ -248,79 +249,52 @@ impl<'r, E: crate::io::Error> Connection<'r, EmptyReader<E>> {
     }
 }
 
-#[doc(hidden)]
-pub trait ForEachHeader {
-    type Output;
-    type Error;
-
-    async fn call<Value: fmt::Display>(
-        &mut self,
-        name: &str,
-        value: Value,
-    ) -> Result<(), Self::Error>;
-
-    async fn finalize(self) -> Result<Self::Output, Self::Error>;
-}
-
-struct BorrowedForEachHeader<'a, F: ForEachHeader>(&'a mut F);
-
-impl<F: ForEachHeader> ForEachHeader for BorrowedForEachHeader<'_, F> {
-    type Output = ();
-    type Error = F::Error;
-
-    async fn call<Value: fmt::Display>(
-        &mut self,
-        name: &str,
-        value: Value,
-    ) -> Result<(), F::Error> {
-        self.0.call(name, value).await
-    }
-
-    async fn finalize(self) -> Result<Self::Output, Self::Error> {
-        Ok(())
-    }
-}
-
 /// The HTTP response headers.
 pub trait HeadersIter {
-    /// Perform the following action for each header.
-    async fn for_each_header<F: ForEachHeader>(self, f: F) -> Result<F::Output, F::Error>;
+    /// Write each header using the following [`HeadersWriter`].
+    async fn write_with<W: HeadersWriter>(self, writer: &mut W) -> Result<(), W::Error>;
 }
 
 impl<V: fmt::Display> HeadersIter for (&str, V) {
-    async fn for_each_header<F: ForEachHeader>(self, mut f: F) -> Result<F::Output, F::Error> {
+    fn write_with<W: HeadersWriter>(
+        self,
+        writer: &mut W,
+    ) -> impl Future<Output = Result<(), W::Error>> {
         let (name, value) = self;
-        f.call(name, value).await?;
-        f.finalize().await
+
+        writer.write_header(name, value)
     }
 }
 
 impl<V: fmt::Display> HeadersIter for &[(&str, V)] {
-    async fn for_each_header<F: ForEachHeader>(self, mut f: F) -> Result<F::Output, F::Error> {
+    async fn write_with<W: HeadersWriter>(self, writer: &mut W) -> Result<(), W::Error> {
         for (name, value) in self {
-            f.call(name, value).await?;
+            writer.write_header(name, value).await?;
         }
-        f.finalize().await
+
+        Ok(())
     }
 }
 
 impl<H: HeadersIter, const N: usize> HeadersIter for [H; N] {
-    async fn for_each_header<F: ForEachHeader>(self, mut f: F) -> Result<F::Output, F::Error> {
+    async fn write_with<W: HeadersWriter>(self, writer: &mut W) -> Result<(), W::Error> {
         for headers in self {
-            headers
-                .for_each_header(BorrowedForEachHeader(&mut f))
-                .await?;
+            headers.write_with(writer).await?;
         }
-        f.finalize().await
+
+        Ok(())
     }
 }
 
 impl<T: HeadersIter> HeadersIter for Option<T> {
-    async fn for_each_header<F: ForEachHeader>(self, f: F) -> Result<F::Output, F::Error> {
+    fn write_with<W: HeadersWriter>(
+        self,
+        writer: &mut W,
+    ) -> impl Future<Output = Result<(), W::Error>> {
         if let Some(headers) = self {
-            headers.for_each_header(f).await
+            Either::First(headers.write_with(writer))
         } else {
-            f.finalize().await
+            Either::Second(core::future::ready(Ok(())))
         }
     }
 }
@@ -328,11 +302,13 @@ impl<T: HeadersIter> HeadersIter for Option<T> {
 struct HeadersChain<A: HeadersIter, B: HeadersIter>(A, B);
 
 impl<A: HeadersIter, B: HeadersIter> HeadersIter for HeadersChain<A, B> {
-    async fn for_each_header<F: ForEachHeader>(self, mut f: F) -> Result<F::Output, F::Error> {
+    async fn write_with<W: HeadersWriter>(self, writer: &mut W) -> Result<(), W::Error> {
         let Self(a, b) = self;
-        a.for_each_header(BorrowedForEachHeader(&mut f)).await?;
-        b.for_each_header(BorrowedForEachHeader(&mut f)).await?;
-        f.finalize().await
+
+        a.write_with(writer).await?;
+        b.write_with(writer).await?;
+
+        Ok(())
     }
 }
 
@@ -483,8 +459,8 @@ impl Content for fmt::Arguments<'_> {
 pub struct NoHeaders;
 
 impl HeadersIter for NoHeaders {
-    async fn for_each_header<F: ForEachHeader>(self, f: F) -> Result<F::Output, F::Error> {
-        f.finalize().await
+    async fn write_with<W: HeadersWriter>(self, _writer: &mut W) -> Result<(), W::Error> {
+        Ok(())
     }
 }
 
@@ -495,10 +471,15 @@ pub struct ContentHeaders {
 }
 
 impl HeadersIter for ContentHeaders {
-    async fn for_each_header<F: ForEachHeader>(self, mut f: F) -> Result<F::Output, F::Error> {
-        f.call("Content-Type", self.content_type).await?;
-        f.call("Content-Length", self.content_length).await?;
-        f.finalize().await
+    async fn write_with<W: HeadersWriter>(self, writer: &mut W) -> Result<(), W::Error> {
+        writer
+            .write_header("Content-Type", self.content_type)
+            .await?;
+        writer
+            .write_header("Content-Length", self.content_length)
+            .await?;
+
+        Ok(())
     }
 }
 
@@ -614,17 +595,38 @@ impl<H: HeadersIter, B: Body> Response<H, B> {
     }
 }
 
+pub trait BodyWriter: Sized {
+    type Error;
+
+    async fn write_body<R: Read<Error = Self::Error>, B: Body>(
+        self,
+        connection: Connection<'_, R>,
+        body: B,
+    ) -> Result<ResponseSent, Self::Error>;
+}
+
+pub trait HeadersWriter: Sized {
+    type Error;
+
+    async fn write_header(
+        &mut self,
+        name: &str,
+        value: impl core::fmt::Display,
+    ) -> Result<(), Self::Error>;
+}
+
 /// Types which a HTTP response can be written to.
 pub trait ResponseWriter: Sized {
     /// Errors arising while writing the response.
     type Error;
 
-    /// Write the given response to the socket, which may include the upgraded data, which thus may read from the provided connenction.
-    async fn write_response<R: Read<Error = Self::Error>, H: HeadersIter, B: Body>(
+    type HeadersAndBodyWriter: HeadersWriter<Error = Self::Error> + BodyWriter<Error = Self::Error>;
+
+    async fn start_writing_headers<R: Read>(
         self,
-        connection: Connection<'_, R>,
-        response: Response<H, B>,
-    ) -> Result<ResponseSent, Self::Error>;
+        status_code: StatusCode,
+        connection: &Connection<'_, R>,
+    ) -> Result<Self::HeadersAndBodyWriter, Self::Error>;
 }
 
 /// Trait for generating responses.
@@ -645,8 +647,8 @@ impl<C: Content> IntoResponse for C {
         connection: Connection<'_, R>,
         response_writer: W,
     ) -> Result<ResponseSent, W::Error> {
-        response_writer
-            .write_response(connection, Response::ok(self))
+        Response::ok(self)
+            .write_to(connection, response_writer)
             .await
     }
 }
@@ -657,7 +659,19 @@ impl<H: HeadersIter, B: Body> IntoResponse for Response<H, B> {
         connection: Connection<'_, R>,
         response_writer: W,
     ) -> Result<ResponseSent, W::Error> {
-        response_writer.write_response(connection, self).await
+        let Self {
+            status_code,
+            headers,
+            body,
+        } = self;
+
+        let mut response_writer = response_writer
+            .start_writing_headers(status_code, &connection)
+            .await?;
+
+        headers.write_with(&mut response_writer).await?;
+
+        response_writer.write_body(connection, body).await
     }
 }
 
@@ -702,11 +716,17 @@ macro_rules! declare_tuple_into_response {
                 async fn write_to<R: Read, W: ResponseWriter<Error = R::Error>>(self, connection: Connection<'_, R>, response_writer: W) -> Result<ResponseSent, W::Error> {
                     let (status_code, $($name,)* body) = self;
 
-                    response_writer.write_response(
-                        connection,
-                        Response::new(status_code, body)
-                        $(.with_headers($name,))*
-                    ).await
+                    let Response { status_code, headers, body } = Response::new(status_code, body);
+
+                    let mut response_writer = response_writer.start_writing_headers(status_code, &connection).await?;
+
+                    $(
+                        $name.write_with(&mut response_writer).await?;
+                    )*
+
+                    headers.write_with(&mut response_writer).await?;
+
+                    response_writer.write_body(connection, body).await
                 }
             }
 
@@ -715,11 +735,17 @@ macro_rules! declare_tuple_into_response {
                 async fn write_to<R: Read, W: ResponseWriter<Error = R::Error>>(self, connection: Connection<'_, R>, response_writer: W) -> Result<ResponseSent, W::Error> {
                     let ($($name,)* body,) = self;
 
-                    response_writer.write_response(
-                        connection,
-                        Response::new(StatusCode::OK, body)
-                        $(.with_headers($name,))*
-                    ).await
+                    let Response { status_code, headers, body } = Response::new(StatusCode::OK, body);
+
+                    let mut response_writer = response_writer.start_writing_headers(status_code, &connection).await?;
+
+                    $(
+                        $name.write_with(&mut response_writer).await?;
+                    )*
+
+                    headers.write_with(&mut response_writer).await?;
+
+                    response_writer.write_body(connection, body).await
                 }
             }
 
@@ -728,11 +754,17 @@ macro_rules! declare_tuple_into_response {
                 async fn write_to<R: Read, W: ResponseWriter<Error = R::Error>>(self, connection: Connection<'_, R>, response_writer: W) -> Result<ResponseSent, W::Error> {
                     let (status_code, $($name,)* NoContent,) = self;
 
-                    response_writer.write_response(
-                        connection,
-                        Response::empty(status_code)
-                        $(.with_headers($name,))*
-                    ).await
+                    let Response { status_code, headers, body } = Response::empty(status_code);
+
+                    let mut response_writer = response_writer.start_writing_headers(status_code, &connection).await?;
+
+                    $(
+                        $name.write_with(&mut response_writer).await?;
+                    )*
+
+                    headers.write_with(&mut response_writer).await?;
+
+                    response_writer.write_body(connection, body).await
                 }
             }
         )*
@@ -768,8 +800,8 @@ impl<D: fmt::Debug> IntoResponse for DebugValue<D> {
         connection: Connection<'_, R>,
         response_writer: W,
     ) -> Result<ResponseSent, W::Error> {
-        response_writer
-            .write_response(connection, Response::ok(format_args!("{:?}\r\n", self.0)))
+        Response::ok(format_args!("{:?}\r\n", self.0))
+            .write_to(connection, response_writer)
             .await
     }
 }
@@ -818,40 +850,40 @@ pub trait ErrorWithStatusCode: fmt::Display + IntoResponse {
 mod tests {
     use futures_util::FutureExt;
 
-    use super::{ForEachHeader, HeadersIter, Response};
+    use super::{HeadersIter, HeadersWriter, Response};
 
     /// Collects every emitted header into `(name, value)` pairs.
     struct CollectHeaders(alloc::vec::Vec<(alloc::string::String, alloc::string::String)>);
 
-    impl ForEachHeader for CollectHeaders {
-        type Output = alloc::vec::Vec<(alloc::string::String, alloc::string::String)>;
+    impl HeadersWriter for CollectHeaders {
         type Error = core::convert::Infallible;
 
-        async fn call<Value: core::fmt::Display>(
+        async fn write_header(
             &mut self,
             name: &str,
-            value: Value,
+            value: impl core::fmt::Display,
         ) -> Result<(), Self::Error> {
             self.0.push((
                 alloc::string::ToString::to_string(&name),
                 alloc::string::ToString::to_string(&value),
             ));
-            Ok(())
-        }
 
-        async fn finalize(self) -> Result<Self::Output, Self::Error> {
-            Ok(self.0)
+            Ok(())
         }
     }
 
     fn headers_of<H: HeadersIter>(
         headers: H,
     ) -> alloc::vec::Vec<(alloc::string::String, alloc::string::String)> {
+        let mut collect_headers = CollectHeaders(alloc::vec::Vec::new());
+
         headers
-            .for_each_header(CollectHeaders(alloc::vec::Vec::new()))
+            .write_with(&mut collect_headers)
             .now_or_never()
             .expect("Future must resolve")
-            .expect("Collecting headers is infallible")
+            .expect("Collecting headers is infallible");
+
+        collect_headers.0
     }
 
     #[test]

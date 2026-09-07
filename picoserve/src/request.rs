@@ -603,7 +603,7 @@ mod connection_flags {
             self.connection_must_be_aborted_if_not_upgraded = true;
         }
 
-        pub fn connection_must_be_closed(&mut self) -> bool {
+        pub fn connection_must_be_closed(&self) -> bool {
             self.connection_has_been_upgraded | self.connection_must_be_aborted_if_not_upgraded
         }
     }

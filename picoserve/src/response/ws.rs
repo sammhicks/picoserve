@@ -9,6 +9,7 @@ use crate::{
     extract::FromRequestParts,
     futures::Either,
     io::{Read, Write},
+    response::{BodyWriter, HeadersWriter, IntoResponse},
 };
 
 use super::StatusCode;
@@ -913,17 +914,34 @@ impl WebSocketUpgrade {
     }
 }
 
-fn websocket_response<'a, B: super::Body + 'a>(
+struct WebSocketResponse<'a, B: super::Body> {
     sec_websocket_accept: &'a WebSocketKey,
     sec_websocket_protocol: Option<&'a str>,
     body: B,
-) -> super::Response<impl super::HeadersIter + 'a, B> {
-    super::Response {
-        status_code: StatusCode::SWITCHING_PROTOCOLS,
-        headers: [
-            ("Upgrade", "websocket"),
-            ("Connection", "upgrade"),
-            (
+}
+
+impl<B: super::Body> IntoResponse for WebSocketResponse<'_, B> {
+    async fn write_to<R: Read, W: super::ResponseWriter<Error = R::Error>>(
+        self,
+        connection: super::Connection<'_, R>,
+        response_writer: W,
+    ) -> Result<crate::ResponseSent, W::Error> {
+        let Self {
+            sec_websocket_accept,
+            sec_websocket_protocol,
+            body,
+        } = self;
+
+        let mut response_writer = response_writer
+            .start_writing_headers(StatusCode::SWITCHING_PROTOCOLS, &connection)
+            .await?;
+
+        response_writer.write_header("Upgrade", "websocket").await?;
+        response_writer
+            .write_header("Connection", "upgrade")
+            .await?;
+        response_writer
+            .write_header(
                 "Sec-WebSocket-Accept",
                 // Safety:
                 // sec_websocket_accept was created by data_encoding::BASE64.encode_mut, which creates a UTF-8 string
@@ -931,15 +949,62 @@ fn websocket_response<'a, B: super::Body + 'a>(
                 unsafe {
                     core::str::from_utf8_unchecked(sec_websocket_accept)
                 },
-            ),
-        ],
-        body,
+            )
+            .await?;
+
+        if let Some(sec_websocket_protocol) = sec_websocket_protocol {
+            response_writer
+                .write_header("Sec-WebSocket-Protocol", sec_websocket_protocol)
+                .await?;
+        }
+
+        response_writer.write_body(connection, body).await
     }
-    .with_headers(
-        sec_websocket_protocol
-            .map(|sec_websocket_protocol| ("Sec-WebSocket-Protocol", sec_websocket_protocol)),
-    )
 }
+
+// fn websocket_response<B: super::Body>(
+//     sec_websocket_accept: &WebSocketKey,
+//     sec_websocket_protocol: Option<&str>,
+//     body: B,
+// ) -> impl IntoResponse {
+//     (
+//         StatusCode::SWITCHING_PROTOCOLS,
+//         ("Upgrade", "websocket"),
+//         ("Connection", "upgrade"),
+//         (
+//             "Sec-WebSocket-Accept",
+//             // Safety:
+//             // sec_websocket_accept was created by data_encoding::BASE64.encode_mut, which creates a UTF-8 string
+//             #[allow(unsafe_code, reason = r#"See "Safety comment""#)]
+//             unsafe {
+//                 core::str::from_utf8_unchecked(sec_websocket_accept)
+//             },
+//         ),
+//         body,
+//     )
+
+//     // super::Response {
+//     //     status_code: StatusCode::SWITCHING_PROTOCOLS,
+//     //     headers: [
+//     //         ("Upgrade", "websocket"),
+//     //         ("Connection", "upgrade"),
+//     //         (
+//     //             "Sec-WebSocket-Accept",
+//     //             // Safety:
+//     //             // sec_websocket_accept was created by data_encoding::BASE64.encode_mut, which creates a UTF-8 string
+//     //             #[allow(unsafe_code, reason = r#"See "Safety comment""#)]
+//     //             unsafe {
+//     //                 core::str::from_utf8_unchecked(sec_websocket_accept)
+//     //             },
+//     //         ),
+//     //     ],
+//     //     body,
+//     // }
+//     // .with_headers(
+//     //     sec_websocket_protocol
+//     //         .map(|sec_websocket_protocol| ("Sec-WebSocket-Protocol", sec_websocket_protocol)),
+//     // )
+// }
 
 impl<P: WebSocketProtocol, C: WebSocketCallbackWithShutdownSignal> super::IntoResponse
     for UpgradedWebSocket<P, CallbackNotUsingState<C>>
@@ -987,19 +1052,16 @@ impl<P: WebSocketProtocol, C: WebSocketCallbackWithShutdownSignal> super::IntoRe
             callback,
         } = self;
 
-        response_writer
-            .write_response(
-                connection,
-                websocket_response(
-                    &sec_websocket_accept,
-                    sec_websocket_protocol.name(),
-                    Body {
-                        upgrade_token,
-                        callback,
-                    },
-                ),
-            )
-            .await
+        WebSocketResponse {
+            sec_websocket_accept: &sec_websocket_accept,
+            sec_websocket_protocol: sec_websocket_protocol.name(),
+            body: Body {
+                upgrade_token,
+                callback,
+            },
+        }
+        .write_to(connection, response_writer)
+        .await
     }
 }
 
@@ -1054,20 +1116,17 @@ impl<State, P: WebSocketProtocol, C: WebSocketCallbackWithStateAndShutdownSignal
             callback,
         } = self;
 
-        response_writer
-            .write_response(
-                connection,
-                websocket_response(
-                    &sec_websocket_accept,
-                    sec_websocket_protocol.name(),
-                    Body {
-                        state,
-                        upgrade_token,
-                        callback,
-                    },
-                ),
-            )
-            .await
+        WebSocketResponse {
+            sec_websocket_accept: &sec_websocket_accept,
+            sec_websocket_protocol: sec_websocket_protocol.name(),
+            body: Body {
+                state,
+                upgrade_token,
+                callback,
+            },
+        }
+        .write_to(connection, response_writer)
+        .await
     }
 }
 

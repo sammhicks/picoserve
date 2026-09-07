@@ -125,8 +125,8 @@ impl<C: Chunks> super::IntoResponse for ChunkedResponse<C> {
         connection: super::Connection<'_, R>,
         response_writer: W,
     ) -> Result<crate::ResponseSent, W::Error> {
-        response_writer
-            .write_response(connection, self.into_response())
+        self.into_response()
+            .write_to(connection, response_writer)
             .await
     }
 }

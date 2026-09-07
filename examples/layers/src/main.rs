@@ -3,43 +3,74 @@ use std::time::Instant;
 use picoserve::{
     io::Read,
     request::Path,
-    response::ResponseWriter,
+    response::{BodyWriter, HeadersWriter, ResponseWriter, StatusCode},
     routing::{get, parse_path_segment},
 };
 
-struct TimedResponseWriter<'r, W> {
+struct TimedResponseWriter<'r, S, W> {
     path: Path<'r>,
+    status_code: S,
     start_time: Instant,
     response_writer: W,
 }
 
-impl<W: ResponseWriter> ResponseWriter for TimedResponseWriter<'_, W> {
+impl<W: HeadersWriter> HeadersWriter for TimedResponseWriter<'_, StatusCode, W> {
     type Error = W::Error;
 
-    async fn write_response<
-        R: Read<Error = Self::Error>,
-        H: picoserve::response::HeadersIter,
-        B: picoserve::response::Body,
-    >(
+    async fn write_header(
+        &mut self,
+        name: &str,
+        value: impl core::fmt::Display,
+    ) -> Result<(), Self::Error> {
+        self.response_writer.write_header(name, value).await
+    }
+}
+
+impl<W: BodyWriter> BodyWriter for TimedResponseWriter<'_, StatusCode, W> {
+    type Error = W::Error;
+
+    async fn write_body<R: Read<Error = Self::Error>, B: picoserve::response::Body>(
         self,
         connection: picoserve::response::Connection<'_, R>,
-        response: picoserve::response::Response<H, B>,
+        body: B,
     ) -> Result<picoserve::ResponseSent, Self::Error> {
-        let status_code = response.status_code();
-
-        let result = self
-            .response_writer
-            .write_response(connection, response)
-            .await;
+        let output = self.response_writer.write_body(connection, body).await?;
 
         log::info!(
             "Path: {}; Status Code: {}; Response Time: {}ms",
             self.path,
-            status_code,
+            self.status_code,
             self.start_time.elapsed().as_secs_f32() * 1000.0,
         );
 
-        result
+        Ok(output)
+    }
+}
+
+impl<'r, W: ResponseWriter> ResponseWriter for TimedResponseWriter<'r, (), W> {
+    type HeadersAndBodyWriter = TimedResponseWriter<'r, StatusCode, W::HeadersAndBodyWriter>;
+    type Error = W::Error;
+
+    async fn start_writing_headers<R: Read>(
+        self,
+        status_code: StatusCode,
+        connection: &picoserve::response::Connection<'_, R>,
+    ) -> Result<Self::HeadersAndBodyWriter, Self::Error> {
+        let Self {
+            path,
+            status_code: (),
+            start_time,
+            response_writer,
+        } = self;
+
+        Ok(TimedResponseWriter {
+            path,
+            status_code,
+            start_time,
+            response_writer: response_writer
+                .start_writing_headers(status_code, connection)
+                .await?,
+        })
     }
 }
 
@@ -69,6 +100,7 @@ impl<State, PathParameters> picoserve::routing::Layer<State, PathParameters> for
             path_parameters,
             TimedResponseWriter {
                 path,
+                status_code: (),
                 start_time: Instant::now(),
                 response_writer,
             },

@@ -15,6 +15,8 @@ use http_body_util::BodyExt;
 use hyper::StatusCode;
 use tokio::sync::mpsc;
 
+use crate::response::IntoResponse;
+
 use self::routing::PathRouter;
 
 use super::*;
@@ -860,11 +862,8 @@ async fn huge_request() {
                 assert_eq!(expected_body.as_bytes(), buffer.as_slice());
             }
 
-            response_writer
-                .write_response(
-                    request.body_connection.finalize().await?,
-                    response::Response::ok("Hello"),
-                )
+            response::Response::ok("Hello")
+                .write_to(request.body_connection.finalize().await?, response_writer)
                 .await
         }
     }
