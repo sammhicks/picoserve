@@ -77,12 +77,9 @@ impl PartialEq<&[u8]> for ETag {
 }
 
 impl super::HeadersIter for ETag {
-    async fn for_each_header<F: super::ForEachHeader>(
-        self,
-        mut f: F,
-    ) -> Result<F::Output, F::Error> {
-        f.call("ETag", self).await?;
-        f.finalize().await
+    fn for_each_header<F: super::ForEachHeader>(&self, mut f: F) -> Result<F::Output, F::Error> {
+        f.call("ETag", self)?;
+        f.finalize()
     }
 }
 

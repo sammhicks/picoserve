@@ -134,26 +134,26 @@ impl<W: Write> super::ResponseWriter for ResponseStream<W> {
             ForceClose,
         }
 
-        struct HeadersWriter<WW: Write> {
-            writer: WW,
+        struct HeadersWriter<'a, 'b> {
+            writer: &'a mut core::fmt::Formatter<'b>,
             connection_header: Option<ConnectionHeader>,
         }
 
-        impl<WW: Write> HeadersWriter<WW> {
-            async fn write_header(
+        impl HeadersWriter<'_, '_> {
+            fn write_header(
                 &mut self,
                 name: &str,
                 value: impl core::fmt::Display,
-            ) -> Result<(), WW::Error> {
-                write!(self.writer, "{name}: {value}\r\n").await
+            ) -> core::fmt::Result {
+                write!(self.writer, "{name}: {value}\r\n")
             }
         }
 
-        impl<WW: Write> super::ForEachHeader for HeadersWriter<WW> {
+        impl super::ForEachHeader for HeadersWriter<'_, '_> {
             type Output = ();
-            type Error = WW::Error;
+            type Error = core::fmt::Error;
 
-            async fn call<Value: core::fmt::Display>(
+            fn call<Value: core::fmt::Display>(
                 &mut self,
                 name: &str,
                 value: Value,
@@ -168,10 +168,10 @@ impl<W: Write> super::ResponseWriter for ResponseStream<W> {
                     self.connection_header = None;
                 }
 
-                self.write_header(name, value).await
+                self.write_header(name, value)
             }
 
-            async fn finalize(mut self) -> Result<(), Self::Error> {
+            fn finalize(mut self) -> Result<(), Self::Error> {
                 if let Some(connection_header) =
                     self.connection_header
                         .as_ref()
@@ -180,7 +180,7 @@ impl<W: Write> super::ResponseWriter for ResponseStream<W> {
                             ConnectionHeader::ForceClose => super::KeepAlive::Close,
                         })
                 {
-                    self.write_header("Connection", connection_header).await?;
+                    self.write_header("Connection", connection_header)?;
                 }
 
                 Ok(())
@@ -189,16 +189,21 @@ impl<W: Write> super::ResponseWriter for ResponseStream<W> {
 
         write!(self.writer, "HTTP/1.1 {status_code} \r\n").await?;
 
-        headers
-            .for_each_header(HeadersWriter {
-                writer: &mut self.writer,
-                connection_header: Some(if connection.flags.connection_must_be_closed() {
-                    ConnectionHeader::ForceClose
-                } else {
-                    ConnectionHeader::DefaultTo(self.connection_header)
-                }),
+        write!(
+            self.writer,
+            "{}",
+            core::fmt::from_fn(|f| {
+                headers.for_each_header(HeadersWriter {
+                    writer: f,
+                    connection_header: Some(if connection.flags.connection_must_be_closed() {
+                        ConnectionHeader::ForceClose
+                    } else {
+                        ConnectionHeader::DefaultTo(self.connection_header)
+                    }),
+                })
             })
-            .await?;
+        )
+        .await?;
 
         self.writer.write_all(b"\r\n").await?;
         self.writer.flush().await?;
