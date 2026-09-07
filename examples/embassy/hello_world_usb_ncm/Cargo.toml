@@ -34,6 +34,6 @@ static_cell = { workspace = true }
 example_utils = { path = "../example_utils" }
 
 [package.metadata.size_regression_test]
-expected_text = 145980
+expected_text = 144828
 expected_data = 8
 expected_bss = 74308

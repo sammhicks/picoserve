@@ -187,11 +187,9 @@ impl<W: Write> super::ResponseWriter for ResponseStream<W> {
             }
         }
 
-        write!(self.writer, "HTTP/1.1 {status_code} \r\n").await?;
-
         write!(
             self.writer,
-            "{}",
+            "HTTP/1.1 {status_code} \r\n{}",
             core::fmt::from_fn(|f| {
                 headers.for_each_header(HeadersWriter {
                     writer: f,
@@ -205,7 +203,6 @@ impl<W: Write> super::ResponseWriter for ResponseStream<W> {
         )
         .await?;
 
-        self.writer.write_all(b"\r\n").await?;
         self.writer.flush().await?;
 
         body.write_response_body(connection, &mut self.writer)
