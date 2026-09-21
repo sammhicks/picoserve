@@ -253,7 +253,7 @@ pub trait ForEachHeader {
     type Output;
     type Error;
 
-    fn call<Value: fmt::Display>(&mut self, name: &str, value: Value) -> Result<(), Self::Error>;
+    fn call(&mut self, name: &str, value: &dyn fmt::Display) -> Result<(), Self::Error>;
 
     fn finalize(self) -> Result<Self::Output, Self::Error>;
 }
@@ -264,7 +264,7 @@ impl<F: ForEachHeader> ForEachHeader for BorrowedForEachHeader<'_, F> {
     type Output = ();
     type Error = F::Error;
 
-    fn call<Value: fmt::Display>(&mut self, name: &str, value: Value) -> Result<(), F::Error> {
+    fn call(&mut self, name: &str, value: &dyn fmt::Display) -> Result<(), Self::Error> {
         self.0.call(name, value)
     }
 
@@ -486,8 +486,8 @@ pub struct ContentHeaders {
 
 impl HeadersIter for ContentHeaders {
     fn for_each_header<F: ForEachHeader>(&self, mut f: F) -> Result<F::Output, F::Error> {
-        f.call("Content-Type", self.content_type)?;
-        f.call("Content-Length", self.content_length)?;
+        f.call("Content-Type", &self.content_type)?;
+        f.call("Content-Length", &self.content_length)?;
         f.finalize()
     }
 }
@@ -816,11 +816,7 @@ mod tests {
         type Output = alloc::vec::Vec<(alloc::string::String, alloc::string::String)>;
         type Error = core::convert::Infallible;
 
-        fn call<Value: core::fmt::Display>(
-            &mut self,
-            name: &str,
-            value: Value,
-        ) -> Result<(), Self::Error> {
+        fn call(&mut self, name: &str, value: &dyn core::fmt::Display) -> Result<(), Self::Error> {
             self.0.push((
                 alloc::string::ToString::to_string(&name),
                 alloc::string::ToString::to_string(&value),

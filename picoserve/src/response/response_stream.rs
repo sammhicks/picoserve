@@ -1,6 +1,6 @@
 use crate::io::{Read, Write};
 
-fn display_contains(token: &[u8], value: impl core::fmt::Display) -> bool {
+fn display_contains(token: &[u8], value: &dyn core::fmt::Display) -> bool {
     use core::fmt::Write;
 
     struct Contains<'a> {
@@ -153,14 +153,14 @@ impl<W: Write> super::ResponseWriter for ResponseStream<W> {
             type Output = ();
             type Error = core::fmt::Error;
 
-            fn call<Value: core::fmt::Display>(
+            fn call(
                 &mut self,
                 name: &str,
-                value: Value,
+                value: &dyn core::fmt::Display,
             ) -> Result<(), Self::Error> {
                 if name.eq_ignore_ascii_case("connection") {
                     if matches!(self.connection_header, Some(ConnectionHeader::ForceClose))
-                        && !display_contains(b"upgrade", &value)
+                        && !display_contains(b"upgrade", value)
                     {
                         return Ok(());
                     }
@@ -280,7 +280,7 @@ mod tests {
                     }
 
                     if expected_outcome
-                        == display_contains(target_token.as_bytes(), SplitDisplay { sections })
+                        == display_contains(target_token.as_bytes(), &SplitDisplay { sections })
                     {
                         sometimes_succeeds = true;
                     } else {
