@@ -10,15 +10,15 @@ bench = false
 
 [dependencies]
 defmt = { version = "1.0.1", optional = true }
-edge-dhcp = "0.6.0"
 embassy-executor = { workspace = true }
 embassy-net = { workspace = true }
 embassy-rp = { workspace = true }
 embassy-sync = { workspace = true }
+embassy-time = { workspace = true }
 embassy-usb-logger = { workspace = true, optional = true  }
 log = { workspace = true, optional = true }
 
 [features]
 default = ["log"]
-defmt = ["dep:defmt", "edge-dhcp/defmt"]
+defmt = ["dep:defmt"]
 log = ["dep:embassy-usb-logger", "dep:log"]
