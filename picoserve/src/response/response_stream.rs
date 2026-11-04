@@ -203,8 +203,6 @@ impl<W: Write> super::ResponseWriter for ResponseStream<W> {
         )
         .await?;
 
-        self.writer.flush().await?;
-
         body.write_response_body(connection, &mut self.writer)
             .await
             .map(|()| super::ResponseSent(ResponseSentCore(())))

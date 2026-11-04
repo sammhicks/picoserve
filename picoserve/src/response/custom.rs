@@ -66,6 +66,7 @@ impl<H: HeadersIter, B: CustomBody> super::IntoResponse for CustomResponse<H, B>
             ) -> Result<(), W::Error> {
                 connection
                     .run_until_disconnection((), async {
+                        writer.flush().await?;
                         self.body.write_response_body(&mut writer).await?;
                         writer.flush().await
                     })
