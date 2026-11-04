@@ -339,7 +339,48 @@ Automatically handled the `HEAD` method by calling the `GET` handler and returni
         }
     }
 
+    fn generate_either_method_future(&self) -> (Vec<syn::Ident>, proc_macro2::TokenStream) {
+        let type_parameter_declarations = self
+            .iter()
+            .map(|MethodInfo { type_parameter, .. }| type_parameter)
+            .collect::<Vec<_>>();
+
+        let method_variant_names = type_parameter_declarations
+            .iter()
+            .map(|method_name| syn::Ident::new(&format!("Method{method_name}"), method_name.span()))
+            .collect::<Vec<_>>();
+
+        let token_stream = quote::quote! {
+            #[pin_project::pin_project(project = EitherMethodProjection)]
+            enum EitherMethod<#(#type_parameter_declarations,)* HEAD, OTHER> {
+                #(#method_variant_names(#[pin] #type_parameter_declarations),)*
+                MethodHEAD(#[pin] HEAD),
+                OtherMethod(#[pin] OTHER),
+            }
+
+            impl<#(#type_parameter_declarations: Future<Output=OTHER::Output>,)* HEAD: Future<Output=OTHER::Output>, OTHER: Future> Future for EitherMethod<#(#type_parameter_declarations,)* HEAD, OTHER> {
+                type Output = OTHER::Output;
+
+                fn poll(
+                    self: core::pin::Pin<&mut Self>,
+                    cx: &mut core::task::Context<'_>,
+                ) -> core::task::Poll<Self::Output> {
+                    match self.project() {
+                        #(EitherMethodProjection::#method_variant_names(f) => f.poll(cx),)*
+                        EitherMethodProjection::MethodHEAD(f) => f.poll(cx),
+                        EitherMethodProjection::OtherMethod(f) => f.poll(cx),
+                    }
+                }
+            }
+        };
+
+        (method_variant_names, token_stream)
+    }
+
     fn generate_impl_method_handler(&self) -> proc_macro2::TokenStream {
+        let (either_method_variant_names, either_method_future) =
+            self.generate_either_method_future();
+
         let type_parameter_declarations = self
             .iter()
             .map(|MethodInfo { type_parameter, .. }| type_parameter)
@@ -349,16 +390,18 @@ Automatically handled the `HEAD` method by calling the `GET` handler and returni
             |type_parameter| quote::quote! { #type_parameter: RequestHandler<State, PathParameters> },
         );
 
-        let match_cases = self.iter().map(
-            |MethodInfo {
-                 ident, method_name, ..
-             }| {
+        let match_cases = self.iter().zip(&either_method_variant_names).map(
+            |(
+                MethodInfo {
+                    ident, method_name, ..
+                },
+                either_method_variant_name,
+            )| {
                 quote::quote! {
-                    #method_name => {
+                    #method_name => EitherMethod::#either_method_variant_name(
                         self.#ident
                             .call_request_handler(state, path_parameters, request, response_writer)
-                            .await
-                    }
+                    ),
                 }
             },
         );
@@ -373,13 +416,15 @@ Automatically handled the `HEAD` method by calling the `GET` handler and returni
                 > MethodHandler<State, PathParameters>
                 for MethodRouter<#(#type_parameter_declarations,)*>
             {
-                async fn call_method_handler<R: Read, W: ResponseWriter<Error = R::Error>>(
+                fn call_method_handler<R: Read, W: ResponseWriter<Error = R::Error>>(
                     &self,
                     state: &State,
                     path_parameters: PathParameters,
                     request: Request<'_, R>,
                     response_writer: W,
-                ) -> Result<ResponseSent, W::Error> {
+                ) -> impl Future<Output=Result<ResponseSent, W::Error>> {
+                    #either_method_future
+
                     let response_writer = MaybeIncludeBody {
                         include_body: request.parts.method() != "HEAD",
                         response_writer,
@@ -387,21 +432,16 @@ Automatically handled the `HEAD` method by calling the `GET` handler and returni
 
                     match request.parts.method() {
                         #(#match_cases)*
-                        "HEAD" => {
-                            self.get
-                                .call_request_handler(
-                                    state,
-                                    path_parameters,
-                                    request,
-                                    response_writer,
-                                )
-                                .await
-                        }
-                        _ => {
+                        "HEAD" => EitherMethod::MethodHEAD(self.get.call_request_handler(
+                            state,
+                            path_parameters,
+                            request,
+                            response_writer,
+                        )),
+                        _ => EitherMethod::OtherMethod(
                             MethodNotAllowed
                                 .call_request_handler(state, path_parameters, request, response_writer)
-                                .await
-                        }
+                        ),
                     }
                 }
             }
