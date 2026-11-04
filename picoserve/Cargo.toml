@@ -29,7 +29,7 @@ heapless = { version = "0.9.3", features = ["serde"] }
 heapless-0-8 = { package = "heapless", version = "0.8.0" }
 lhash = { version = "1.1.0", features = ["sha1"], optional = true }
 log = { version = "0.4.34", optional = true, default-features = false }
-picoserve_derive = { version = "0.2.0", path = "../picoserve_derive" }
+picoserve_derive = { version = "0.3.0", path = "../picoserve_derive" }
 pin-project = "1.1.13"
 ryu = { version = "1.0.23", optional = true }
 serde = { version = "1.0.229", default-features = false, features = ["derive"] }

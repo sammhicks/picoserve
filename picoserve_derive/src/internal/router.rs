@@ -380,6 +380,11 @@ Automatically handled the `HEAD` method by calling the `GET` handler and returni
                     request: Request<'_, R>,
                     response_writer: W,
                 ) -> Result<ResponseSent, W::Error> {
+                    let response_writer = MaybeIncludeBody {
+                        include_body: request.parts.method() != "HEAD",
+                        response_writer,
+                    };
+
                     match request.parts.method() {
                         #(#match_cases)*
                         "HEAD" => {
@@ -388,7 +393,7 @@ Automatically handled the `HEAD` method by calling the `GET` handler and returni
                                     state,
                                     path_parameters,
                                     request,
-                                    head_method_util::ignore_body(response_writer),
+                                    response_writer,
                                 )
                                 .await
                         }
@@ -440,10 +445,3 @@ pub(crate) fn generate_method_router(input: proc_macro::TokenStream) -> proc_mac
     }
     .into()
 }
-
-// impl <#(#type_parameter_declarations,)*> sealed::MethodHandlerIsSealed for MethodRouter<#(#type_parameter_declarations,)*> {}
-
-/*
-
-
-*/

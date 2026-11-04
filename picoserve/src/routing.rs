@@ -404,55 +404,55 @@ impl<State, PathParameters> RequestHandler<State, PathParameters> for MethodNotA
     }
 }
 
-mod head_method_util {
-    use crate::{
-        io::{Read, Write},
-        response::{Body, Connection, HeadersIter, Response, ResponseWriter},
-    };
+struct MaybeIncludeBody<W: ResponseWriter> {
+    include_body: bool,
+    response_writer: W,
+}
 
-    struct EmptyBody;
+impl<W: ResponseWriter> ResponseWriter for MaybeIncludeBody<W> {
+    type Error = W::Error;
 
-    impl Body for EmptyBody {
-        async fn write_response_body<R: Read, W: Write<Error = R::Error>>(
-            self,
-            _connection: Connection<'_, R>,
-            _writer: W,
-        ) -> Result<(), W::Error> {
-            Ok(())
+    fn write_response<
+        R: Read<Error = Self::Error>,
+        H: crate::response::HeadersIter,
+        B: crate::response::Body,
+    >(
+        self,
+        connection: crate::response::Connection<'_, R>,
+        response: crate::response::Response<H, B>,
+    ) -> impl Future<Output = Result<ResponseSent, Self::Error>> {
+        use crate::response::{Body, Response};
+
+        struct MaybeBody<B: Body>(Option<B>);
+
+        impl<B: Body> Body for MaybeBody<B> {
+            fn write_response_body<R: Read, W: crate::io::Write<Error = R::Error>>(
+                self,
+                connection: crate::response::Connection<'_, R>,
+                writer: W,
+            ) -> impl Future<Output = Result<(), W::Error>> {
+                use crate::futures::Either;
+                match self {
+                    Self(Some(body)) => Either::First(body.write_response_body(connection, writer)),
+                    Self(None) => Either::Second(async { Ok(()) }),
+                }
+            }
         }
-    }
 
-    struct IgnoreBody<W>(pub W);
+        let Response {
+            status_code,
+            headers,
+            body,
+        } = response;
 
-    impl<W: ResponseWriter> ResponseWriter for IgnoreBody<W> {
-        type Error = W::Error;
-
-        async fn write_response<R: Read<Error = Self::Error>, H: HeadersIter, B: Body>(
-            self,
-            connection: Connection<'_, R>,
+        self.response_writer.write_response(
+            connection,
             Response {
                 status_code,
                 headers,
-                body: _,
-            }: Response<H, B>,
-        ) -> Result<crate::ResponseSent, Self::Error> {
-            self.0
-                .write_response(
-                    connection,
-                    Response {
-                        status_code,
-                        headers,
-                        body: EmptyBody,
-                    },
-                )
-                .await
-        }
-    }
-
-    pub fn ignore_body<W: ResponseWriter>(
-        response_writer: W,
-    ) -> impl ResponseWriter<Error = W::Error> {
-        IgnoreBody(response_writer)
+                body: MaybeBody(self.include_body.then_some(body)),
+            },
+        )
     }
 }
 
