@@ -253,13 +253,9 @@ pub trait ForEachHeader {
     type Output;
     type Error;
 
-    async fn call<Value: fmt::Display>(
-        &mut self,
-        name: &str,
-        value: Value,
-    ) -> Result<(), Self::Error>;
+    fn call<Value: fmt::Display>(&mut self, name: &str, value: Value) -> Result<(), Self::Error>;
 
-    async fn finalize(self) -> Result<Self::Output, Self::Error>;
+    fn finalize(self) -> Result<Self::Output, Self::Error>;
 }
 
 struct BorrowedForEachHeader<'a, F: ForEachHeader>(&'a mut F);
@@ -268,15 +264,11 @@ impl<F: ForEachHeader> ForEachHeader for BorrowedForEachHeader<'_, F> {
     type Output = ();
     type Error = F::Error;
 
-    async fn call<Value: fmt::Display>(
-        &mut self,
-        name: &str,
-        value: Value,
-    ) -> Result<(), F::Error> {
-        self.0.call(name, value).await
+    fn call<Value: fmt::Display>(&mut self, name: &str, value: Value) -> Result<(), F::Error> {
+        self.0.call(name, value)
     }
 
-    async fn finalize(self) -> Result<Self::Output, Self::Error> {
+    fn finalize(self) -> Result<Self::Output, Self::Error> {
         Ok(())
     }
 }
@@ -284,43 +276,41 @@ impl<F: ForEachHeader> ForEachHeader for BorrowedForEachHeader<'_, F> {
 /// The HTTP response headers.
 pub trait HeadersIter {
     /// Perform the following action for each header.
-    async fn for_each_header<F: ForEachHeader>(self, f: F) -> Result<F::Output, F::Error>;
+    fn for_each_header<F: ForEachHeader>(&self, f: F) -> Result<F::Output, F::Error>;
 }
 
 impl<V: fmt::Display> HeadersIter for (&str, V) {
-    async fn for_each_header<F: ForEachHeader>(self, mut f: F) -> Result<F::Output, F::Error> {
+    fn for_each_header<F: ForEachHeader>(&self, mut f: F) -> Result<F::Output, F::Error> {
         let (name, value) = self;
-        f.call(name, value).await?;
-        f.finalize().await
+        f.call(name, value)?;
+        f.finalize()
     }
 }
 
 impl<V: fmt::Display> HeadersIter for &[(&str, V)] {
-    async fn for_each_header<F: ForEachHeader>(self, mut f: F) -> Result<F::Output, F::Error> {
-        for (name, value) in self {
-            f.call(name, value).await?;
+    fn for_each_header<F: ForEachHeader>(&self, mut f: F) -> Result<F::Output, F::Error> {
+        for (name, value) in *self {
+            f.call(name, value)?;
         }
-        f.finalize().await
+        f.finalize()
     }
 }
 
 impl<H: HeadersIter, const N: usize> HeadersIter for [H; N] {
-    async fn for_each_header<F: ForEachHeader>(self, mut f: F) -> Result<F::Output, F::Error> {
+    fn for_each_header<F: ForEachHeader>(&self, mut f: F) -> Result<F::Output, F::Error> {
         for headers in self {
-            headers
-                .for_each_header(BorrowedForEachHeader(&mut f))
-                .await?;
+            headers.for_each_header(BorrowedForEachHeader(&mut f))?;
         }
-        f.finalize().await
+        f.finalize()
     }
 }
 
 impl<T: HeadersIter> HeadersIter for Option<T> {
-    async fn for_each_header<F: ForEachHeader>(self, f: F) -> Result<F::Output, F::Error> {
+    fn for_each_header<F: ForEachHeader>(&self, f: F) -> Result<F::Output, F::Error> {
         if let Some(headers) = self {
-            headers.for_each_header(f).await
+            headers.for_each_header(f)
         } else {
-            f.finalize().await
+            f.finalize()
         }
     }
 }
@@ -328,11 +318,11 @@ impl<T: HeadersIter> HeadersIter for Option<T> {
 struct HeadersChain<A: HeadersIter, B: HeadersIter>(A, B);
 
 impl<A: HeadersIter, B: HeadersIter> HeadersIter for HeadersChain<A, B> {
-    async fn for_each_header<F: ForEachHeader>(self, mut f: F) -> Result<F::Output, F::Error> {
+    fn for_each_header<F: ForEachHeader>(&self, mut f: F) -> Result<F::Output, F::Error> {
         let Self(a, b) = self;
-        a.for_each_header(BorrowedForEachHeader(&mut f)).await?;
-        b.for_each_header(BorrowedForEachHeader(&mut f)).await?;
-        f.finalize().await
+        a.for_each_header(BorrowedForEachHeader(&mut f))?;
+        b.for_each_header(BorrowedForEachHeader(&mut f))?;
+        f.finalize()
     }
 }
 
@@ -483,8 +473,8 @@ impl Content for fmt::Arguments<'_> {
 pub struct NoHeaders;
 
 impl HeadersIter for NoHeaders {
-    async fn for_each_header<F: ForEachHeader>(self, f: F) -> Result<F::Output, F::Error> {
-        f.finalize().await
+    fn for_each_header<F: ForEachHeader>(&self, f: F) -> Result<F::Output, F::Error> {
+        f.finalize()
     }
 }
 
@@ -495,10 +485,10 @@ pub struct ContentHeaders {
 }
 
 impl HeadersIter for ContentHeaders {
-    async fn for_each_header<F: ForEachHeader>(self, mut f: F) -> Result<F::Output, F::Error> {
-        f.call("Content-Type", self.content_type).await?;
-        f.call("Content-Length", self.content_length).await?;
-        f.finalize().await
+    fn for_each_header<F: ForEachHeader>(&self, mut f: F) -> Result<F::Output, F::Error> {
+        f.call("Content-Type", self.content_type)?;
+        f.call("Content-Length", self.content_length)?;
+        f.finalize()
     }
 }
 
@@ -816,7 +806,6 @@ pub trait ErrorWithStatusCode: fmt::Display + IntoResponse {
 
 #[cfg(test)]
 mod tests {
-    use futures_util::FutureExt;
 
     use super::{ForEachHeader, HeadersIter, Response};
 
@@ -827,7 +816,7 @@ mod tests {
         type Output = alloc::vec::Vec<(alloc::string::String, alloc::string::String)>;
         type Error = core::convert::Infallible;
 
-        async fn call<Value: core::fmt::Display>(
+        fn call<Value: core::fmt::Display>(
             &mut self,
             name: &str,
             value: Value,
@@ -839,7 +828,7 @@ mod tests {
             Ok(())
         }
 
-        async fn finalize(self) -> Result<Self::Output, Self::Error> {
+        fn finalize(self) -> Result<Self::Output, Self::Error> {
             Ok(self.0)
         }
     }
@@ -847,11 +836,8 @@ mod tests {
     fn headers_of<H: HeadersIter>(
         headers: H,
     ) -> alloc::vec::Vec<(alloc::string::String, alloc::string::String)> {
+        let Ok(headers) = headers.for_each_header(CollectHeaders(alloc::vec::Vec::new()));
         headers
-            .for_each_header(CollectHeaders(alloc::vec::Vec::new()))
-            .now_or_never()
-            .expect("Future must resolve")
-            .expect("Collecting headers is infallible")
     }
 
     #[test]

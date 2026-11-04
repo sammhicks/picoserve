@@ -16,12 +16,9 @@ use super::HeadersIter;
 pub struct CustomHeaders;
 
 impl HeadersIter for CustomHeaders {
-    async fn for_each_header<F: super::ForEachHeader>(
-        self,
-        mut f: F,
-    ) -> Result<F::Output, F::Error> {
-        f.call("Connection", "close").await?;
-        f.finalize().await
+    fn for_each_header<F: super::ForEachHeader>(&self, mut f: F) -> Result<F::Output, F::Error> {
+        f.call("Connection", "close")?;
+        f.finalize()
     }
 }
 
