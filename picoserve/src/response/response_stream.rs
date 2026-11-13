@@ -201,7 +201,6 @@ impl<W: Write> super::ResponseWriter for ResponseStream<W> {
             .await?;
 
         self.writer.write_all(b"\r\n").await?;
-        self.writer.flush().await?;
 
         body.write_response_body(connection, &mut self.writer)
             .await
