@@ -165,18 +165,18 @@ struct UrlEncodedRepresentation<'a> {
 /// The error returned when attempting to decode a [`UrlEncodedString`] into a string.
 #[derive(Debug, thiserror::Error)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub enum DecodeError {
+pub enum DecodeError<MemoryError: core::error::Error> {
     /// Error during decoding a character.
     #[error(transparent)]
     BadUrlEncodedCharacter(UrlEncodedCharacterDecodeError),
     /// The provided buffer does not have enough space to store the string.
-    #[error("No space to decode url-encoded string")]
-    NoSpace,
+    #[error("No space to decode url-encoded string: {0}")]
+    NoSpace(#[from] MemoryError),
 }
 
 struct NamedDecodeError<'a> {
     key: &'a str,
-    error: DecodeError,
+    error: DecodeError<heapless::CapacityError>,
 }
 
 /// A url-encoded string.
@@ -209,25 +209,41 @@ impl<'a> UrlEncodedString<'a> {
     }
 
     /// Try decoding the chars into a string.
-    pub fn try_into_string<const N: usize>(self) -> Result<heapless::String<N>, DecodeError> {
+    pub fn try_into_string<const N: usize>(
+        self,
+    ) -> Result<heapless::String<N>, DecodeError<heapless::CapacityError>> {
         let mut str = heapless::String::new();
 
-        for c in self.chars() {
-            str.push(c.map_err(DecodeError::BadUrlEncodedCharacter)?.into_char())
-                .map_err(|_| DecodeError::NoSpace)?;
+        for ch in self.chars() {
+            str.push(ch.map_err(DecodeError::BadUrlEncodedCharacter)?.into_char())?;
         }
 
         Ok(str)
     }
 
-    #[cfg(any(test, feature = "std"))]
-    /// Try decoding the chars into a `std::string::String`.
-    pub fn try_into_std_string(
+    #[cfg(any(test, feature = "alloc"))]
+    /// Try decoding the chars into an `alloc::string::String`.
+    pub fn try_into_alloc_string(
         self,
-    ) -> Result<std::string::String, UrlEncodedCharacterDecodeError> {
-        self.chars()
+    ) -> Result<alloc::string::String, DecodeError<alloc::collections::TryReserveError>> {
+        let mut char_buffer = [0; 4];
+
+        let length = self
+            .chars()
             .map(|c| c.map(UrlDecodedCharacter::into_char))
-            .collect()
+            .try_fold(0_usize, |acc, c| {
+                c.map(|c| acc + c.encode_utf8(&mut char_buffer).len())
+            })
+            .map_err(DecodeError::BadUrlEncodedCharacter)?;
+
+        let mut s = alloc::string::String::new();
+        s.try_reserve(length)?;
+
+        for ch in self.chars().map(|c| c.map(UrlDecodedCharacter::into_char)) {
+            s.push(ch.map_err(DecodeError::BadUrlEncodedCharacter)?);
+        }
+
+        Ok(s)
     }
 
     /// Returns a substring with the prefix removed. A '/' in the prefix must match a literal '/' in the encoded string,
@@ -458,5 +474,17 @@ impl<'de, T: Iterator<Item = &'de str>> serde::de::MapAccess<'de>
         let (name, value) = self.value;
 
         Ok(seed.deserialize(DeserializeUrlEncoded { key: name, value })?)
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn try_into_alloc_string() {
+        let url_encoded = UrlEncodedString("Hello%20World!");
+
+        assert_eq!("Hello World!", url_encoded.try_into_alloc_string().unwrap())
     }
 }
