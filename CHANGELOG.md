@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.21.0] - 2026-11-14
+
+### Breaking
+
+- Iterating over response header is now sync, not async.
+- Renamed [`UrlEncodedString::try_into_std_string`](https://docs.rs/picoserve/0.20.1/picoserve/url_encoded/struct.UrlEncodedString.html#method.try_into_std_string) to [`UrlEncodedString::try_into_alloc_string`](https://docs.rs/picoserve/latest/picoserve/url_encoded/struct.UrlEncodedString.html#method.try_into_alloc_string) and removed possible alloc panic.
+
+### Changed
+
+- The socket is no longer flushed between writing the response headers and writing the response body.
+
 ## [0.20.1] 2026-09-21
 
 ### Fixed
